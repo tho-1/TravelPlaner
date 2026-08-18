@@ -1,0 +1,11 @@
+Destination,Country,Final Score (0-100),Reviews Rating (/10),S_aspect,S_platform,Total Reviews,Confidence
+Chennai,India,75,7.5,0.44,0.599,50,High
+Shenyang,China,82,8.2,0.623,0.647,50,High
+Harbin,China,83,8.3,0.6,0.748,50,High
+Luoyang,China,85,8.5,0.663,0.748,50,High
+Datong,China,85,8.5,0.697,0.722,50,High
+Suzhou,China,86,8.6,0.686,0.749,50,High
+Quingdao,China,85,8.5,0.709,0.698,50,High
+Xiamen,China,87,8.7,0.729,0.748,50,High
+Zhangjiaje,China,84,8.4,0.586,0.798,50,High
+Guiyang,China,85,8.5,0.72,0.673,50,High
