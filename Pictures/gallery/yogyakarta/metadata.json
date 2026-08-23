@@ -1,0 +1,182 @@
+[
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\1.jpg",
+    "photo_id": "a9j-MOBM9Rw",
+    "photographer_name": "Farhan Abas",
+    "photographer_url": "https://unsplash.com/@farhanabas",
+    "photo_url": "https://unsplash.com/photos/a-man-sitting-on-a-bench-in-front-of-a-store-a9j-MOBM9Rw",
+    "alt": "a man sitting on a bench in front of a store",
+    "thumb_url": "https://images.unsplash.com/photo-1631002165145-f6672bfa9672?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MjF8fFlvZ3lha2FydGElMkMlMjBJbmRvbmVzaWF8ZW58MXwwfHx8MTc4NzM1MzM0OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\2.jpg",
+    "photo_id": "LhoUx4AzVco",
+    "photographer_name": "Dhio Gandhi",
+    "photographer_url": "https://unsplash.com/@dhiogandhi23",
+    "photo_url": "https://unsplash.com/photos/a-very-tall-clock-tower-towering-over-a-city-at-night-LhoUx4AzVco",
+    "alt": "a very tall clock tower towering over a city at night",
+    "thumb_url": "https://images.unsplash.com/photo-1652953445949-125a4ecf8d5b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8Mnx8WW9neWFrYXJ0YSUyQyUyMEluZG9uZXNpYXxlbnwxfDB8fHwxNzg3MzUzMzQ4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\3.jpg",
+    "photo_id": "sHLxeo8is3k",
+    "photographer_name": "Farhan Abas",
+    "photographer_url": "https://unsplash.com/@farhanabas",
+    "photo_url": "https://unsplash.com/photos/a-group-of-people-riding-in-a-horse-drawn-carriage-sHLxeo8is3k",
+    "alt": "a group of people riding in a horse drawn carriage",
+    "thumb_url": "https://images.unsplash.com/photo-1631002164896-004e2058d6e4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8M3x8WW9neWFrYXJ0YSUyQyUyMEluZG9uZXNpYXxlbnwxfDB8fHwxNzg3MzUzMzQ4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\4.jpg",
+    "photo_id": "vUc03gxjEY4",
+    "photographer_name": "Camille Bismonte",
+    "photographer_url": "https://unsplash.com/@camerale",
+    "photo_url": "https://unsplash.com/photos/2-women-sitting-on-brown-and-white-floral-sofa-vUc03gxjEY4",
+    "alt": "2 women sitting on brown and white floral sofa",
+    "thumb_url": "https://images.unsplash.com/photo-1586319826907-1ff4aadbaddc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8NHx8WW9neWFrYXJ0YSUyQyUyMEluZG9uZXNpYXxlbnwxfDB8fHwxNzg3MzUzMzQ4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\5.jpg",
+    "photo_id": "iX_HDppWjYo",
+    "photographer_name": "jauzax",
+    "photographer_url": "https://unsplash.com/@jauzax",
+    "photo_url": "https://unsplash.com/photos/people-riding-motorcycle-on-road-near-white-concrete-building-during-daytime-iX_HDppWjYo",
+    "alt": "people riding motorcycle on road near white concrete building during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1624936436147-88492b507bc3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8NXx8WW9neWFrYXJ0YSUyQyUyMEluZG9uZXNpYXxlbnwxfDB8fHwxNzg3MzUzMzQ4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\6.jpg",
+    "photo_id": "4z7Eryof-jA",
+    "photographer_name": "Dhio Gandhi",
+    "photographer_url": "https://unsplash.com/@dhiogandhi23",
+    "photo_url": "https://unsplash.com/photos/a-city-street-at-night-with-a-clock-tower-in-the-background-4z7Eryof-jA",
+    "alt": "a city street at night with a clock tower in the background",
+    "thumb_url": "https://images.unsplash.com/photo-1652953445918-103d987014b8?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8Nnx8WW9neWFrYXJ0YSUyQyUyMEluZG9uZXNpYXxlbnwxfDB8fHwxNzg3MzUzMzQ4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\7.jpg",
+    "photo_id": "cm6shnIfdp4",
+    "photographer_name": "Farhan Abas",
+    "photographer_url": "https://unsplash.com/@farhanabas",
+    "photo_url": "https://unsplash.com/photos/people-riding-horses-on-street-during-daytime-cm6shnIfdp4",
+    "alt": "people riding horses on street during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1631002165376-87fa18968df7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8N3x8WW9neWFrYXJ0YSUyQyUyMEluZG9uZXNpYXxlbnwxfDB8fHwxNzg3MzUzMzQ4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\8.jpg",
+    "photo_id": "8Bg8N8HtiWI",
+    "photographer_name": "Mahmur Marganti",
+    "photographer_url": "https://unsplash.com/@mahmur_marganti",
+    "photo_url": "https://unsplash.com/photos/person-holding-brown-metal-tool-8Bg8N8HtiWI",
+    "alt": "person holding brown metal tool",
+    "thumb_url": "https://images.unsplash.com/photo-1604973104381-870c92f10343?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8OHx8WW9neWFrYXJ0YSUyQyUyMEluZG9uZXNpYXxlbnwxfDB8fHwxNzg3MzUzMzQ4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\9.jpg",
+    "photo_id": "Nb__Sl4Biz0",
+    "photographer_name": "Rendy Novantino",
+    "photographer_url": "https://unsplash.com/@novantino",
+    "photo_url": "https://unsplash.com/photos/group-of-people-taking-photo-Nb__Sl4Biz0",
+    "alt": "group of people taking photo",
+    "thumb_url": "https://images.unsplash.com/photo-1611087802810-046bb671e644?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8OXx8WW9neWFrYXJ0YSUyQyUyMEluZG9uZXNpYXxlbnwxfDB8fHwxNzg3MzUzMzQ4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\10.jpg",
+    "photo_id": "xAq9G0cSYVw",
+    "photographer_name": "Farhan Abas",
+    "photographer_url": "https://unsplash.com/@farhanabas",
+    "photo_url": "https://unsplash.com/photos/woman-in-white-and-black-stripe-long-sleeve-shirt-walking-on-sidewalk-during-daytime-xAq9G0cSYVw",
+    "alt": "woman in white and black stripe long sleeve shirt walking on sidewalk during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1631002165164-a20c44fd12c4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTB8fFlvZ3lha2FydGElMkMlMjBJbmRvbmVzaWF8ZW58MXwwfHx8MTc4NzM1MzM0OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\11.jpg",
+    "photo_id": "9-I-I6dBwoc",
+    "photographer_name": "fathia✨",
+    "photographer_url": "https://unsplash.com/@thifafi",
+    "photo_url": "https://unsplash.com/photos/a-view-of-a-cliff-overlooking-the-ocean-9-I-I6dBwoc",
+    "alt": "a view of a cliff overlooking the ocean",
+    "thumb_url": "https://images.unsplash.com/photo-1715244808942-d8e47462dabd?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTF8fFlvZ3lha2FydGElMkMlMjBJbmRvbmVzaWF8ZW58MXwwfHx8MTc4NzM1MzM0OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\12.jpg",
+    "photo_id": "vzCLOkuQ-TU",
+    "photographer_name": "Titus Windi Priatmoko",
+    "photographer_url": "https://unsplash.com/@tituswindip",
+    "photo_url": "https://unsplash.com/photos/a-bridge-with-lights-at-night-vzCLOkuQ-TU",
+    "alt": "a bridge with lights at night",
+    "thumb_url": "https://images.unsplash.com/photo-1650643968708-c37afc8b0c3e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTJ8fFlvZ3lha2FydGElMkMlMjBJbmRvbmVzaWF8ZW58MXwwfHx8MTc4NzM1MzM0OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\13.jpg",
+    "photo_id": "3U1LXFVSyMo",
+    "photographer_name": "Edmund Lou",
+    "photographer_url": "https://unsplash.com/@edmundlou",
+    "photo_url": "https://unsplash.com/photos/a-large-group-of-stone-structures-sitting-on-top-of-a-lush-green-field-3U1LXFVSyMo",
+    "alt": "a large group of stone structures sitting on top of a lush green field",
+    "thumb_url": "https://images.unsplash.com/photo-1628488321763-eb2f79b7f3b5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTN8fFlvZ3lha2FydGElMkMlMjBJbmRvbmVzaWF8ZW58MXwwfHx8MTc4NzM1MzM0OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\14.jpg",
+    "photo_id": "F2oeXuHFAJg",
+    "photographer_name": "Farhan Abas",
+    "photographer_url": "https://unsplash.com/@farhanabas",
+    "photo_url": "https://unsplash.com/photos/brown-wooden-cart-on-road-during-daytime-F2oeXuHFAJg",
+    "alt": "brown wooden cart on road during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1631002165188-953633c727f1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTR8fFlvZ3lha2FydGElMkMlMjBJbmRvbmVzaWF8ZW58MXwwfHx8MTc4NzM1MzM0OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\15.jpg",
+    "photo_id": "g53zKBYFuM8",
+    "photographer_name": "Haryo Setyadi",
+    "photographer_url": "https://unsplash.com/@uyk",
+    "photo_url": "https://unsplash.com/photos/person-in-red-jacket-standing-on-brown-concrete-stairs-g53zKBYFuM8",
+    "alt": "person in red jacket standing on brown concrete stairs",
+    "thumb_url": "https://images.unsplash.com/photo-1626921998854-b80339ba8002?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTV8fFlvZ3lha2FydGElMkMlMjBJbmRvbmVzaWF8ZW58MXwwfHx8MTc4NzM1MzM0OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\16.jpg",
+    "photo_id": "c-6Rdajvaos",
+    "photographer_name": "Afif Ramdhasuma",
+    "photographer_url": "https://unsplash.com/@javaistan",
+    "photo_url": "https://unsplash.com/photos/a-man-riding-a-motorcycle-down-a-street-next-to-a-tall-white-building-c-6Rdajvaos",
+    "alt": "a man riding a motorcycle down a street next to a tall white building",
+    "thumb_url": "https://images.unsplash.com/photo-1648376547082-dc7a1b739129?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTZ8fFlvZ3lha2FydGElMkMlMjBJbmRvbmVzaWF8ZW58MXwwfHx8MTc4NzM1MzM0OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\17.jpg",
+    "photo_id": "puFhXWav3so",
+    "photographer_name": "Rendy Novantino",
+    "photographer_url": "https://unsplash.com/@novantino",
+    "photo_url": "https://unsplash.com/photos/woman-in-black-jacket-holding-yellow-plastic-bag-puFhXWav3so",
+    "alt": "woman in black jacket holding yellow plastic bag",
+    "thumb_url": "https://images.unsplash.com/photo-1612722567650-abdf10efb5e7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTd8fFlvZ3lha2FydGElMkMlMjBJbmRvbmVzaWF8ZW58MXwwfHx8MTc4NzM1MzM0OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\18.jpg",
+    "photo_id": "aaWROoqkZqI",
+    "photographer_name": "Afif Ramdhasuma",
+    "photographer_url": "https://unsplash.com/@javaistan",
+    "photo_url": "https://unsplash.com/photos/borobudur-temple-aaWROoqkZqI",
+    "alt": "borobudur temple",
+    "thumb_url": "https://images.unsplash.com/photo-1566559532224-6d65e9fc0f37?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTh8fFlvZ3lha2FydGElMkMlMjBJbmRvbmVzaWF8ZW58MXwwfHx8MTc4NzM1MzM0OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\19.jpg",
+    "photo_id": "nqYTYBVFa7o",
+    "photographer_name": "Budi Puspa Wijaya",
+    "photographer_url": "https://unsplash.com/@budi_puspa_wijaya",
+    "photo_url": "https://unsplash.com/photos/a-street-sign-in-front-of-some-trees-nqYTYBVFa7o",
+    "alt": "a street sign in front of some trees",
+    "thumb_url": "https://images.unsplash.com/photo-1696220975425-ea5284dfac56?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTl8fFlvZ3lha2FydGElMkMlMjBJbmRvbmVzaWF8ZW58MXwwfHx8MTc4NzM1MzM0OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\yogyakarta\\20.jpg",
+    "photo_id": "rJ7ZyiXAkYY",
+    "photographer_name": "Farhan Abas",
+    "photographer_url": "https://unsplash.com/@farhanabas",
+    "photo_url": "https://unsplash.com/photos/people-riding-horses-on-street-during-daytime-rJ7ZyiXAkYY",
+    "alt": "people riding horses on street during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1631002164869-a030d817addc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MjB8fFlvZ3lha2FydGElMkMlMjBJbmRvbmVzaWF8ZW58MXwwfHx8MTc4NzM1MzM0OHww&ixlib=rb-4.1.0&q=80&w=200"
+  }
+]

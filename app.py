@@ -4,7 +4,6 @@ import streamlit as st
 
 from data_utils import DATA_PATH, load_destinations
 from pages.destination_detail import render_destination
-from pages.info import render_info
 from pages.overview import render_overview
 from pages.world_map import render_world_map
 
@@ -64,13 +63,12 @@ st.session_state["_detail_pages"] = detail_pages
 
 world_map_page = st.Page(render_world_map, title="World Map", icon="🌍", default=True)
 overview_page = st.Page(render_overview, title="Overview", icon="🗺️")
-info_page = st.Page(render_info, title="How to use", icon="ℹ️")
 
 # Expose the overview/map page objects so detail pages can switch back on close.
 st.session_state["_overview_page"] = overview_page
 st.session_state["_world_map_page"] = world_map_page
 
-pages = [world_map_page, overview_page, info_page] + list(detail_pages.values())
+pages = [world_map_page, overview_page] + list(detail_pages.values())
 
 pg = st.navigation(pages, position="sidebar")
 pg.run()

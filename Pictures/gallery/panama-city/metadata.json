@@ -1,0 +1,182 @@
+[
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\1.jpg",
+    "photo_id": "0loy9XzGkAI",
+    "photographer_name": "Zdeněk Macháček",
+    "photographer_url": "https://unsplash.com/@zmachacek",
+    "photo_url": "https://unsplash.com/photos/a-view-of-a-city-in-the-distance-with-fog-in-the-foreground-0loy9XzGkAI",
+    "alt": "a view of a city in the distance with fog in the foreground",
+    "thumb_url": "https://images.unsplash.com/photo-1639935187474-10940c5be350?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MXx8UGFuYW1hJTIwQ2l0eSUyQyUyMFBhbmFtYXxlbnwxfDB8fHwxNzg3MjY4MjQzfDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\2.jpg",
+    "photo_id": "jVCXlJrnl5w",
+    "photographer_name": "Yosi Bitran",
+    "photographer_url": "https://unsplash.com/@ybitran",
+    "photo_url": "https://unsplash.com/photos/city-lights-and-buildings-during-nighttime-jVCXlJrnl5w",
+    "alt": "city lights and buildings during nighttime",
+    "thumb_url": "https://images.unsplash.com/photo-1540610410855-b4c8877b761c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8Mnx8UGFuYW1hJTIwQ2l0eSUyQyUyMFBhbmFtYXxlbnwxfDB8fHwxNzg3MjY4MjQzfDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\3.jpg",
+    "photo_id": "qeltMhQIw3w",
+    "photographer_name": "Rikin Katyal",
+    "photographer_url": "https://unsplash.com/@sirvar",
+    "photo_url": "https://unsplash.com/photos/a-large-cargo-ship-in-a-body-of-water-qeltMhQIw3w",
+    "alt": "a large cargo ship in a body of water",
+    "thumb_url": "https://images.unsplash.com/photo-1641176716788-d4816a66dc6d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8M3x8UGFuYW1hJTIwQ2l0eSUyQyUyMFBhbmFtYXxlbnwxfDB8fHwxNzg3MjY4MjQzfDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\4.jpg",
+    "photo_id": "Wiwqd_8Rds8",
+    "photographer_name": "Luis Gonzalez",
+    "photographer_url": "https://unsplash.com/@luchox23",
+    "photo_url": "https://unsplash.com/photos/white-red-and-blue-flag-Wiwqd_8Rds8",
+    "alt": "white red and blue flag",
+    "thumb_url": "https://images.unsplash.com/photo-1605990925792-b70ab82638a1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8NHx8UGFuYW1hJTIwQ2l0eSUyQyUyMFBhbmFtYXxlbnwxfDB8fHwxNzg3MjY4MjQzfDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\5.jpg",
+    "photo_id": "9_S_-ZWAoPI",
+    "photographer_name": "Darren Miller",
+    "photographer_url": "https://unsplash.com/@darrenmiller",
+    "photo_url": "https://unsplash.com/photos/high-rise-buildings-under-white-sky-during-daytime-9_S_-ZWAoPI",
+    "alt": "high rise buildings under white sky during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1582059983736-eedd5df2212b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8NXx8UGFuYW1hJTIwQ2l0eSUyQyUyMFBhbmFtYXxlbnwxfDB8fHwxNzg3MjY4MjQzfDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\6.jpg",
+    "photo_id": "pwxEAdlR0lg",
+    "photographer_name": "Ignacio Hernandez",
+    "photographer_url": "https://unsplash.com/@ignacioh01",
+    "photo_url": "https://unsplash.com/photos/white-and-brown-concrete-building-near-body-of-water-during-daytime-pwxEAdlR0lg",
+    "alt": "white and brown concrete building near body of water during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1603824795795-f4caf0b4912e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8Nnx8UGFuYW1hJTIwQ2l0eSUyQyUyMFBhbmFtYXxlbnwxfDB8fHwxNzg3MjY4MjQzfDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\7.jpg",
+    "photo_id": "runuvefbfNQ",
+    "photographer_name": "Yulia Z",
+    "photographer_url": "https://unsplash.com/@heythisisyulia",
+    "photo_url": "https://unsplash.com/photos/a-narrow-city-street-lined-with-buildings-and-palm-trees-runuvefbfNQ",
+    "alt": "a narrow city street lined with buildings and palm trees",
+    "thumb_url": "https://images.unsplash.com/photo-1709653771859-e1e9516da54a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8N3x8UGFuYW1hJTIwQ2l0eSUyQyUyMFBhbmFtYXxlbnwxfDB8fHwxNzg3MjY4MjQzfDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\8.jpg",
+    "photo_id": "YsHVc8NlxJw",
+    "photographer_name": "Keiron Crasktellanos",
+    "photographer_url": "https://unsplash.com/@crasktellanos",
+    "photo_url": "https://unsplash.com/photos/a-view-of-a-large-city-with-tall-buildings-YsHVc8NlxJw",
+    "alt": "a view of a large city with tall buildings",
+    "thumb_url": "https://images.unsplash.com/photo-1637971405797-ccf327195cb1?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8OHx8UGFuYW1hJTIwQ2l0eSUyQyUyMFBhbmFtYXxlbnwxfDB8fHwxNzg3MjY4MjQzfDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\9.jpg",
+    "photo_id": "F0MmnUS2fwc",
+    "photographer_name": "Darren Miller",
+    "photographer_url": "https://unsplash.com/@darrenmiller",
+    "photo_url": "https://unsplash.com/photos/blue-swimming-pool-near-city-buildings-during-daytime-F0MmnUS2fwc",
+    "alt": "blue swimming pool near city buildings during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1582059983785-a40b876dbd73?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8OXx8UGFuYW1hJTIwQ2l0eSUyQyUyMFBhbmFtYXxlbnwxfDB8fHwxNzg3MjY4MjQzfDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\10.jpg",
+    "photo_id": "-st0dxfDyM0",
+    "photographer_name": "Luis Gonzalez",
+    "photographer_url": "https://unsplash.com/@luchox23",
+    "photo_url": "https://unsplash.com/photos/white-red-and-blue-star-flag--st0dxfDyM0",
+    "alt": "white red and blue star flag",
+    "thumb_url": "https://images.unsplash.com/photo-1605990786731-181f1f8a091f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTB8fFBhbmFtYSUyMENpdHklMkMlMjBQYW5hbWF8ZW58MXwwfHx8MTc4NzI2ODI0M3ww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\11.jpg",
+    "photo_id": "RmK-amKtLLU",
+    "photographer_name": "Gabriel Villaverde",
+    "photographer_url": "https://unsplash.com/@gabo0819",
+    "photo_url": "https://unsplash.com/photos/a-city-skyline-at-night-with-a-body-of-water-in-the-foreground-RmK-amKtLLU",
+    "alt": "a city skyline at night with a body of water in the foreground",
+    "thumb_url": "https://images.unsplash.com/photo-1649619216579-c35cee1b802e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTF8fFBhbmFtYSUyMENpdHklMkMlMjBQYW5hbWF8ZW58MXwwfHx8MTc4NzI2ODI0M3ww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\12.jpg",
+    "photo_id": "lrUwTm6QNAg",
+    "photographer_name": "Sam",
+    "photographer_url": "https://unsplash.com/@samtakespictures",
+    "photo_url": "https://unsplash.com/photos/colorful-buildings-line-a-city-street-lrUwTm6QNAg",
+    "alt": "Colorful buildings line a city street",
+    "thumb_url": "https://images.unsplash.com/photo-1753012442542-4ec5a0dab71d?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTJ8fFBhbmFtYSUyMENpdHklMkMlMjBQYW5hbWF8ZW58MXwwfHx8MTc4NzI2ODI0M3ww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\13.jpg",
+    "photo_id": "Ab9Jw_Wl374",
+    "photographer_name": "Juan Marin",
+    "photographer_url": "https://unsplash.com/@jcmarin",
+    "photo_url": "https://unsplash.com/photos/brown-wooden-bench-near-body-of-water-during-daytime-Ab9Jw_Wl374",
+    "alt": "brown wooden bench near body of water during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1581352624136-84b3c9a7df3f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTN8fFBhbmFtYSUyMENpdHklMkMlMjBQYW5hbWF8ZW58MXwwfHx8MTc4NzI2ODI0M3ww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\14.jpg",
+    "photo_id": "wTqTEzZ5EtM",
+    "photographer_name": "Rikin Katyal",
+    "photographer_url": "https://unsplash.com/@sirvar",
+    "photo_url": "https://unsplash.com/photos/a-large-sign-that-says-panama-with-a-tree-in-the-background-wTqTEzZ5EtM",
+    "alt": "a large sign that says panama with a tree in the background",
+    "thumb_url": "https://images.unsplash.com/photo-1641176912780-3fa33fd20a15?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTR8fFBhbmFtYSUyMENpdHklMkMlMjBQYW5hbWF8ZW58MXwwfHx8MTc4NzI2ODI0M3ww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\15.jpg",
+    "photo_id": "IZghr5Con6g",
+    "photographer_name": "Azzedine Rouichi",
+    "photographer_url": "https://unsplash.com/@rouichi",
+    "photo_url": "https://unsplash.com/photos/a-group-of-tall-buildings-next-to-each-other-IZghr5Con6g",
+    "alt": "a group of tall buildings next to each other",
+    "thumb_url": "https://images.unsplash.com/photo-1649183232526-d2627a800358?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTV8fFBhbmFtYSUyMENpdHklMkMlMjBQYW5hbWF8ZW58MXwwfHx8MTc4NzI2ODI0M3ww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\16.jpg",
+    "photo_id": "ZllIL2j3GV4",
+    "photographer_name": "Alejandro Carvallo",
+    "photographer_url": "https://unsplash.com/@ayito",
+    "photo_url": "https://unsplash.com/photos/silhouette-of-buildings-near-body-of-water-during-dawn-ZllIL2j3GV4",
+    "alt": "silhouette of buildings near body of water during dawn",
+    "thumb_url": "https://images.unsplash.com/photo-1527195191483-6c8e16c245cf?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTZ8fFBhbmFtYSUyMENpdHklMkMlMjBQYW5hbWF8ZW58MXwwfHx8MTc4NzI2ODI0M3ww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\17.jpg",
+    "photo_id": "_HmXOCgpnnI",
+    "photographer_name": "Milo Miloezger",
+    "photographer_url": "https://unsplash.com/@miloezger",
+    "photo_url": "https://unsplash.com/photos/panama-veki-bus-on-highway-beside-high-rise-building-during-night-time-_HmXOCgpnnI",
+    "alt": "Panama Veki bus on highway beside high-rise building during night time",
+    "thumb_url": "https://images.unsplash.com/photo-1525088052208-6cbaedf3981a?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTd8fFBhbmFtYSUyMENpdHklMkMlMjBQYW5hbWF8ZW58MXwwfHx8MTc4NzI2ODI0M3ww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\18.jpg",
+    "photo_id": "EO6Atp5zfUQ",
+    "photographer_name": "Luis Gonzalez",
+    "photographer_url": "https://unsplash.com/@luchox23",
+    "photo_url": "https://unsplash.com/photos/a-row-of-texas-state-flags-blowing-in-the-wind-EO6Atp5zfUQ",
+    "alt": "a row of texas state flags blowing in the wind",
+    "thumb_url": "https://images.unsplash.com/photo-1649544061656-3a99635cdce4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTh8fFBhbmFtYSUyMENpdHklMkMlMjBQYW5hbWF8ZW58MXwwfHx8MTc4NzI2ODI0M3ww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\19.jpg",
+    "photo_id": "dblC1jCOtgE",
+    "photographer_name": "Gustavo Ibarra",
+    "photographer_url": "https://unsplash.com/@visualmedia",
+    "photo_url": "https://unsplash.com/photos/a-city-with-tall-buildings-dblC1jCOtgE",
+    "alt": "a city with tall buildings",
+    "thumb_url": "https://images.unsplash.com/photo-1664403965733-53cadc730abb?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTl8fFBhbmFtYSUyMENpdHklMkMlMjBQYW5hbWF8ZW58MXwwfHx8MTc4NzI2ODI0M3ww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\panama-city\\20.jpg",
+    "photo_id": "Ejf16T81DpI",
+    "photographer_name": "Armands Brants",
+    "photographer_url": "https://unsplash.com/@armandsbrants",
+    "photo_url": "https://unsplash.com/photos/a-large-body-of-water-with-a-city-in-the-background-Ejf16T81DpI",
+    "alt": "a large body of water with a city in the background",
+    "thumb_url": "https://images.unsplash.com/photo-1675090696282-b97a00d22f07?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MjB8fFBhbmFtYSUyMENpdHklMkMlMjBQYW5hbWF8ZW58MXwwfHx8MTc4NzI2ODI0M3ww&ixlib=rb-4.1.0&q=80&w=200"
+  }
+]

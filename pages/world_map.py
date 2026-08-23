@@ -6,12 +6,17 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from data_utils import DATA_PATH, add_new_destination, load_destinations, normalize_text
+from data_utils import DATA_PATH, WorkbookLockedError, add_new_destination, load_destinations, normalize_text
+from deepseek_populator import add_destination_with_deepseek
 
 
 @st.dialog("➕ Add New Destination")
 def _show_add_destination_dialog():
     st.write("Enter the details for the new destination to append to **Destinations.xlsx**:")
+    st.warning(
+        "This creates a clearly marked placeholder. Only the destination, country, "
+        "and continent are saved; all other fields remain blank until researched."
+    )
     new_dest = st.text_input("Destination / City Name *", placeholder="e.g. Kyoto, Porto, Queenstown")
     new_country = st.text_input("Country *", placeholder="e.g. Japan, Portugal, New Zealand")
     new_continent = st.selectbox(
@@ -20,7 +25,21 @@ def _show_add_destination_dialog():
         index=0
     )
 
-    if st.button("Save Destination", type="primary", use_container_width=True):
+    add_mode = st.radio(
+        "How should the new destination be added?",
+        options=["Add placeholder only", "Add & auto-populate with DeepSeek AI"],
+        index=0,
+        help=(
+            "**Add placeholder only**: creates a row with just the destination, country, "
+            "and continent; everything else stays blank until researched.\n\n"
+            "**Add & auto-populate with DeepSeek AI**: also calls the DeepSeek API to fill "
+            "in the full profile (details, reviews, and monthly climate) for the new destination."
+        ),
+    )
+
+    retry_key = "add_destination_retry_pending"
+
+    def _attempt_add():
         if not new_dest.strip():
             st.error("Please enter a destination name.")
             return
@@ -28,7 +47,25 @@ def _show_add_destination_dialog():
             st.error("Please enter a country name.")
             return
 
-        success, msg = add_new_destination(new_dest, new_country, new_continent)
+        try:
+            if add_mode == "Add placeholder only":
+                success, msg = add_new_destination(new_dest, new_country, new_continent)
+            else:
+                with st.spinner(
+                    "Calling the DeepSeek API to generate the destination profile "
+                    "(details, reviews, climate)..."
+                ):
+                    success, msg = add_destination_with_deepseek(
+                        new_dest, new_country, new_continent
+                    )
+        except WorkbookLockedError:
+            st.session_state[retry_key] = True
+            return
+        except Exception as exc:
+            st.error(f"Could not add the destination: {exc}")
+            return
+
+        st.session_state.pop(retry_key, None)
         if success:
             st.success(msg)
             # Add to open destinations so user can view it immediately
@@ -39,6 +76,17 @@ def _show_add_destination_dialog():
             st.rerun()
         else:
             st.error(msg)
+
+    if st.button("Save Destination", type="primary", width="stretch"):
+        _attempt_add()
+
+    if st.session_state.get(retry_key):
+        st.error(
+            "**Destinations.xlsx is currently open in another program** (e.g. Excel). "
+            "Please close the file and press **Retry**."
+        )
+        if st.button("Retry", type="primary", width="stretch"):
+            _attempt_add()
 
 # Comprehensive Country name / aliases to ISO-3 standard mapping
 COUNTRY_ISO3_MAP: Dict[str, str] = {
@@ -59,12 +107,14 @@ COUNTRY_ISO3_MAP: Dict[str, str] = {
     "india": "IND",
     "japan": "JPN",
     "estonia": "EST",
+    "georgia": "GEO",
     "nepal": "NPL",
     "philippines": "PHL",
     "malaysia": "MYS",
     "norway": "NOR",
     "iceland": "ISL",
     "canada": "CAN",
+    "brunei": "BRN",
     "south africa": "ZAF",
     "bolivia": "BOL",
     "puerto rico": "PRI",
@@ -73,10 +123,13 @@ COUNTRY_ISO3_MAP: Dict[str, str] = {
     "indonesia": "IDN",
     "finland": "FIN",
     "turkey": "TUR",
+    "jordan": "JOR",
     "laos": "LAO",
     "uzbekistan": "UZB",
+    "kyrgyzstan": "KGZ",
     "thailand": "THA",
     "nicaragua": "NIC",
+    "panama": "PAN",
     "australia": "AUS",
     "greece": "GRC",
     "new zealand": "NZL",
@@ -85,6 +138,7 @@ COUNTRY_ISO3_MAP: Dict[str, str] = {
     "united kingdom": "GBR",
     "uk": "GBR",
     "qatar": "QAT",
+    "oman": "OMN",
     "papua new guinea": "PNG",
     "bangladesh": "BGD",
     "sri lanka": "LKA",
@@ -105,10 +159,15 @@ COUNTRY_ISO3_MAP: Dict[str, str] = {
     "belgium": "BEL",
     "croatia": "HRV",
     "morocco": "MAR",
+    "namibia": "NAM",
     "egypt": "EGY",
+    "equatorial guinea": "GNQ",
     "kenya": "KEN",
     "tanzania": "TZA",
     "argentina": "ARG",
+    "tunisia": "TUN",
+    "uruguay": "URY",
+    "taiwan": "TWN",
 }
 
 # Standardized color map matching the app's design
@@ -117,6 +176,19 @@ COLOR_PALETTE = {
     "Ok": "#f1c40f",
     "Bad": "#e74c3c",
     "Unknown": "#95a5a6",
+}
+
+
+def _transparent_color(hex_color: str, opacity: float = 0.15) -> str:
+    """Return a translucent version of a condition color for filtered countries."""
+    color = hex_color.lstrip("#")
+    rgb = tuple(int(color[index:index + 2], 16) for index in (0, 2, 4))
+    return f"rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, {opacity})"
+
+
+FILTERED_COLOR_PALETTE = {
+    f"{condition} (filtered)": _transparent_color(color)
+    for condition, color in COLOR_PALETTE.items()
 }
 
 MONTHS = [
@@ -232,8 +304,10 @@ def render_world_map():
     country_col = metadata.get("country_col", "Country")
     continent_col = metadata.get("continent_col", "Continent")
     eu_col = metadata.get("eu_col")
+    visited_col = metadata.get("visited_col")
     safety_col = metadata.get("safety_col", "Safety Rating")
     cost_col = metadata.get("cost_col", "Avg. Cost/Day")
+    reviews_col = metadata.get("reviews_col", "Reviews")
     month_columns = metadata.get("month_columns", MONTHS)
 
     # Clean rows that have destination and country
@@ -241,6 +315,20 @@ def render_world_map():
     if df_valid.empty:
         st.warning("No destinations with country data found.")
         return
+    df_map_source = df_valid.copy()
+
+    unmapped_countries = sorted(
+        {
+            str(country).strip()
+            for country in df_map_source[country_col].dropna().unique()
+            if str(country).strip().lower() not in COUNTRY_ISO3_MAP
+            and not (len(str(country).strip()) == 3 and str(country).strip().isalpha())
+        }
+    )
+    if unmapped_countries:
+        st.warning(
+            "Some countries could not be mapped: " + ", ".join(unmapped_countries)
+        )
 
     # Select month - default to current month
     current_month_index = max(0, min(11, datetime.date.today().month - 1))
@@ -256,7 +344,7 @@ def render_world_map():
     with col_btn:
         st.write("")
         st.write("")
-        if st.button("➕ Add New Destination", help="Add a new destination to the Excel database.", use_container_width=True):
+        if st.button("➕ Add New Destination", help="Add a new destination to the Excel database.", width="stretch"):
             _show_add_destination_dialog()
 
     # ── Collapsible filter panel ────────────────────────────────────────────
@@ -284,7 +372,7 @@ def render_world_map():
         with f_col3:
             map_eu = st.selectbox("EU?", ["All", "Yes", "No"], key="map_filter_eu")
 
-        f_col4, f_col5 = st.columns(2)
+        f_col4, f_col5, f_col6 = st.columns(3)
 
         with f_col4:
             ordered_months = sorted(
@@ -316,6 +404,25 @@ def render_world_map():
             else:
                 map_min_safety = 0.0
 
+        with f_col6:
+            if reviews_col and reviews_col in df_valid.columns and pd.notna(df_valid[reviews_col]).any():
+                r_min = float(df_valid[reviews_col].dropna().min())
+                r_max = float(df_valid[reviews_col].dropna().max())
+                map_min_review = st.slider(
+                    "Minimum review score",
+                    min_value=r_min, max_value=r_max, value=r_min,
+                    key="map_filter_min_review"
+                )
+            else:
+                map_min_review = 0.0
+
+        if visited_col and visited_col in df_valid.columns:
+            only_unvisited = st.checkbox(
+                "Only show unvisited", value=True, key="map_filter_only_unvisited"
+            )
+        else:
+            only_unvisited = False
+
     # Apply filters to df_valid
     if map_continent != "All" and continent_col and continent_col in df_valid.columns:
         df_valid = df_valid[df_valid[continent_col].astype(str).str.lower() == map_continent.lower()]
@@ -330,6 +437,11 @@ def render_world_map():
         df_valid = df_valid[wv.isin(["ok", "okay", "good", "great", "ideal", "best", "green"])]
     if safety_col and safety_col in df_valid.columns:
         df_valid = df_valid[df_valid[safety_col] >= map_min_safety]
+    if reviews_col and reviews_col in df_valid.columns:
+        df_valid = df_valid[df_valid[reviews_col] >= map_min_review]
+    if only_unvisited and visited_col and visited_col in df_valid.columns:
+        is_visited = df_valid[visited_col].eq(True).fillna(False)
+        df_valid = df_valid[~is_visited]
     # ────────────────────────────────────────────────────────────────────────
 
     matched_month_col = next(
@@ -342,14 +454,19 @@ def render_world_map():
             None
         )
 
-    # Group destinations by Country and compute rating per country
-    country_groups = df_valid.groupby(country_col)
+    # Keep all countries on the map, while downstream destination lists use
+    # only the rows that pass the active filters.
+    country_groups = df_map_source.groupby(country_col)
+    visible_country_groups = dict(tuple(df_valid.groupby(country_col)))
     map_rows = []
     destination_breakdown_rows = []
     country_to_destinations: Dict[str, List[dict]] = {}
 
     for country, group in country_groups:
         country_name = str(country).strip()
+        visible_group = visible_country_groups.get(country)
+        is_filtered_out = visible_group is None or visible_group.empty
+        condition_group = group if is_filtered_out else visible_group
         iso_code = COUNTRY_ISO3_MAP.get(
             country_name.lower(),
             country_name.upper() if len(country_name) == 3 else None
@@ -359,13 +476,17 @@ def render_world_map():
         dest_info_list: List[dict] = []
         ratings_set = set()
 
-        for _, row in group.iterrows():
+        for _, row in condition_group.iterrows():
             dest_name = str(row[destination_col]).strip()
             raw_rating = row.get(matched_month_col) if matched_month_col else None
             cond = _normalize_condition(raw_rating)
             dest_ratings.append((dest_name, cond))
             ratings_set.add(cond)
 
+        for _, row in (visible_group if visible_group is not None else group.iloc[0:0]).iterrows():
+            dest_name = str(row[destination_col]).strip()
+            raw_rating = row.get(matched_month_col) if matched_month_col else None
+            cond = _normalize_condition(raw_rating)
             dest_entry = {
                 "Destination": dest_name,
                 "Country": country_name,
@@ -401,12 +522,16 @@ def render_world_map():
             dest_summary = "<br>".join(formatted_bullets[:5]) + f"<br>• +{len(formatted_bullets) - 5} more..."
 
         if iso_code:
+            map_condition = f"{overall_condition} (filtered)" if is_filtered_out else overall_condition
+            visible_count = 0 if is_filtered_out else len(visible_group)
+            visible_summary = "Hidden by active filters" if is_filtered_out else dest_summary
             map_rows.append({
                 "Country": country_name,
                 "ISO3": iso_code,
                 "Condition": overall_condition,
-                "Destinations_Count": len(group),
-                "Destinations_Summary": dest_summary,
+                "MapCondition": map_condition,
+                "Destinations_Count": visible_count,
+                "Destinations_Summary": visible_summary,
                 "SelectedMonth": selected_month,
             })
 
@@ -436,9 +561,15 @@ def render_world_map():
             df_map,
             locations="ISO3",
             locationmode="ISO-3",
-            color="Condition",
-            color_discrete_map=COLOR_PALETTE,
-            category_orders={"Condition": ["Ideal", "Ok", "Bad", "Unknown"]},
+            color="MapCondition",
+            color_discrete_map={**COLOR_PALETTE, **FILTERED_COLOR_PALETTE},
+            category_orders={
+                "MapCondition": [
+                    "Ideal", "Ok", "Bad", "Unknown",
+                    "Ideal (filtered)", "Ok (filtered)",
+                    "Bad (filtered)", "Unknown (filtered)",
+                ]
+            },
             hover_name="Country",
             custom_data=["Country", "Condition", "Destinations_Count", "Destinations_Summary", "SelectedMonth"],
             title=f"Travel Conditions for {selected_month} — Click any country on the map to display its cities"
@@ -485,7 +616,7 @@ def render_world_map():
 
         map_event = st.plotly_chart(
             fig,
-            use_container_width=True,
+            width="stretch",
             on_select="rerun",
             selection_mode="points",
             key="world_map_plotly"
@@ -526,7 +657,10 @@ def render_world_map():
                 st.rerun()
 
         # Display city cards for the active country
-        country_dests = country_to_destinations.get(current_active_country, [])
+        country_dests = sorted(
+            country_to_destinations.get(current_active_country, []),
+            key=lambda item: item["Destination"].casefold(),
+        )
         if country_dests:
             card_cols = st.columns(min(3, max(1, len(country_dests))))
             for idx, dest_info in enumerate(country_dests):
@@ -552,7 +686,7 @@ def render_world_map():
                         if st.button(
                             f"View {city_name} Details ➔",
                             key=f"btn_city_{current_active_country}_{city_name}_{idx}",
-                            use_container_width=True,
+                            width="stretch",
                             type="secondary"
                         ):
                             _navigate_to_destination(city_name)
@@ -600,5 +734,5 @@ def render_world_map():
                 
                 button_label = f"{badge} {c_name} — {d_name} ({cond})"
                 with dest_columns[idx % 3]:
-                    if st.button(button_label, key=f"global_dest_nav_{d_name}_{idx}", use_container_width=True):
+                    if st.button(button_label, key=f"global_dest_nav_{d_name}_{idx}", width="stretch"):
                         _navigate_to_destination(d_name)

@@ -1,0 +1,162 @@
+[
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\1.jpg",
+    "photographer_name": "Joel Duncan",
+    "photographer_url": "https://unsplash.com/@joelduncan",
+    "photo_url": "https://unsplash.com/photos/city-buildings-during-sunset-Iqa-WlbNjqs",
+    "alt": "city buildings during sunset",
+    "thumb_url": "https://images.unsplash.com/photo-1512250431446-d0b4b57b27ec?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MXx8TWVkZWxsaW4lMkMlMjBDb2xvbWJpYXxlbnwxfDB8fHwxNzg3MjY2MDk4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\2.jpg",
+    "photographer_name": "Juan Saravia",
+    "photographer_url": "https://unsplash.com/@juansaravia",
+    "photo_url": "https://unsplash.com/photos/city-scraper-at-night-time-03gVOLHq9ec",
+    "alt": "city scraper at night time",
+    "thumb_url": "https://images.unsplash.com/photo-1515366974328-f1181eb25189?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8Mnx8TWVkZWxsaW4lMkMlMjBDb2xvbWJpYXxlbnwxfDB8fHwxNzg3MjY2MDk4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\3.jpg",
+    "photographer_name": "Jimmy Woo",
+    "photographer_url": "https://unsplash.com/@woomantsing",
+    "photo_url": "https://unsplash.com/photos/a-view-of-a-city-with-mountains-in-the-background-8fxmxcGNpsE",
+    "alt": "a view of a city with mountains in the background",
+    "thumb_url": "https://images.unsplash.com/photo-1715503234327-b57d32e5da0f?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8M3x8TWVkZWxsaW4lMkMlMjBDb2xvbWJpYXxlbnwxfDB8fHwxNzg3MjY2MDk4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\4.jpg",
+    "photographer_name": "Oneil Williams",
+    "photographer_url": "https://unsplash.com/@massadrenaline",
+    "photo_url": "https://unsplash.com/photos/people-walking-on-street-during-daytime-5052mLpyS4c",
+    "alt": "people walking on street during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1599543359278-76676745f1e9?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8NHx8TWVkZWxsaW4lMkMlMjBDb2xvbWJpYXxlbnwxfDB8fHwxNzg3MjY2MDk4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\5.jpg",
+    "photographer_name": "Mike Swigunski",
+    "photographer_url": "https://unsplash.com/@mike_swigunski",
+    "photo_url": "https://unsplash.com/photos/city-skyline-under-blue-sky-during-daytime-JvZ1paoSnHc",
+    "alt": "city skyline under blue sky during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1590598016835-83cf3357ebc5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8NXx8TWVkZWxsaW4lMkMlMjBDb2xvbWJpYXxlbnwxfDB8fHwxNzg3MjY2MDk4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\6.jpg",
+    "photographer_name": "Juan Nino",
+    "photographer_url": "https://unsplash.com/@juanfernino",
+    "photo_url": "https://unsplash.com/photos/an-aerial-view-of-a-city-with-tall-buildings-PMYCnEgvPK0",
+    "alt": "an aerial view of a city with tall buildings",
+    "thumb_url": "https://images.unsplash.com/photo-1633627425472-d07ac65e2a36?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8Nnx8TWVkZWxsaW4lMkMlMjBDb2xvbWJpYXxlbnwxfDB8fHwxNzg3MjY2MDk4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\7.jpg",
+    "photographer_name": "Néstor Morales",
+    "photographer_url": "https://unsplash.com/@nestormorales",
+    "photo_url": "https://unsplash.com/photos/photo-of-concrete-houses-xC1sZ_aOsZY",
+    "alt": "photo of concrete houses",
+    "thumb_url": "https://images.unsplash.com/photo-1520501247332-6fb052b72414?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8N3x8TWVkZWxsaW4lMkMlMjBDb2xvbWJpYXxlbnwxfDB8fHwxNzg3MjY2MDk4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\8.jpg",
+    "photographer_name": "Carlos Martinez",
+    "photographer_url": "https://unsplash.com/@itscarlosmartinex",
+    "photo_url": "https://unsplash.com/photos/a-bunch-of-buildings-that-are-next-to-each-other-KToQ45xT1JY",
+    "alt": "A bunch of buildings that are next to each other",
+    "thumb_url": "https://images.unsplash.com/photo-1731560818821-a32d0042d6f6?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8OHx8TWVkZWxsaW4lMkMlMjBDb2xvbWJpYXxlbnwxfDB8fHwxNzg3MjY2MDk4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\9.jpg",
+    "photographer_name": "Gustavo Sánchez",
+    "photographer_url": "https://unsplash.com/@gustavo0351",
+    "photo_url": "https://unsplash.com/photos/a-colorful-bag-hanging-from-the-side-of-a-building-mETRnfE3yQw",
+    "alt": "a colorful bag hanging from the side of a building",
+    "thumb_url": "https://images.unsplash.com/photo-1671240434571-a21d691f713b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8OXx8TWVkZWxsaW4lMkMlMjBDb2xvbWJpYXxlbnwxfDB8fHwxNzg3MjY2MDk4fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\10.jpg",
+    "photographer_name": "Iñigo Telleria Perez",
+    "photographer_url": "https://unsplash.com/@wholenewworldphoto",
+    "photo_url": "https://unsplash.com/photos/a-carnival-float-with-a-man-dressed-as-a-lion-EM7GRPjCUdg",
+    "alt": "A carnival float with a man dressed as a lion",
+    "thumb_url": "https://images.unsplash.com/photo-1723551908752-2b16d5b7ab34?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTB8fE1lZGVsbGluJTJDJTIwQ29sb21iaWF8ZW58MXwwfHx8MTc4NzI2NjA5OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\11.jpg",
+    "photographer_name": "Carlos Martinez",
+    "photographer_url": "https://unsplash.com/@itscarlosmartinex",
+    "photo_url": "https://unsplash.com/photos/a-woman-standing-next-to-a-statue-of-a-man-MT5i-r44osE",
+    "alt": "A woman standing next to a statue of a man",
+    "thumb_url": "https://images.unsplash.com/photo-1731560818049-6ec56a02af01?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTF8fE1lZGVsbGluJTJDJTIwQ29sb21iaWF8ZW58MXwwfHx8MTc4NzI2NjA5OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\12.jpg",
+    "photographer_name": "Bryan Bravo",
+    "photographer_url": "https://unsplash.com/@brianbl05",
+    "photo_url": "https://unsplash.com/photos/aerial-view-of-city-buildings-during-daytime-7rlZ1yodrHY",
+    "alt": "aerial view of city buildings during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1593059895687-313072d7a640?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTJ8fE1lZGVsbGluJTJDJTIwQ29sb21iaWF8ZW58MXwwfHx8MTc4NzI2NjA5OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\13.jpg",
+    "photographer_name": "Jack's Flight Club",
+    "photographer_url": "https://unsplash.com/@jacksflightclub",
+    "photo_url": "https://unsplash.com/photos/a-panoramic-view-of-a-city-with-mountains-in-the-background-psQjHZRR46o",
+    "alt": "a panoramic view of a city with mountains in the background",
+    "thumb_url": "https://images.unsplash.com/photo-1709152213008-71edae302aad?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTN8fE1lZGVsbGluJTJDJTIwQ29sb21iaWF8ZW58MXwwfHx8MTc4NzI2NjA5OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\14.jpg",
+    "photographer_name": "Andrés Gómez",
+    "photographer_url": "https://unsplash.com/@andresloquesea",
+    "photo_url": "https://unsplash.com/photos/a-large-rock-sitting-on-top-of-a-lush-green-hillside-pvdESRdy1DE",
+    "alt": "a large rock sitting on top of a lush green hillside",
+    "thumb_url": "https://images.unsplash.com/photo-1634602771420-a6314ff9bfc0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTR8fE1lZGVsbGluJTJDJTIwQ29sb21iaWF8ZW58MXwwfHx8MTc4NzI2NjA5OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\15.jpg",
+    "photographer_name": "Milo Miloezger",
+    "photographer_url": "https://unsplash.com/@miloezger",
+    "photo_url": "https://unsplash.com/photos/blue-house-pNArDGC_aNY",
+    "alt": "blue house",
+    "thumb_url": "https://images.unsplash.com/photo-1524944240950-f674e8790bf0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTV8fE1lZGVsbGluJTJDJTIwQ29sb21iaWF8ZW58MXwwfHx8MTc4NzI2NjA5OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\16.jpg",
+    "photographer_name": "juan daniel guzman zapata",
+    "photographer_url": "https://unsplash.com/@juandaniel",
+    "photo_url": "https://unsplash.com/photos/a-large-building-with-a-cross-on-top-of-it-hV0DE0bAZGY",
+    "alt": "A large building with a cross on top of it",
+    "thumb_url": "https://images.unsplash.com/photo-1736554540635-5d2490036f6c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTZ8fE1lZGVsbGluJTJDJTIwQ29sb21iaWF8ZW58MXwwfHx8MTc4NzI2NjA5OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\17.jpg",
+    "photographer_name": "Jan Brennenstuhl",
+    "photographer_url": "https://unsplash.com/@rucksackrebellen",
+    "photo_url": "https://unsplash.com/photos/a-scenic-view-of-a-valley-and-mountains-x_3-flSAKS0",
+    "alt": "a scenic view of a valley and mountains",
+    "thumb_url": "https://images.unsplash.com/photo-1640768239887-77479f49a7dc?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTd8fE1lZGVsbGluJTJDJTIwQ29sb21iaWF8ZW58MXwwfHx8MTc4NzI2NjA5OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\18.jpg",
+    "photographer_name": "Jose Figueroa",
+    "photographer_url": "https://unsplash.com/@josefigueroa_mov",
+    "photo_url": "https://unsplash.com/photos/a-view-of-a-city-with-mountains-in-the-background-_zXn5wWkQig",
+    "alt": "a view of a city with mountains in the background",
+    "thumb_url": "https://images.unsplash.com/photo-1697082390865-dbd02b4a74c9?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTh8fE1lZGVsbGluJTJDJTIwQ29sb21iaWF8ZW58MXwwfHx8MTc4NzI2NjA5OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\19.jpg",
+    "photographer_name": "Carlos Martinez",
+    "photographer_url": "https://unsplash.com/@itscarlosmartinex",
+    "photo_url": "https://unsplash.com/photos/a-bunch-of-buildings-that-are-next-to-each-other-RwS3v7csJdc",
+    "alt": "A bunch of buildings that are next to each other",
+    "thumb_url": "https://images.unsplash.com/photo-1731560818517-00c245cec091?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTl8fE1lZGVsbGluJTJDJTIwQ29sb21iaWF8ZW58MXwwfHx8MTc4NzI2NjA5OHww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\medellin\\20.jpg",
+    "photographer_name": "Gustavo Sánchez",
+    "photographer_url": "https://unsplash.com/@gustavo0351",
+    "photo_url": "https://unsplash.com/photos/a-view-of-a-city-with-mountains-in-the-background-_ovhNrKyxfw",
+    "alt": "a view of a city with mountains in the background",
+    "thumb_url": "https://images.unsplash.com/photo-1671240432669-c1bb716237e3?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MjB8fE1lZGVsbGluJTJDJTIwQ29sb21iaWF8ZW58MXwwfHx8MTc4NzI2NjA5OHww&ixlib=rb-4.1.0&q=80&w=200"
+  }
+]

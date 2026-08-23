@@ -11,7 +11,7 @@ Monthly columns added (60 total):
 Usage:
     from write_climate_data import write_monthly, print_progress
 
-    write_monthly("Bogota", {
+    write_monthly("Bogotá", {
         "Jan High (C)": 19, "Feb High (C)": 19, ...
         "Jan Low (C)": 7, ...
         "Jan Rainy Days": 9, ...
@@ -22,7 +22,7 @@ Usage:
 import openpyxl
 from pathlib import Path
 
-WORKBOOK = Path(r"c:\Users\Thors\OneDrive\Documents\Gemini - Travel Planner\Destinations.xlsx")
+WORKBOOK = Path(__file__).resolve().parent / "Destinations.xlsx"
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -46,6 +46,78 @@ MONTHLY_COLS = (
 )
 
 ALL_CLIMATE_COLS = ANNUAL_COLS + MONTHLY_COLS
+
+# 2025 monthly aggregates fetched from Open-Meteo for Bogotá (4.7110, -74.0721).
+# High/low are means of daily maxima/minima; rain is monthly precipitation sum;
+# rainy days count days with at least 0.1 mm; AQI is the mean of hourly US AQI.
+BOGOTA_CLIMATE = {
+    "Avg High Temp (°C)": 19.6,
+    "Avg Low Temp (°C)": 9.5,
+    "Avg Rainy Days/Month": 29.1,
+    "Avg Rain (mm/Month)": 128.6,
+    "Avg AQI": 66.5,
+    "Jan High (C)": 21.0, "Feb High (C)": 20.5, "Mar High (C)": 19.8,
+    "Apr High (C)": 20.1, "May High (C)": 18.9, "Jun High (C)": 18.5,
+    "Jul High (C)": 18.1, "Aug High (C)": 19.0, "Sep High (C)": 19.4,
+    "Oct High (C)": 19.4, "Nov High (C)": 20.7, "Dec High (C)": 20.2,
+    "Jan Low (C)": 8.1, "Feb Low (C)": 10.3, "Mar Low (C)": 9.8,
+    "Apr Low (C)": 10.1, "May Low (C)": 10.1, "Jun Low (C)": 9.3,
+    "Jul Low (C)": 9.5, "Aug Low (C)": 8.8, "Sep Low (C)": 8.9,
+    "Oct Low (C)": 9.7, "Nov Low (C)": 10.0, "Dec Low (C)": 9.5,
+    "Jan Rainy Days": 27, "Feb Rainy Days": 28, "Mar Rainy Days": 30,
+    "Apr Rainy Days": 28, "May Rainy Days": 31, "Jun Rainy Days": 29,
+    "Jul Rainy Days": 31, "Aug Rainy Days": 29, "Sep Rainy Days": 28,
+    "Oct Rainy Days": 31, "Nov Rainy Days": 29, "Dec Rainy Days": 28,
+    "Jan Rain (mm)": 92.3, "Feb Rain (mm)": 200.4, "Mar Rain (mm)": 256.6,
+    "Apr Rain (mm)": 223.8, "May Rain (mm)": 127.3, "Jun Rain (mm)": 161.9,
+    "Jul Rain (mm)": 60.4, "Aug Rain (mm)": 64.8, "Sep Rain (mm)": 71.0,
+    "Oct Rain (mm)": 95.4, "Nov Rain (mm)": 124.0, "Dec Rain (mm)": 65.8,
+    "Jan AQI": 70.5, "Feb AQI": 79.2, "Mar AQI": 84.0,
+    "Apr AQI": 69.5, "May AQI": 62.7, "Jun AQI": 54.8,
+    "Jul AQI": 49.9, "Aug AQI": 57.7, "Sep AQI": 61.5,
+    "Oct AQI": 67.0, "Nov AQI": 68.3, "Dec AQI": 73.6,
+}
+
+# Monthly means of hourly US AQI for 2025, fetched from the Open-Meteo
+# historical air-quality endpoint using each city-center coordinate. The
+# endpoint reports CAMS global model/reanalysis estimates outside Europe,
+# rather than direct local monitoring-station observations.
+LAST_SIX_AQI = {
+    "Panama City": [39.5, 45.2, 50.3, 44.0, 43.5, 40.1, 43.8, 43.3, 36.5, 30.5, 33.8, 38.0],
+    "San José": [31.5, 38.0, 46.9, 42.4, 46.3, 46.5, 43.1, 51.4, 50.6, 48.3, 34.9, 38.0],
+    "Yogyakarta": [138.3, 133.9, 147.5, 114.1, 128.8, 133.5, 112.8, 120.0, 119.3, 129.8, 138.9, 131.1],
+    "Bishkek": [72.7, 71.3, 65.1, 55.7, 50.4, 60.7, 62.8, 55.2, 55.4, 60.5, 67.7, 68.7],
+    "Dubai": [89.4, 100.8, 99.1, 113.1, 114.8, 128.5, 149.5, 149.0, 128.2, 110.6, 109.7, 105.5],
+    "Montevideo": [36.7, 42.5, 41.0, 33.9, 38.2, 45.4, 54.3, 42.9, 42.6, 38.4, 41.2, 47.9],
+}
+
+
+def preserved_destination_climate(destination: str) -> dict:
+    """Build writer fields from the preserved six-destination climate script."""
+    from populate_destination_details import CLIMATE_DATA
+
+    climate = CLIMATE_DATA[destination]
+    data = {}
+    for month, high, low, rainy_days, rain, aqi in zip(
+        MONTHS,
+        climate["high"],
+        climate["low"],
+        climate["rainy_days"],
+        climate["rain"],
+        LAST_SIX_AQI[destination],
+    ):
+        data[f"{month} High (C)"] = high
+        data[f"{month} Low (C)"] = low
+        data[f"{month} Rainy Days"] = rainy_days
+        data[f"{month} Rain (mm)"] = rain
+        data[f"{month} AQI"] = aqi
+
+    data["Avg High Temp (°C)"] = round(sum(climate["high"]) / 12, 1)
+    data["Avg Low Temp (°C)"] = round(sum(climate["low"]) / 12, 1)
+    data["Avg Rainy Days/Month"] = round(sum(climate["rainy_days"]) / 12, 1)
+    data["Avg Rain (mm/Month)"] = round(sum(climate["rain"]) / 12, 1)
+    data["Avg AQI"] = round(sum(LAST_SIX_AQI[destination]) / 12, 1)
+    return data
 
 
 def _get_or_create_headers(ws) -> dict:
@@ -183,4 +255,7 @@ def print_progress():
 
 
 if __name__ == "__main__":
+    write_monthly("Bogotá", BOGOTA_CLIMATE, overwrite=True)
+    for destination in LAST_SIX_AQI:
+        write_monthly(destination, preserved_destination_climate(destination), overwrite=True)
     print_progress()

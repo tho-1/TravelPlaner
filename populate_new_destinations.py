@@ -636,7 +636,6 @@ def populate_workbook():
 
             # Write Tourist Reviews summary
             tourist_summary = (
-                f"Reviews generally highlight {dest_name} for its distinctive cultural and scenic attractions. "
                 f"{profile['What do the reviews praise?']} Recurring criticisms mention {profile['What do they dislike?']} "
                 f"This assessment is based on {rev_count} traveler reviews from {date_range}, with {confidence} confidence."
             )

@@ -1,0 +1,182 @@
+[
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\1.jpg",
+    "photo_id": "t-SSPRyqo7c",
+    "photographer_name": "Kevin Perez Camacho",
+    "photographer_url": "https://unsplash.com/@kevviiiiinnn",
+    "photo_url": "https://unsplash.com/photos/a-large-city-with-a-clock-tower-t-SSPRyqo7c",
+    "alt": "a large city with a clock tower",
+    "thumb_url": "https://images.unsplash.com/photo-1670166819528-aadfddc48070?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MXx8S3Jha293JTJDJTIwUG9sYW5kfGVufDF8MHx8fDE3ODczNTMyNjl8MA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\2.jpg",
+    "photo_id": "2lK0291iNHI",
+    "photographer_name": "Tomasz Tomal",
+    "photographer_url": "https://unsplash.com/@tomaltomasz",
+    "photo_url": "https://unsplash.com/photos/a-view-of-a-city-square-with-a-clock-tower-in-the-background-2lK0291iNHI",
+    "alt": "a view of a city square with a clock tower in the background",
+    "thumb_url": "https://images.unsplash.com/photo-1636903364559-0dfc358abd94?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8Mnx8S3Jha293JTJDJTIwUG9sYW5kfGVufDF8MHx8fDE3ODczNTMyNjl8MA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\3.jpg",
+    "photo_id": "i-p1zqFros8",
+    "photographer_name": "Lucas Albuquerque",
+    "photographer_url": "https://unsplash.com/@luucasfotos",
+    "photo_url": "https://unsplash.com/photos/black-horses-i-p1zqFros8",
+    "alt": "black horses",
+    "thumb_url": "https://images.unsplash.com/photo-1522689764216-4e6966e5e444?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8M3x8S3Jha293JTJDJTIwUG9sYW5kfGVufDF8MHx8fDE3ODczNTMyNjl8MA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\4.jpg",
+    "photo_id": "7rCdqEuQ1rg",
+    "photographer_name": "Ostap Senyuk",
+    "photographer_url": "https://unsplash.com/@kintecus",
+    "photo_url": "https://unsplash.com/photos/people-walking-near-beige-building-7rCdqEuQ1rg",
+    "alt": "people walking near beige building",
+    "thumb_url": "https://images.unsplash.com/photo-1495181941197-70a606546974?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8NHx8S3Jha293JTJDJTIwUG9sYW5kfGVufDF8MHx8fDE3ODczNTMyNjl8MA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\5.jpg",
+    "photo_id": "SPpsFbCaN2A",
+    "photographer_name": "Jacek Dylag",
+    "photographer_url": "https://unsplash.com/@dylu",
+    "photo_url": "https://unsplash.com/photos/people-walking-on-street-near-concrete-buildings-SPpsFbCaN2A",
+    "alt": "people walking on street near concrete buildings",
+    "thumb_url": "https://images.unsplash.com/photo-1519922639192-e73293ca430e?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8NXx8S3Jha293JTJDJTIwUG9sYW5kfGVufDF8MHx8fDE3ODczNTMyNjl8MA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\6.jpg",
+    "photo_id": "0fl-WGMuNPA",
+    "photographer_name": "Severinus Dewantara",
+    "photographer_url": "https://unsplash.com/@dwntara",
+    "photo_url": "https://unsplash.com/photos/people-walking-near-canopies-in-front-of-buildings-during-daytime-0fl-WGMuNPA",
+    "alt": "people walking near canopies in front of buildings during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1562050380-55da3bae840c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8Nnx8S3Jha293JTJDJTIwUG9sYW5kfGVufDF8MHx8fDE3ODczNTMyNjl8MA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\7.jpg",
+    "photo_id": "Uuhv9tA9eOI",
+    "photographer_name": "Tomasz Zielonka",
+    "photographer_url": "https://unsplash.com/@tzielonka",
+    "photo_url": "https://unsplash.com/photos/a-city-square-with-a-clock-tower-in-the-background-Uuhv9tA9eOI",
+    "alt": "a city square with a clock tower in the background",
+    "thumb_url": "https://images.unsplash.com/photo-1699791915109-c227726d2457?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8N3x8S3Jha293JTJDJTIwUG9sYW5kfGVufDF8MHx8fDE3ODczNTMyNjl8MA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\8.jpg",
+    "photo_id": "JK09P6ofbWc",
+    "photographer_name": "Gabriella Bortolussi",
+    "photographer_url": "https://unsplash.com/@gabysland",
+    "photo_url": "https://unsplash.com/photos/brown-concrete-building-under-blue-sky-during-daytime-JK09P6ofbWc",
+    "alt": "brown concrete building under blue sky during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1606992894456-799462dacd65?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8OHx8S3Jha293JTJDJTIwUG9sYW5kfGVufDF8MHx8fDE3ODczNTMyNjl8MA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\9.jpg",
+    "photo_id": "pfwIgstLSuE",
+    "photographer_name": "Katarzyna Pracuch",
+    "photographer_url": "https://unsplash.com/@catherinethebrave",
+    "photo_url": "https://unsplash.com/photos/people-riding-horses-on-street-during-daytime-pfwIgstLSuE",
+    "alt": "people riding horses on street during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1605645163392-f845d2a4a869?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8OXx8S3Jha293JTJDJTIwUG9sYW5kfGVufDF8MHx8fDE3ODczNTMyNjl8MA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\10.jpg",
+    "photo_id": "Z_Pzw5tDWok",
+    "photographer_name": "Dawid Łabno",
+    "photographer_url": "https://unsplash.com/@dawlab",
+    "photo_url": "https://unsplash.com/photos/assorted-color-buildings-under-blue-sky-Z_Pzw5tDWok",
+    "alt": "assorted-color buildings under blue sky",
+    "thumb_url": "https://images.unsplash.com/photo-1568749402196-dc116bcfca04?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTB8fEtyYWtvdyUyQyUyMFBvbGFuZHxlbnwxfDB8fHwxNzg3MzUzMjY5fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\11.jpg",
+    "photo_id": "cS2asszFNaA",
+    "photographer_name": "Ghaith Kelani",
+    "photographer_url": "https://unsplash.com/@ghaithkel",
+    "photo_url": "https://unsplash.com/photos/a-person-sitting-on-a-bench-near-a-river-cS2asszFNaA",
+    "alt": "a person sitting on a bench near a river",
+    "thumb_url": "https://images.unsplash.com/photo-1682977199475-392ee765f893?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTF8fEtyYWtvdyUyQyUyMFBvbGFuZHxlbnwxfDB8fHwxNzg3MzUzMjY5fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\12.jpg",
+    "photo_id": "iLr6iT9buiQ",
+    "photographer_name": "Aimable Mugabo",
+    "photographer_url": "https://unsplash.com/@mugabo_library",
+    "photo_url": "https://unsplash.com/photos/a-large-building-with-a-lot-of-birds-around-it-iLr6iT9buiQ",
+    "alt": "a large building with a lot of birds around it",
+    "thumb_url": "https://images.unsplash.com/photo-1707836995984-d7eb71186d09?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTJ8fEtyYWtvdyUyQyUyMFBvbGFuZHxlbnwxfDB8fHwxNzg3MzUzMjY5fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\13.jpg",
+    "photo_id": "FPfB-Rv_n78",
+    "photographer_name": "Jakub Tomasik",
+    "photographer_url": "https://unsplash.com/@jakubeq",
+    "photo_url": "https://unsplash.com/photos/a-lake-with-boats-in-it-and-a-city-in-the-background-FPfB-Rv_n78",
+    "alt": "A lake with boats in it and a city in the background",
+    "thumb_url": "https://images.unsplash.com/photo-1719696663492-14e81360c233?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTN8fEtyYWtvdyUyQyUyMFBvbGFuZHxlbnwxfDB8fHwxNzg3MzUzMjY5fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\14.jpg",
+    "photo_id": "UEyMyehRrbw",
+    "photographer_name": "Nomadic Julien",
+    "photographer_url": "https://unsplash.com/@nomadicjulien",
+    "photo_url": "https://unsplash.com/photos/orange-and-gray-church-UEyMyehRrbw",
+    "alt": "orange and gray church",
+    "thumb_url": "https://images.unsplash.com/photo-1562766077-4cd48771b57c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTR8fEtyYWtvdyUyQyUyMFBvbGFuZHxlbnwxfDB8fHwxNzg3MzUzMjY5fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\15.jpg",
+    "photo_id": "sGCMt0tjkBU",
+    "photographer_name": "Ben Kupke",
+    "photographer_url": "https://unsplash.com/@benkupke",
+    "photo_url": "https://unsplash.com/photos/a-red-and-white-flag-on-top-of-a-building-sGCMt0tjkBU",
+    "alt": "a red and white flag on top of a building",
+    "thumb_url": "https://images.unsplash.com/photo-1704644068776-863fb9768d4b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTV8fEtyYWtvdyUyQyUyMFBvbGFuZHxlbnwxfDB8fHwxNzg3MzUzMjY5fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\16.jpg",
+    "photo_id": "9SGn2XLIei0",
+    "photographer_name": "Maksym Harbar",
+    "photographer_url": "https://unsplash.com/@maksym_harbar",
+    "photo_url": "https://unsplash.com/photos/a-large-building-with-a-clock-tower-on-top-of-it-9SGn2XLIei0",
+    "alt": "a large building with a clock tower on top of it",
+    "thumb_url": "https://images.unsplash.com/photo-1642370279517-4d67c5f25697?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTZ8fEtyYWtvdyUyQyUyMFBvbGFuZHxlbnwxfDB8fHwxNzg3MzUzMjY5fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\17.jpg",
+    "photo_id": "j8brOr_ZZoM",
+    "photographer_name": "Grafi Jeremiah",
+    "photographer_url": "https://unsplash.com/@_jeremiah85_",
+    "photo_url": "https://unsplash.com/photos/brown-concrete-building-under-white-clouds-during-daytime-j8brOr_ZZoM",
+    "alt": "brown concrete building under white clouds during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1597235596383-cc7dc74406f9?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTd8fEtyYWtvdyUyQyUyMFBvbGFuZHxlbnwxfDB8fHwxNzg3MzUzMjY5fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\18.jpg",
+    "photo_id": "j8O9keEhpxE",
+    "photographer_name": "Piotr Rutkowski",
+    "photographer_url": "https://unsplash.com/@detektywkangaroo",
+    "photo_url": "https://unsplash.com/photos/people-walking-on-street-near-brown-concrete-building-during-daytime-j8O9keEhpxE",
+    "alt": "people walking on street near brown concrete building during daytime",
+    "thumb_url": "https://images.unsplash.com/photo-1583963149883-fb0cccca4bd7?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTh8fEtyYWtvdyUyQyUyMFBvbGFuZHxlbnwxfDB8fHwxNzg3MzUzMjY5fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\19.jpg",
+    "photo_id": "Z5uB5oCVuRY",
+    "photographer_name": "Sylwia Bartyzel",
+    "photographer_url": "https://unsplash.com/@sylwiabartyzel",
+    "photo_url": "https://unsplash.com/photos/a-group-of-people-sitting-on-top-of-a-wooden-bench-Z5uB5oCVuRY",
+    "alt": "a group of people sitting on top of a wooden bench",
+    "thumb_url": "https://images.unsplash.com/photo-1654631030173-fb34230617b0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MTl8fEtyYWtvdyUyQyUyMFBvbGFuZHxlbnwxfDB8fHwxNzg3MzUzMjY5fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\krakow\\20.jpg",
+    "photo_id": "j1dudw2u71k",
+    "photographer_name": "Martti Salmi",
+    "photographer_url": "https://unsplash.com/@marttisalmi",
+    "photo_url": "https://unsplash.com/photos/a-large-building-with-a-clock-tower-on-top-of-it-j1dudw2u71k",
+    "alt": "a large building with a clock tower on top of it",
+    "thumb_url": "https://images.unsplash.com/photo-1679254327448-de1afe354b68?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MjB8fEtyYWtvdyUyQyUyMFBvbGFuZHxlbnwxfDB8fHwxNzg3MzUzMjY5fDA&ixlib=rb-4.1.0&q=80&w=200"
+  }
+]

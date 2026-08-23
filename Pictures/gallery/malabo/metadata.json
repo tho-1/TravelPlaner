@@ -1,0 +1,20 @@
+[
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\malabo\\1.jpg",
+    "photo_id": "O5EMzfdxedg",
+    "photographer_name": "Santi Vedrí",
+    "photographer_url": "https://unsplash.com/@santivedri",
+    "photo_url": "https://unsplash.com/photos/boy-writing-on-printer-paper-near-girl-O5EMzfdxedg",
+    "alt": "boy writing on printer paper near girl",
+    "thumb_url": "https://images.unsplash.com/photo-1529390079861-591de354faf5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MXx8TWFsYWJvJTJDJTIwRXF1YXRvcmlhbCUyMEd1aW5lYXxlbnwxfDB8fHwxNzg3NDg4NTM3fDA&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\VS Code - Travel planner\\Pictures\\gallery\\malabo\\2.jpg",
+    "photo_id": "p6r6Ea0N2_Q",
+    "photographer_name": "Santi Vedrí",
+    "photographer_url": "https://unsplash.com/@santivedri",
+    "photo_url": "https://unsplash.com/photos/boy-holding-his-chin-standing-on-grass-field-p6r6Ea0N2_Q",
+    "alt": "boy holding his chin standing on grass field",
+    "thumb_url": "https://images.unsplash.com/photo-1508431640151-f2217ef26c31?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8Mnx8TWFsYWJvJTJDJTIwRXF1YXRvcmlhbCUyMEd1aW5lYXxlbnwxfDB8fHwxNzg3NDg4NTM3fDA&ixlib=rb-4.1.0&q=80&w=200"
+  }
+]

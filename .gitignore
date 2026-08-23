@@ -17,3 +17,12 @@ ENV/
 scratch/
 check_rows.py
 inspect_workbook.py
+tmp_inspect_destinations.py
+
+# Backup workbooks (never commit)
+Destinations.before-*.xlsx
+
+# API credentials (never commit secrets)
+unsplash_secrets.py
+deepseek_secrets.py
+.streamlit/secrets.toml

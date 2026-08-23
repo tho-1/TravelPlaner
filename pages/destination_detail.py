@@ -1,12 +1,62 @@
 import base64
 import html
 import io
+import re
+import unicodedata
+from pathlib import Path
+
 from PIL import Image
 
 import pandas as pd
 import streamlit as st
 
-from data_utils import DATA_PATH, load_destinations, update_favorite_status, update_prio_thorsten
+from data_utils import (
+    DATA_PATH,
+    WorkbookLockedError,
+    load_destinations,
+    update_comment,
+    update_favorite_status,
+    update_prio_thorsten,
+    update_food,
+    update_visited_status,
+)
+from deepseek_client import generate_food_profile
+from deepseek_populator import populate_existing_destination_with_ai
+from unsplash_gallery import (
+    build_destination_gallery,
+    get_access_key,
+    refresh_single_gallery_image,
+)
+
+
+def _normalize_picture_key(value: object) -> str:
+    """Normalize a destination or file name for picture matching.
+
+    Lowercases, strips accents (San José -> sanjose, Ürümqi -> urumqi), and
+    removes all non-alphanumeric characters so spacing/case differences still
+    match (e.g. "Mexico city" vs "MexicoCity", "Panama City" vs "PanamaCity").
+    Parenthetical disambiguators are dropped first so "San José (Costa Rica)"
+    still matches "San José_1.jpg".
+    """
+    if value is None:
+        return ""
+    text = str(value)
+    text = re.sub(r"\([^)]*\)", "", text)
+    text = unicodedata.normalize("NFKD", text)
+    text = text.encode("ascii", "ignore").decode("ascii")
+    text = re.sub(r"[^a-z0-9]+", "", text.lower())
+    return text
+
+
+def _country_text(selected_row: pd.Series, metadata: dict) -> str:
+    """Return the destination's country as a clean string, or ``""`` if missing."""
+    country_col = metadata.get("country_col")
+    if not country_col or country_col not in selected_row.index:
+        return ""
+    raw_country = selected_row[country_col]
+    if pd.isna(raw_country) or not str(raw_country).strip():
+        return ""
+    return str(raw_country).strip()
 
 
 def _interpolate_color(start_hex: str, end_hex: str, ratio: float) -> str:
@@ -99,6 +149,164 @@ def _format_metric_box(label: str, value: object, suffix: str, mode: str) -> str
     """
 
 
+def _render_comment_toggle(destination_name: str, comment_value: str) -> None:
+    """Render the 'Add comment' button next to the favorites button.
+
+    Shown only when there is no saved comment yet. Editing an existing comment
+    happens via the "✏️ Edit comment" button that appears next to the comment
+    itself (see ``_render_comment_editor``).
+    """
+    if str(comment_value or "").strip():
+        return
+
+    if st.button("💬 Add comment", key=f"comment_add_{destination_name}", help="Add a comment"):
+        open_key = f"comment_editor_open_{destination_name}"
+        input_key = f"comment_input_{destination_name}"
+        st.session_state[open_key] = True
+        st.session_state[input_key] = comment_value
+
+
+def _render_comment_editor(destination_name: str, comment_value: str) -> None:
+    """Render the comment section (shown right before the Overview).
+
+    - Editor closed + a comment exists  -> show the saved comment as read-only
+      text, so an existing comment is visible when the page opens.
+    - Editor open                       -> show the editable box + Save/Cancel.
+    - Editor closed + no comment        -> nothing (only the "Add comment"
+      button next to the favorites is shown).
+
+    The editable box uses a ``st.form`` so the text area's value is reliably
+    captured when the user submits — either by clicking "💾 Save Comment" or by
+    pressing Ctrl+Enter. (A plain, session-state-controlled text_area does NOT
+    commit typed text before a separate Save button reads it, which made
+    comments "disappear".)
+    """
+    open_key = f"comment_editor_open_{destination_name}"
+    input_key = f"comment_input_{destination_name}"
+    if not st.session_state.get(open_key, False):
+        # Editor closed: display the saved comment as read-only text, if any,
+        # with an "Edit comment" button right next to it.
+        comment_text_value = str(comment_value or "").strip()
+        if comment_text_value:
+            display_col, edit_col = st.columns([7, 2])
+            with display_col:
+                st.markdown(
+                    f"""
+                    <div style="padding:10px 14px; border-radius:10px; background:#f8f9fb;
+                                border-left:4px solid #cfe0f4; margin-bottom:6px;">
+                        <div style="font-size:0.8rem; color:#4a5568; margin-bottom:4px;">💬 Comment</div>
+                        <div style="color:#111827; white-space:pre-wrap;">{html.escape(comment_text_value)}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            with edit_col:
+                if st.button("✏️ Edit comment", key=f"comment_pen_{destination_name}", help="Edit comment"):
+                    st.session_state[open_key] = True
+                    st.session_state[input_key] = comment_value
+                    st.rerun()
+        return
+
+    cancel_key = f"comment_cancel_{destination_name}"
+    lock_key = f"comment_locked_{destination_name}"
+
+    if input_key not in st.session_state:
+        st.session_state[input_key] = comment_value
+
+    with st.form(f"comment_form_{destination_name}", border=False, clear_on_submit=False):
+        st.text_area(
+            "Comment",
+            key=input_key,
+            placeholder="Write a comment...",
+            height=90,
+        )
+        submitted = st.form_submit_button("💾 Save Comment", type="primary")
+
+    # Cancel must live outside the form (st.button is not allowed inside a form).
+    if st.button("Cancel", key=cancel_key):
+        st.session_state[open_key] = False
+        st.session_state.pop(input_key, None)
+        st.rerun()
+
+    def _save(value: str) -> bool:
+        try:
+            update_comment(destination_name, value)
+        except WorkbookLockedError:
+            st.session_state[lock_key] = True
+            return False
+        st.session_state.pop(lock_key, None)
+        st.session_state[open_key] = False
+        st.session_state.pop(input_key, None)
+        return True
+
+    if submitted:
+        if _save(st.session_state.get(input_key, "")):
+            st.success("Comment saved.")
+            st.rerun()
+
+    if st.session_state.get(lock_key):
+        st.error(
+            "**Destinations.xlsx is currently open in another program** (e.g. Excel). "
+            "Please close the file and press **Retry**."
+        )
+        if st.button("Retry", key=f"comment_retry_{destination_name}"):
+            if _save(st.session_state.get(input_key, "")):
+                st.rerun()
+
+
+def _render_food_section(
+    destination_name: str,
+    dest_title: str,
+    selected_row: pd.Series,
+    metadata: dict,
+    food_spiciness: object,
+    food_description: object,
+) -> None:
+    st.subheader("Food")
+    spice_text = f"{float(food_spiciness):g}/10" if pd.notna(food_spiciness) else "—"
+    description_text = (
+        html.escape(str(food_description).strip())
+        if pd.notna(food_description) and str(food_description).strip()
+        else "—"
+    )
+    st.markdown(
+        f"""
+        <div style="display:flex; gap:2rem; align-items:flex-start; width:100%;">
+            <div style="flex:0 0 max-content;">
+                <strong>Spiciness</strong><br>{html.escape(spice_text)}
+            </div>
+            <div style="flex:1 1 auto; min-width:0;">
+                <strong>Description</strong><br>{description_text}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    food_is_populated = (
+        pd.notna(food_spiciness)
+        or (pd.notna(food_description) and bool(str(food_description).strip()))
+    )
+    if food_is_populated:
+        return
+
+    if st.button("🍜 Populate Food with DeepSeek AI", key=f"food_ai_{destination_name}"):
+        try:
+            with st.spinner("Asking DeepSeek about the local food..."):
+                food_profile = generate_food_profile(
+                    dest_title, _country_text(selected_row, metadata)
+                )
+            update_food(
+                destination_name,
+                food_profile["spiciness"],
+                food_profile["description"],
+            )
+            st.success("Food information saved.")
+            st.rerun()
+        except (RuntimeError, WorkbookLockedError) as exc:
+            st.error(str(exc))
+
+
 def render_destination(destination_name: str):
     df, metadata = load_destinations(DATA_PATH)
 
@@ -109,6 +317,7 @@ def render_destination(destination_name: str):
     destination_col = metadata["destination_col"]
     eu_col = metadata["eu_col"]
     nearer_col = metadata["nearer_col"]
+    visited_col = metadata.get("visited_col")
     safety_col = metadata["safety_col"]
     cost_col = metadata["cost_col"]
     flight_col = metadata["flight_col"]
@@ -121,6 +330,11 @@ def render_destination(destination_name: str):
     why_col = metadata.get("why_col")
     expect_col = metadata.get("expect_col")
     tourist_reviews_col = metadata.get("tourist_reviews_col")
+    malaria_risk_col = metadata.get("malaria_risk_col")
+    food_spiciness_col = metadata.get("food_spiciness_col")
+    food_description_col = metadata.get("food_description_col")
+    status_col = metadata.get("status_col")
+    comment_col = metadata.get("comment_col")
     month_columns = metadata["month_columns"]
 
     matches = df[df[destination_col].astype(str).str.strip().str.lower() == str(destination_name).strip().lower()]
@@ -131,20 +345,124 @@ def render_destination(destination_name: str):
     selected_row = matches.iloc[0]
     dest_title = str(selected_row[destination_col])
 
-    # Check for destination picture in Pictures directory
+    # Load the saved comment (used by the header toggle and the comment editor).
+    comment_value = ""
+    if comment_col and comment_col in selected_row.index:
+        comment_raw = selected_row[comment_col]
+        if pd.notna(comment_raw) and str(comment_raw).strip():
+            comment_value = str(comment_raw).strip()
+
+    if status_col and status_col in selected_row.index:
+        raw_status = selected_row[status_col]
+        is_status_missing = (
+            pd.isna(raw_status)
+            or str(raw_status).strip() == ""
+            or str(raw_status).strip().lower() in {"nan", "none", "null"}
+        )
+        if not is_status_missing:
+            status_text = str(raw_status).strip()
+            st.warning(
+                f"{status_text}. The details below are incomplete until this destination is researched."
+            )
+
+            ai_lock_key = f"ai_populate_locked_{destination_name}"
+
+            def _run_ai_populate():
+                country = _country_text(selected_row, metadata)
+                continent_raw = None
+                continent_col = metadata.get("continent_col")
+                if continent_col and continent_col in selected_row.index:
+                    continent_raw = selected_row[continent_col]
+                continent = (
+                    str(continent_raw).strip()
+                    if pd.notna(continent_raw) and str(continent_raw).strip()
+                    else "Unknown"
+                )
+                try:
+                    with st.spinner("Calling the DeepSeek API to populate this destination..."):
+                        success, msg = populate_existing_destination_with_ai(
+                            destination_name, country, continent
+                        )
+                except WorkbookLockedError:
+                    st.session_state[ai_lock_key] = True
+                    return
+                except Exception as exc:
+                    st.error(f"Could not populate the destination: {exc}")
+                    return
+                st.session_state.pop(ai_lock_key, None)
+                if success:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+
+            if st.button(
+                "✨ Populate with DeepSeek AI",
+                key=f"ai_populate_{destination_name}",
+                type="primary",
+                help=(
+                    "Fills in the missing details, reviews, and monthly climate for "
+                    "this destination using the DeepSeek API."
+                ),
+            ):
+                _run_ai_populate()
+
+            if st.session_state.get(ai_lock_key):
+                st.error(
+                    "**Destinations.xlsx is currently open in another program** (e.g. Excel). "
+                    "Please close the file and press **Retry**."
+                )
+                if st.button(
+                    "Retry", key=f"ai_populate_retry_{destination_name}", type="primary"
+                ):
+                    _run_ai_populate()
+
+    # Check for destination picture in Pictures directory (e.g. Medellin_1.jpg).
+    # Matching is accent/case/spacing-insensitive so "Mexico city" picks up
+    # "MexicoCity_1.jpg", "San José (Costa Rica)" picks up "San José_1.jpg", etc.
     pictures_dir = DATA_PATH.parent / "Pictures"
     image_path = None
     if pictures_dir.exists():
-        # Look for <Destination>_1.jpg, <Destination>_1.jpeg, <Destination>_1.png (case-insensitive)
-        candidates = [
-            f"{dest_title}_1.jpg", f"{dest_title}_1.jpeg", f"{dest_title}_1.png",
-            f"{destination_name}_1.jpg", f"{destination_name}_1.jpeg", f"{destination_name}_1.png",
+        candidate_bases = {
+            _normalize_picture_key(dest_title),
+            _normalize_picture_key(destination_name),
+        }
+
+        def _picture_rank(path: Path) -> int:
+            """Rank candidate banner photos (lower = preferred).
+
+            Prefer .jpg/.jpeg over .png/other formats so the pick is
+            deterministic when a destination has several matching files
+            (e.g. both Yogyakarta_1.jpg and Yogyakarta_1.png exist).
+            """
+            ext = path.suffix.lower()
+            if ext in {".jpg", ".jpeg"}:
+                return 0
+            if ext == ".png":
+                return 1
+            return 2
+
+        existing_files = {f.name: f for f in pictures_dir.iterdir() if f.is_file()}
+        matches = [
+            path for name, path in existing_files.items()
+            if any(
+                _normalize_picture_key(Path(name).stem) in {base, base + "1"}
+                for base in candidate_bases
+            )
         ]
-        existing_files = {f.name.lower(): f for f in pictures_dir.iterdir() if f.is_file()}
-        for cand in candidates:
-            if cand.lower() in existing_files:
-                image_path = existing_files[cand.lower()]
-                break
+        if matches:
+            image_path = min(matches, key=_picture_rank)
+
+    if image_path is None:
+        # No local picture: fall back to the first image from the Unsplash
+        # gallery at the bottom of the page (cache is reused, no extra API call).
+        gallery_entries = build_destination_gallery(
+            dest_title, country=_country_text(selected_row, metadata), pictures_dir=pictures_dir
+        )
+        if gallery_entries:
+            first_path = gallery_entries[0].get("image_path")
+            if first_path and Path(first_path).exists():
+                image_path = Path(first_path)
 
     if image_path:
         # Load and encode image as base64 for full-width CSS banner container
@@ -205,7 +523,7 @@ def render_destination(destination_name: str):
         else:
             st.title(dest_title)
 
-        close_col, fav_col, _ = st.columns([1, 1.5, 6])
+        close_col, fav_col, visited_col_btn, comment_col_btn, _ = st.columns([1, 1.5, 1.5, 1.5, 4.5])
         with close_col:
             if st.button("✖ Close tab", key=f"close_{destination_name}"):
                 open_destinations = st.session_state.get("open_destinations", [])
@@ -229,9 +547,22 @@ def render_destination(destination_name: str):
             if st.button(fav_label, key=f"fav_{destination_name}"):
                 update_favorite_status(destination_name, add=not is_favorite)
                 st.rerun()
+
+        with visited_col_btn:
+            visited_value = selected_row.get(visited_col) if visited_col else None
+            is_visited = pd.notna(visited_value) and str(visited_value).strip().lower() in {
+                "true", "yes", "y", "1", "ja", "j", "x"
+            }
+            visited_label = "Mark as not visited" if is_visited else "Mark as visited"
+            if st.button(visited_label, key=f"visited_{destination_name}"):
+                update_visited_status(destination_name, visited=not is_visited)
+                st.rerun()
+
+        with comment_col_btn:
+            _render_comment_toggle(destination_name, comment_value)
     else:
         st.title(dest_title)
-        close_col, fav_col, _ = st.columns([1, 1.5, 6])
+        close_col, fav_col, visited_col_btn, comment_col_btn, _ = st.columns([1, 1.5, 1.5, 1.5, 4.5])
         with close_col:
             if st.button("✖ Close tab", key=f"close_{destination_name}"):
                 open_destinations = st.session_state.get("open_destinations", [])
@@ -255,6 +586,72 @@ def render_destination(destination_name: str):
             if st.button(fav_label, key=f"fav_{destination_name}"):
                 update_favorite_status(destination_name, add=not is_favorite)
                 st.rerun()
+
+        with visited_col_btn:
+            visited_value = selected_row.get(visited_col) if visited_col else None
+            is_visited = pd.notna(visited_value) and str(visited_value).strip().lower() in {
+                "true", "yes", "y", "1", "ja", "j", "x"
+            }
+            visited_label = "Mark as not visited" if is_visited else "Mark as visited"
+            if st.button(visited_label, key=f"visited_{destination_name}"):
+                update_visited_status(destination_name, visited=not is_visited)
+                st.rerun()
+
+        with comment_col_btn:
+            _render_comment_toggle(destination_name, comment_value)
+
+    # Small icon-button styling for the "✏️ Edit Prio Thorsten" button so the
+    # pen is centered and the default bordered box is removed (matches the
+    # gallery's 🔄 replace buttons). A MutationObserver re-tags on every rerun.
+    st.html(
+        """
+        <style>
+            button.prio-edit-btn {
+                padding: 0 !important;
+                min-height: 0 !important;
+                min-width: 24px !important;
+                height: 2em !important;
+                width: 100% !important;
+                border: none !important;
+                background: transparent !important;
+                box-shadow: none !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                line-height: 1 !important;
+                cursor: pointer !important;
+            }
+            button.prio-edit-btn p {
+                margin: 0 !important;
+                padding: 0 !important;
+                line-height: 1 !important;
+                font-size: 1.1rem !important;
+            }
+            button.prio-edit-btn:hover {
+                background: rgba(0,0,0,0.06) !important;
+                border-radius: 6px !important;
+            }
+        </style>
+        <script>
+            (function() {
+                function tagPrioEditButtons() {
+                    document.querySelectorAll('button').forEach(function(btn) {
+                        var text = (btn.textContent || '').trim();
+                        if (text === '✏️') {
+                            btn.classList.add('prio-edit-btn');
+                        }
+                    });
+                }
+                tagPrioEditButtons();
+                var observer = new MutationObserver(function() {
+                    tagPrioEditButtons();
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+            })();
+        </script>
+        """,
+        unsafe_allow_javascript=True,
+    )
 
     metrics = []
     if reviews_col:
@@ -309,6 +706,11 @@ def render_destination(destination_name: str):
             else:
                 st.markdown(_format_metric_box(column, value, suffix, mode), unsafe_allow_html=True)
 
+    # ── Comment (editable, written back to the workbook) ──────────────────────
+    # Hidden by default. The box + Save button only appear when the
+    # "Add comment" / pen button next to the favorites button is clicked.
+    _render_comment_editor(destination_name, comment_value)
+
     st.subheader("Overview")
     overview_texts = []
     if intro_col and intro_col in selected_row.index and pd.notna(selected_row[intro_col]):
@@ -324,27 +726,70 @@ def render_destination(destination_name: str):
         overview_texts.append(("What do the reviews praise?", str(selected_row["What do the reviews praise?"]).strip()))
     if selected_row.get("What do they dislike?") is not None and pd.notna(selected_row["What do they dislike?"]):
         overview_texts.append(("What do they dislike?", str(selected_row["What do they dislike?"]).strip()))
-    if visa_requirement_col and visa_requirement_col in selected_row.index and pd.notna(selected_row[visa_requirement_col]):
-        overview_texts.append(("Visa Requirement", str(selected_row[visa_requirement_col]).strip()))
+
+    food_spiciness = selected_row.get(food_spiciness_col) if food_spiciness_col else None
+    food_description = selected_row.get(food_description_col) if food_description_col else None
+    visa_value = selected_row.get(visa_requirement_col) if visa_requirement_col else None
+    malaria_value = selected_row.get(malaria_risk_col) if malaria_risk_col else None
 
     if overview_texts:
         for label, value in overview_texts:
-            st.markdown(f"**{label}:**")
-            st.write(value)
+            if label == "Introduction Sentence":
+                st.write(value)
+                continue
+            if label == "Tourist Reviews":
+                st.subheader(label)
+                st.write(value)
+                continue
+            st.markdown(
+                f"**{label}**<br>{html.escape(str(value))}",
+                unsafe_allow_html=True,
+            )
     else:
         st.write("No overview text was found in the workbook.")
 
     if highlights_col and pd.notna(selected_row[highlights_col]):
         highlights_text = str(selected_row[highlights_col]).strip()
         if highlights_text:
-            st.markdown("**Highlights:**")
-            st.write(highlights_text)
+            st.markdown(
+                f"**Highlights**<br>{html.escape(highlights_text)}",
+                unsafe_allow_html=True,
+            )
         else:
             st.write("No highlight notes were found in the workbook.")
     else:
         st.write("No highlight notes were found in the workbook.")
 
+    st.subheader("Logistics")
+    logistics_col1, logistics_col2 = st.columns(2)
+    with logistics_col1:
+        if pd.notna(visa_value) and str(visa_value).strip():
+            st.markdown(
+                f"**Visa Requirement**<br>{html.escape(str(visa_value).strip())}",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown("**Visa Requirement**<br>—", unsafe_allow_html=True)
+    with logistics_col2:
+        if pd.notna(malaria_value) and str(malaria_value).strip():
+            malaria_text = html.escape(str(malaria_value).strip())
+            if str(malaria_value).strip().lower().startswith("yes"):
+                malaria_text = f"<span style='color:#e74c3c; font-weight:700;'>{malaria_text}</span>"
+            st.markdown(f"**Malaria risk?**<br>{malaria_text}", unsafe_allow_html=True)
+        else:
+            st.markdown("**Malaria risk?**<br>—", unsafe_allow_html=True)
+
+    _render_food_section(
+        destination_name,
+        dest_title,
+        selected_row,
+        metadata,
+        food_spiciness,
+        food_description,
+    )
+
     if month_columns:
+        st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
         st.subheader("Best months")
         month_labels = [col for col in month_columns if col in df.columns]
         if month_labels:
@@ -370,11 +815,134 @@ def render_destination(destination_name: str):
             st.markdown("".join(html_parts), unsafe_allow_html=True)
 
         if "Avoid Going There" in df.columns and pd.notna(selected_row["Avoid Going There"]):
-            st.markdown("**Avoid Going There:**")
-            st.write(str(selected_row["Avoid Going There"]).strip())
+            avoid_text = html.escape(str(selected_row["Avoid Going There"]).strip())
+            st.markdown(
+                f"<div style='margin-top:12px;'><strong>Avoid Going There</strong><br>{avoid_text}</div>",
+                unsafe_allow_html=True,
+            )
 
     # ── Climate Dashboard ───────────────────────────────────────────────────
     render_climate_dashboard(str(selected_row[destination_col]).strip(), selected_row, df)
+
+    # ── Destination Gallery (Unsplash) ──────────────────────────────────────
+    render_destination_gallery(dest_title, selected_row, metadata)
+
+
+def render_destination_gallery(dest_title: str, selected_row: pd.Series, metadata: dict):
+    """Render cached Unsplash photos at the bottom of the detail page.
+
+    Images are fetched once (search ``"<destination>, <country>"``, landscape,
+    ``urls.regular``) and persisted to ``Pictures/gallery/<slug>/`` so reopening
+    a destination triggers no new API calls. Each image has its own **🔄 Replace**
+    button so you can swap out just the ones you don't like without re-fetching
+    the whole gallery. Photos are laid out in a responsive grid (4 per row).
+    """
+    pictures_dir = DATA_PATH.parent / "Pictures"
+
+    st.divider()
+    st.subheader("📷 Gallery")
+    st.caption("Photos from Unsplash. Use 🔄 Replace to swap an individual photo for a fresh one.")
+
+    # Inject CSS + JS to shrink the 🔄 replace buttons down to just the emoji
+    # size (no padding, no border, transparent background). The JS finds
+    # buttons whose text content is exactly "🔄" and tags them with a class;
+    # a MutationObserver re-tags them on every Streamlit rerun.
+    st.html(
+        """
+        <style>
+            button.gallery-replace-btn {
+                padding: 0 !important;
+                min-height: 0 !important;
+                height: 1.5em !important;
+                width: 1.5em !important;
+                border: none !important;
+                background: transparent !important;
+                box-shadow: none !important;
+                line-height: 1 !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+            }
+            button.gallery-replace-btn > div {
+                padding: 0 !important;
+                margin: 0 !important;
+                gap: 0 !important;
+            }
+            button.gallery-replace-btn p {
+                margin: 0 !important;
+                padding: 0 !important;
+                line-height: 1 !important;
+                font-size: 1.1rem !important;
+            }
+            button.gallery-replace-btn:hover {
+                background: rgba(0,0,0,0.06) !important;
+                border-radius: 4px !important;
+            }
+        </style>
+        <script>
+            (function() {
+                function tagReplaceButtons() {
+                    document.querySelectorAll('button[kind="secondary"]').forEach(function(btn) {
+                        var text = btn.textContent.trim();
+                        if (text === '🔄') {
+                            btn.classList.add('gallery-replace-btn');
+                        }
+                    });
+                }
+                tagReplaceButtons();
+                // Re-tag when Streamlit rerenders the DOM
+                var observer = new MutationObserver(function() {
+                    tagReplaceButtons();
+                });
+                observer.observe(document.body, { childList: true, subtree: true });
+            })();
+        </script>
+        """,
+        unsafe_allow_javascript=True,
+    )
+
+    country = _country_text(selected_row, metadata) or None
+
+    entries = build_destination_gallery(dest_title, country=country, pictures_dir=pictures_dir)
+
+    if not entries:
+        access_key = get_access_key()
+        if not access_key:
+            st.info("Gallery images are unavailable — the Unsplash Access Key is not configured.")
+        else:
+            st.info("Gallery images could not be loaded for this destination.")
+        return
+
+    # Responsive grid: 4 images per row. Each cell shows the image plus an
+    # attribution caption with a tiny 🔄 button on the same row (no separate
+    # button row) so you can replace just that one photo.
+    COLUMNS_PER_ROW = 4
+    for row_start in range(0, len(entries), COLUMNS_PER_ROW):
+        row_entries = entries[row_start:row_start + COLUMNS_PER_ROW]
+        cols = st.columns(COLUMNS_PER_ROW)
+        for col_offset, entry in enumerate(row_entries):
+            absolute_index = row_start + col_offset
+            with cols[col_offset]:
+                try:
+                    st.image(str(entry["image_path"]), width="stretch")
+                except Exception:
+                    st.warning("An image could not be displayed.")
+                # Caption + tiny replace button share one row.
+                cap_col, btn_col = st.columns([8, 1])
+                with cap_col:
+                    photographer = entry.get("photographer_name", "Unsplash")
+                    photographer_url = entry.get("photographer_url", "https://unsplash.com")
+                    photo_url = entry.get("photo_url", "https://unsplash.com")
+                    st.caption(
+                        f"Photo by [{photographer}]({photographer_url}) on "
+                        f"[Unsplash]({photo_url})"
+                    )
+                with btn_col:
+                    if st.button("🔄", key=f"replace_gallery_{dest_title}_{absolute_index}", help="Replace this photo"):
+                        refresh_single_gallery_image(
+                            dest_title, country, pictures_dir, absolute_index
+                        )
+                        st.rerun()
 
 
 def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df: pd.DataFrame):
@@ -399,19 +967,13 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
     has_data = any(pd.notna(v) for v in highs_c + rain_mm + aqi_vals)
 
     st.divider()
-
-    header_col1, header_col2 = st.columns([4, 1.5])
-    with header_col1:
-        st.subheader("🌍 DESTINATION CLIMATE DASHBOARD ☁️")
-        st.caption("Annual climate profile, monthly temperatures, precipitation, and air quality index trends.")
-    with header_col2:
-        unit = st.radio("Temperature Unit", ["°C", "°F"], horizontal=True, key=f"climate_unit_{destination_name}")
+    st.subheader("🌍 Destination climate dashboard ☁️")
 
     if not has_data:
         st.info(f"Detailed monthly climate and air quality data is currently being populated for **{destination_name}**.")
         return
 
-    is_f = (unit == "°F")
+    is_f = False
     temp_suffix = "°F" if is_f else "°C"
 
     def _to_unit(c_val):
@@ -519,7 +1081,7 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
         )
 
     # ── Chart 1: Temperature Range & Rainfall (Dual Y-Axis) ─────────────────
-    st.markdown("#### 🌧️ Monthly Temperature & Rainfall")
+    st.markdown("**🌧️ Monthly Temperature & Rainfall**")
     fig_temp_rain = make_subplots(specs=[[{"secondary_y": True}]])
 
     # 1. Rainfall Bars on Secondary Axis
@@ -610,10 +1172,10 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
         secondary_y=True
     )
 
-    st.plotly_chart(fig_temp_rain, use_container_width=True)
+    st.plotly_chart(fig_temp_rain, width="stretch")
 
     # ── Chart 2: Air Quality Index (AQI) Profile ────────────────────────────
-    st.markdown("#### 🍃 Air Quality Index (AQI) Profile")
+    st.markdown("**🍃 Air Quality Index (AQI) Profile**")
     fig_aqi = go.Figure()
 
     # AQI Trendline
@@ -693,4 +1255,4 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
         showlegend=False
     )
 
-    st.plotly_chart(fig_aqi, use_container_width=True)
+    st.plotly_chart(fig_aqi, width="stretch")

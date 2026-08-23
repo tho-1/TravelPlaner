@@ -12,6 +12,11 @@ import streamlit as st
 DATA_PATH = Path(__file__).resolve().parent / "Destinations.xlsx"
 
 
+class WorkbookLockedError(RuntimeError):
+    """Raised when Destinations.xlsx cannot be written because another program
+    (e.g. Excel, OneDrive) currently holds an exclusive lock on the file."""
+
+
 def normalize_text(value: object) -> str:
     return re.sub(r"[^a-z0-9]+", "", str(value).strip().lower())
 
@@ -57,27 +62,27 @@ def classify_bool(series: pd.Series) -> pd.Series:
 
 
 def discover_destination_sheet(path: Path) -> pd.DataFrame:
-    excel_file = pd.ExcelFile(path, engine="openpyxl")
-    for sheet_name in excel_file.sheet_names:
-        try:
-            df = pd.read_excel(path, sheet_name=sheet_name, engine="openpyxl")
-        except Exception:
-            continue
-        if df is None or df.empty:
-            continue
-        columns = [str(col) for col in df.columns]
-        if not columns:
-            continue
-        if any(
-            keyword in " ".join(columns).lower()
-            for keyword in ["destination", "continent", "safety", "cost", "flight", "population", "month"]
-        ):
-            return df
+    with pd.ExcelFile(path, engine="openpyxl") as excel_file:
+        for sheet_name in excel_file.sheet_names:
+            try:
+                df = pd.read_excel(path, sheet_name=sheet_name, engine="openpyxl")
+            except Exception:
+                continue
+            if df is None or df.empty:
+                continue
+            columns = [str(col) for col in df.columns]
+            if not columns:
+                continue
+            if any(
+                keyword in " ".join(columns).lower()
+                for keyword in ["destination", "continent", "safety", "cost", "flight", "population", "month"]
+            ):
+                return df
     return pd.read_excel(path, engine="openpyxl")
 
 
 @st.cache_data(show_spinner=False)
-def load_destinations(path: Path = DATA_PATH) -> Tuple[pd.DataFrame, dict]:
+def _load_destinations_cached(path: Path, modified_ns: int) -> Tuple[pd.DataFrame, dict]:
     df = discover_destination_sheet(path)
     df = df.copy()
     df.columns = [str(col) for col in df.columns]
@@ -93,6 +98,7 @@ def load_destinations(path: Path = DATA_PATH) -> Tuple[pd.DataFrame, dict]:
                 eu_col = col
                 break
     nearer_col = find_column(df.columns, ["näherer", "auswahl", "nahe", "nearer", "selection"])
+    visited_col = find_column(df.columns, ["visited", "visited?"])
     safety_col = find_column(df.columns, ["safety", "safetyrating", "security", "risk"])
     cost_col = find_column(df.columns, ["costday", "costperday", "dailycost", "cost", "costday"])
     flight_col = find_column(df.columns, ["flighttime", "flight", "tofra", "travel", "duration"])
@@ -105,6 +111,11 @@ def load_destinations(path: Path = DATA_PATH) -> Tuple[pd.DataFrame, dict]:
     why_col = find_column(df.columns, ["why to go there", "why go there", "whytogothere", "whygo"])
     expect_col = find_column(df.columns, ["what to expect", "whattoexpect", "expectations", "expect"])
     tourist_reviews_col = find_column(df.columns, ["tourist reviews", "tourist review", "touristreviews", "touristreview"])
+    status_col = find_column(df.columns, ["data status", "status"])
+    comment_col = find_column(df.columns, ["comment", "kommentar", "anmerkung"])
+    malaria_risk_col = find_column(df.columns, ["malaria risk", "malaria", "malariarisk"])
+    food_spiciness_col = find_column(df.columns, ["food - spicyness", "food spicyness"])
+    food_description_col = find_column(df.columns, ["food - description", "food description"])
 
     if destination_col is None:
         destination_col = df.columns[0]
@@ -123,6 +134,8 @@ def load_destinations(path: Path = DATA_PATH) -> Tuple[pd.DataFrame, dict]:
         df[eu_col] = classify_bool(df[eu_col])
     if nearer_col:
         df[nearer_col] = classify_bool(df[nearer_col])
+    if visited_col:
+        df[visited_col] = classify_bool(df[visited_col])
 
     _month_names = [
         "january", "february", "march", "april", "may", "june",
@@ -142,6 +155,7 @@ def load_destinations(path: Path = DATA_PATH) -> Tuple[pd.DataFrame, dict]:
         "continent_col": continent_col,
         "eu_col": eu_col,
         "nearer_col": nearer_col,
+        "visited_col": visited_col,
         "safety_col": safety_col,
         "cost_col": cost_col,
         "flight_col": flight_col,
@@ -154,25 +168,40 @@ def load_destinations(path: Path = DATA_PATH) -> Tuple[pd.DataFrame, dict]:
         "why_col": why_col,
         "expect_col": expect_col,
         "tourist_reviews_col": tourist_reviews_col,
+        "status_col": status_col,
+        "comment_col": comment_col,
+        "malaria_risk_col": malaria_risk_col,
+        "food_spiciness_col": food_spiciness_col,
+        "food_description_col": food_description_col,
         "month_columns": month_columns,
     }
     return df, metadata
 
 
+def load_destinations(path: Path = DATA_PATH) -> Tuple[pd.DataFrame, dict]:
+    """Load destinations and refresh automatically when the workbook changes."""
+    modified_ns = path.stat().st_mtime_ns
+    return _load_destinations_cached(path, modified_ns)
+
+
+def _clear_destination_cache() -> None:
+    _load_destinations_cached.clear()
+
+
 def _find_destination_sheet(path: Path) -> Optional[str]:
     """Return the name of the sheet that contains the destination data."""
-    excel_file = pd.ExcelFile(path, engine="openpyxl")
-    for sheet_name in excel_file.sheet_names:
-        try:
-            df = pd.read_excel(path, sheet_name=sheet_name, engine="openpyxl", nrows=0)
-        except Exception:
-            continue
-        columns = [str(col) for col in df.columns]
-        if any(
-            keyword in " ".join(columns).lower()
-            for keyword in ["destination", "continent", "safety", "cost", "flight", "population", "month"]
-        ):
-            return sheet_name
+    with pd.ExcelFile(path, engine="openpyxl") as excel_file:
+        for sheet_name in excel_file.sheet_names:
+            try:
+                df = pd.read_excel(path, sheet_name=sheet_name, engine="openpyxl", nrows=0)
+            except Exception:
+                continue
+            columns = [str(col) for col in df.columns]
+            if any(
+                keyword in " ".join(columns).lower()
+                for keyword in ["destination", "continent", "safety", "cost", "flight", "population", "month"]
+            ):
+                return sheet_name
     return None
 
 
@@ -228,7 +257,66 @@ def update_favorite_status(destination_name: str, add: bool, path: Path = DATA_P
     wb.close()
 
     # Clear the cached data so the app picks up the change
-    load_destinations.clear()
+    _clear_destination_cache()
+
+
+def update_visited_status(destination_name: str, visited: bool, path: Path = DATA_PATH) -> None:
+    """Set the ``Visited?`` value for a destination in the workbook."""
+    sheet_name = _find_destination_sheet(path)
+    if sheet_name is None:
+        return
+
+    try:
+        wb = openpyxl.load_workbook(path)
+    except PermissionError as exc:
+        raise WorkbookLockedError(
+            "Destinations.xlsx is currently open in another program (e.g. Excel). "
+            "Please close the file and press Retry."
+        ) from exc
+    ws = wb[sheet_name]
+
+    headers = {}
+    for col_idx in range(1, ws.max_column + 1):
+        cell_value = ws.cell(row=1, column=col_idx).value
+        if cell_value is not None:
+            headers[str(cell_value).strip()] = col_idx
+
+    dest_col_idx = None
+    visited_col_idx = None
+    for header_name, col_idx in headers.items():
+        lower = header_name.lower()
+        if dest_col_idx is None and "destination" in lower:
+            dest_col_idx = col_idx
+        if visited_col_idx is None and lower in {"visited", "visited?"}:
+            visited_col_idx = col_idx
+
+    if dest_col_idx is None or visited_col_idx is None:
+        wb.close()
+        return
+
+    target_row = None
+    for row_idx in range(2, ws.max_row + 1):
+        cell_value = ws.cell(row=row_idx, column=dest_col_idx).value
+        if cell_value is not None and str(cell_value).strip().lower() == destination_name.strip().lower():
+            target_row = row_idx
+            break
+
+    if target_row is None:
+        wb.close()
+        return
+
+    ws.cell(row=target_row, column=visited_col_idx).value = bool(visited)
+    try:
+        wb.save(path)
+    except PermissionError as exc:
+        wb.close()
+        raise WorkbookLockedError(
+            "Destinations.xlsx is currently open in another program (e.g. Excel). "
+            "Please close the file and press Retry."
+        ) from exc
+    wb.close()
+
+    _clear_destination_cache()
 
 
 def update_prio_thorsten(destination_name: str, value: int, path: Path = DATA_PATH) -> None:
@@ -274,7 +362,217 @@ def update_prio_thorsten(destination_name: str, value: int, path: Path = DATA_PA
     wb.save(path)
     wb.close()
 
-    load_destinations.clear()
+    _clear_destination_cache()
+
+
+def update_comment(destination_name: str, value: str, path: Path = DATA_PATH) -> None:
+    """Update the Comment value for a destination in the workbook.
+
+    Creates a "Comment" column if the workbook does not have one yet (the
+    header is appended at the end of the sheet). Raises ``WorkbookLockedError``
+    if the file is currently locked by another program (e.g. Excel).
+    """
+    sheet_name = _find_destination_sheet(path)
+    if sheet_name is None:
+        return
+
+    try:
+        wb = openpyxl.load_workbook(path)
+    except PermissionError as exc:
+        raise WorkbookLockedError(
+            "Destinations.xlsx is currently open in another program (e.g. Excel). "
+            "Please close the file and press Retry."
+        ) from exc
+    ws = wb[sheet_name]
+
+    headers = {}
+    for col_idx in range(1, ws.max_column + 1):
+        cell_value = ws.cell(row=1, column=col_idx).value
+        if cell_value is not None:
+            headers[str(cell_value).strip()] = col_idx
+
+    dest_col_idx = None
+    comment_col_idx = None
+    for header_name, col_idx in headers.items():
+        lower = header_name.strip().lower()
+        if dest_col_idx is None and "destination" in lower:
+            dest_col_idx = col_idx
+        if comment_col_idx is None and lower in {"comment", "kommentar", "anmerkung"}:
+            comment_col_idx = col_idx
+
+    if dest_col_idx is None:
+        wb.close()
+        return
+
+    if comment_col_idx is None:
+        comment_col_idx = ws.max_column + 1
+        ws.cell(row=1, column=comment_col_idx, value="Comment")
+
+    target_row = None
+    for row_idx in range(2, ws.max_row + 1):
+        cell_value = ws.cell(row=row_idx, column=dest_col_idx).value
+        if cell_value is not None and str(cell_value).strip().lower() == destination_name.strip().lower():
+            target_row = row_idx
+            break
+
+    if target_row is None:
+        wb.close()
+        return
+
+    new_value = "" if value is None else str(value).strip()
+    # NOTE: openpyxl treats cell(..., value=None) as "leave unchanged", so use
+    # `.value = None` to clear the cell when the comment is emptied.
+    ws.cell(row=target_row, column=comment_col_idx).value = new_value if new_value else None
+
+    try:
+        wb.save(path)
+    except PermissionError as exc:
+        wb.close()
+        raise WorkbookLockedError(
+            "Destinations.xlsx is currently open in another program (e.g. Excel). "
+            "Please close the file and press Retry."
+        ) from exc
+    wb.close()
+
+    _clear_destination_cache()
+
+
+def update_reviews(
+    destination_name: str,
+    review_score: float,
+    tourist_reviews: str,
+    praise: str,
+    dislikes: str,
+    path: Path = DATA_PATH,
+) -> None:
+    """Write only the review-related fields for an existing destination."""
+    sheet_name = _find_destination_sheet(path)
+    if sheet_name is None:
+        return
+    try:
+        wb = openpyxl.load_workbook(path)
+    except PermissionError as exc:
+        raise WorkbookLockedError(
+            "Destinations.xlsx is currently open in another program (e.g. Excel). "
+            "Please close the file and press Retry."
+        ) from exc
+    ws = wb[sheet_name]
+    headers = {
+        str(cell.value).strip(): cell.column
+        for cell in ws[1]
+        if cell.value is not None
+    }
+    dest_col = next((col for name, col in headers.items() if "destination" in name.lower()), None)
+    if dest_col is None:
+        wb.close()
+        return
+    target_row = next(
+        (
+            row for row in range(2, ws.max_row + 1)
+            if ws.cell(row, dest_col).value is not None
+            and str(ws.cell(row, dest_col).value).strip().lower() == destination_name.strip().lower()
+        ),
+        None,
+    )
+    if target_row is None:
+        wb.close()
+        return
+    values = {
+        "Reviews": float(review_score),
+        "Tourist Reviews": str(tourist_reviews).strip(),
+        "What do the reviews praise?": str(praise).strip(),
+        "What do they dislike?": str(dislikes).strip(),
+    }
+    for name, value in values.items():
+        if name in headers:
+            ws.cell(target_row, headers[name]).value = value
+    try:
+        wb.save(path)
+    except PermissionError as exc:
+        wb.close()
+        raise WorkbookLockedError(
+            "Destinations.xlsx is currently open in another program (e.g. Excel). "
+            "Please close the file and press Retry."
+        ) from exc
+    wb.close()
+    _clear_destination_cache()
+
+
+def update_food(
+    destination_name: str,
+    spiciness: float,
+    description: str,
+    path: Path = DATA_PATH,
+) -> None:
+    """Write the Food rating and description for a destination."""
+    sheet_name = _find_destination_sheet(path)
+    if sheet_name is None:
+        return
+
+    try:
+        wb = openpyxl.load_workbook(path)
+    except PermissionError as exc:
+        raise WorkbookLockedError(
+            "Destinations.xlsx is currently open in another program (e.g. Excel). "
+            "Please close the file and press Retry."
+        ) from exc
+    ws = wb[sheet_name]
+
+    headers = {}
+    for col_idx in range(1, ws.max_column + 1):
+        cell_value = ws.cell(row=1, column=col_idx).value
+        if cell_value is not None:
+            headers[str(cell_value).strip()] = col_idx
+
+    dest_col_idx = next(
+        (col_idx for name, col_idx in headers.items() if "destination" in name.lower()),
+        None,
+    )
+    spiciness_col_idx = next(
+        (col_idx for name, col_idx in headers.items() if normalize_text(name) in {"foodspicyness", "foodspiciness"}),
+        None,
+    )
+    description_col_idx = next(
+        (col_idx for name, col_idx in headers.items() if normalize_text(name) == "fooddescription"),
+        None,
+    )
+
+    if dest_col_idx is None:
+        wb.close()
+        return
+    if spiciness_col_idx is None:
+        spiciness_col_idx = ws.max_column + 1
+        ws.cell(row=1, column=spiciness_col_idx, value="Food - Spicyness")
+    if description_col_idx is None:
+        description_col_idx = ws.max_column + 1
+        ws.cell(row=1, column=description_col_idx, value="Food - Description")
+
+    target_row = next(
+        (
+            row_idx
+            for row_idx in range(2, ws.max_row + 1)
+            if ws.cell(row=row_idx, column=dest_col_idx).value is not None
+            and str(ws.cell(row=row_idx, column=dest_col_idx).value).strip().lower()
+            == destination_name.strip().lower()
+        ),
+        None,
+    )
+    if target_row is None:
+        wb.close()
+        return
+
+    ws.cell(row=target_row, column=spiciness_col_idx).value = float(spiciness)
+    ws.cell(row=target_row, column=description_col_idx).value = str(description).strip()
+    try:
+        wb.save(path)
+    except PermissionError as exc:
+        wb.close()
+        raise WorkbookLockedError(
+            "Destinations.xlsx is currently open in another program (e.g. Excel). "
+            "Please close the file and press Retry."
+        ) from exc
+    wb.close()
+    _clear_destination_cache()
 
 
 def get_selected_destination(df: pd.DataFrame, metadata: dict, fallback: Optional[str] = None) -> Optional[pd.Series]:
@@ -308,7 +606,13 @@ def add_new_destination(
     if sheet_name is None:
         return False, "Could not find destination sheet in workbook."
 
-    wb = openpyxl.load_workbook(path)
+    try:
+        wb = openpyxl.load_workbook(path)
+    except PermissionError as exc:
+        raise WorkbookLockedError(
+            f"Destinations.xlsx is currently open in another program (e.g. Excel). "
+            f"Please close the file and press Retry. ({exc})"
+        ) from exc
     ws = wb[sheet_name]
 
     # Header lookup
@@ -335,8 +639,14 @@ def add_new_destination(
     # Determine next empty row
     new_row_idx = ws.max_row + 1
 
-    # Populate destination, country, continent
+    # Populate only the user-supplied identity fields. Everything else remains
+    # blank until it is researched and explicitly updated.
     ws.cell(row=new_row_idx, column=dest_col_idx, value=dest_clean)
+
+    status_col_idx = headers.get("Data Status")
+    if status_col_idx is None:
+        status_col_idx = ws.max_column + 1
+        ws.cell(row=1, column=status_col_idx, value="Data Status")
 
     for h, col_idx in headers.items():
         h_lower = h.lower()
@@ -344,42 +654,20 @@ def add_new_destination(
             ws.cell(row=new_row_idx, column=col_idx, value=country.strip() or "Unknown")
         elif "continent" in h_lower:
             ws.cell(row=new_row_idx, column=col_idx, value=continent.strip() or "Unknown")
-        elif h in [
-            "January", "February", "March", "April", "May", "June",
-            "July", "August", "September", "October", "November", "December"
-        ]:
-            ws.cell(row=new_row_idx, column=col_idx, value="ok")
-        elif h == "Rent a Car?":
-            ws.cell(row=new_row_idx, column=col_idx, value="No")
-        elif h == "Yes?":
-            ws.cell(row=new_row_idx, column=col_idx, value="No")
-        elif h == "Safety Rating (10 = safest)":
-            ws.cell(row=new_row_idx, column=col_idx, value=5)
-        elif h == "Prio Thorsten":
-            ws.cell(row=new_row_idx, column=col_idx, value=0)
-        elif h == "Avg. Cost/Day (3* Hotel & Food)":
-            ws.cell(row=new_row_idx, column=col_idx, value=50)
-        elif h == "Recommended Stay":
-            ws.cell(row=new_row_idx, column=col_idx, value="3-5 days")
-        elif h == "Why to Go There":
-            ws.cell(row=new_row_idx, column=col_idx, value=f"To explore the sights, culture, and cuisine of {dest_clean}.")
-        elif h == "What to Expect":
-            ws.cell(row=new_row_idx, column=col_idx, value="Cultural landmarks, local neighborhoods, and diverse attractions.")
-        elif h == "Introduction Sentence":
-            ws.cell(row=new_row_idx, column=col_idx, value=f"{dest_clean} is an exciting destination in {country.strip() or 'the world'} offering rich cultural experiences.")
-        elif h == "Highlights":
-            ws.cell(row=new_row_idx, column=col_idx, value=f"Historic city center, local markets, and scenic surroundings of {dest_clean}.")
-        elif h == "Tourist Reviews":
-            ws.cell(row=new_row_idx, column=col_idx, value=f"Travelers appreciate {dest_clean} for its unique atmosphere, friendly locals, and sightseeing opportunities.")
-        elif h == "What do the reviews praise?":
-            ws.cell(row=new_row_idx, column=col_idx, value="Atmosphere, sights, and friendly locals.")
-        elif h == "What do they dislike?":
-            ws.cell(row=new_row_idx, column=col_idx, value="Peak season crowds and transit navigation.")
 
-    wb.save(path)
+    ws.cell(row=new_row_idx, column=status_col_idx, value="PLACEHOLDER - UPDATE REQUIRED")
+
+    try:
+        wb.save(path)
+    except PermissionError as exc:
+        wb.close()
+        raise WorkbookLockedError(
+            f"Destinations.xlsx is currently open in another program (e.g. Excel). "
+            f"Please close the file and press Retry. ({exc})"
+        ) from exc
     wb.close()
 
     # Clear cached dataframe so it immediately reloads all rows on next run
-    load_destinations.clear()
+    _clear_destination_cache()
     return True, f"Destination '{dest_clean}' has been successfully added to the catalog!"
 
