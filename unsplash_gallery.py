@@ -39,16 +39,34 @@ REQUEST_TIMEOUT = 20  # seconds per HTTP call
 
 # ── Secrets ──────────────────────────────────────────────────────────────────
 def get_access_key() -> Optional[str]:
-    """Return the Unsplash Access Key from ``unsplash_secrets.py``.
+    """Return the Unsplash Access Key.
 
-    Returns ``None`` if the module or key is missing (the caller degrades
-    gracefully to an empty gallery).
+    Resolution order:
+    1. ``unsplash_secrets.py`` (local, gitignored module)
+    2. ``UNSPLASH_ACCESS_KEY`` environment variable
+    3. Streamlit secrets (``st.secrets["UNSPLASH_ACCESS_KEY"]``)
+
+    Returns ``None`` if the key is missing (the caller degrades gracefully to
+    an empty gallery).
     """
+    key = ""
     try:
         import unsplash_secrets  # local, gitignored module
     except Exception:
-        return None
-    key = getattr(unsplash_secrets, "UNSPLASH_ACCESS_KEY", None)
+        unsplash_secrets = None
+    if unsplash_secrets is not None:
+        key = getattr(unsplash_secrets, "UNSPLASH_ACCESS_KEY", None) or ""
+    if not key:
+        import os
+
+        key = os.environ.get("UNSPLASH_ACCESS_KEY", "") or ""
+    if not key:
+        try:
+            import streamlit as st
+
+            key = st.secrets.get("UNSPLASH_ACCESS_KEY", "") or ""
+        except Exception:
+            key = ""
     if isinstance(key, str):
         key = key.strip()
     return key or None
