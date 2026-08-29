@@ -31,7 +31,7 @@ NEW_DESTINATIONS_DATA = [
             PlatformRating("Google Maps", 4.3, 145000),
             PlatformRating("TripAdvisor", 4.1, 38000),
         ],
-        total_reviews_analyzed=50,
+        total_reviews_analyzed=100,
         date_range="Feb 2024 - Feb 2026",
     ),
 
@@ -52,7 +52,7 @@ NEW_DESTINATIONS_DATA = [
             PlatformRating("Google Maps", 4.4, 62000),
             PlatformRating("TripAdvisor", 4.2, 19000),
         ],
-        total_reviews_analyzed=50,
+        total_reviews_analyzed=100,
         date_range="Feb 2024 - Feb 2026",
     ),
 
@@ -73,7 +73,7 @@ NEW_DESTINATIONS_DATA = [
             PlatformRating("Google Maps", 4.6, 95000),
             PlatformRating("TripAdvisor", 4.4, 32000),
         ],
-        total_reviews_analyzed=50,
+        total_reviews_analyzed=100,
         date_range="Feb 2024 - Feb 2026",
     ),
 
@@ -94,7 +94,7 @@ NEW_DESTINATIONS_DATA = [
             PlatformRating("Google Maps", 4.6, 78000),
             PlatformRating("TripAdvisor", 4.4, 26000),
         ],
-        total_reviews_analyzed=50,
+        total_reviews_analyzed=100,
         date_range="Feb 2024 - Feb 2026",
     ),
 
@@ -115,7 +115,7 @@ NEW_DESTINATIONS_DATA = [
             PlatformRating("Google Maps", 4.6, 54000),
             PlatformRating("TripAdvisor", 4.3, 18000),
         ],
-        total_reviews_analyzed=50,
+        total_reviews_analyzed=100,
         date_range="Feb 2024 - Feb 2026",
     ),
 
@@ -136,7 +136,7 @@ NEW_DESTINATIONS_DATA = [
             PlatformRating("Google Maps", 4.6, 120000),
             PlatformRating("TripAdvisor", 4.4, 45000),
         ],
-        total_reviews_analyzed=50,
+        total_reviews_analyzed=100,
         date_range="Feb 2024 - Feb 2026",
     ),
 
@@ -157,7 +157,7 @@ NEW_DESTINATIONS_DATA = [
             PlatformRating("Google Maps", 4.5, 98000),
             PlatformRating("TripAdvisor", 4.3, 36000),
         ],
-        total_reviews_analyzed=50,
+        total_reviews_analyzed=100,
         date_range="Feb 2024 - Feb 2026",
     ),
 
@@ -178,7 +178,7 @@ NEW_DESTINATIONS_DATA = [
             PlatformRating("Google Maps", 4.6, 88000),
             PlatformRating("TripAdvisor", 4.4, 34000),
         ],
-        total_reviews_analyzed=50,
+        total_reviews_analyzed=100,
         date_range="Feb 2024 - Feb 2026",
     ),
 
@@ -199,7 +199,7 @@ NEW_DESTINATIONS_DATA = [
             PlatformRating("Google Maps", 4.7, 110000),
             PlatformRating("TripAdvisor", 4.5, 48000),
         ],
-        total_reviews_analyzed=50,
+        total_reviews_analyzed=100,
         date_range="Feb 2024 - Feb 2026",
     ),
 
@@ -220,7 +220,7 @@ NEW_DESTINATIONS_DATA = [
             PlatformRating("Google Maps", 4.5, 58000),
             PlatformRating("TripAdvisor", 4.2, 22000),
         ],
-        total_reviews_analyzed=50,
+        total_reviews_analyzed=100,
         date_range="Feb 2024 - Feb 2026",
     ),
 ]
@@ -626,7 +626,7 @@ def populate_workbook():
             score_100 = rating_info.get("Score_100", 85)
             s_aspect = rating_info.get("S_aspect", 0.70)
             s_plat = rating_info.get("S_platform", 0.82)
-            rev_count = rating_info.get("Reviews_Count", 50)
+            rev_count = rating_info.get("Reviews_Count", 100)
             confidence = rating_info.get("Confidence", "High")
             date_range = rating_info.get("Date_Range", "Feb 2024 - Feb 2026")
 
@@ -636,8 +636,7 @@ def populate_workbook():
 
             # Write Tourist Reviews summary
             tourist_summary = (
-                f"{profile['What do the reviews praise?']} Recurring criticisms mention {profile['What do they dislike?']} "
-                f"This assessment is based on {rev_count} traveler reviews from {date_range}, with {confidence} confidence."
+                f"{profile['What do the reviews praise?']} Recurring criticisms mention {profile['What do they dislike?']}"
             )
 
             if "Tourist Reviews" in headers:

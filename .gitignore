@@ -26,3 +26,6 @@ Destinations.before-*.xlsx
 unsplash_secrets.py
 deepseek_secrets.py
 .streamlit/secrets.toml
+
+# Runtime state (never commit)
+open_destinations.json

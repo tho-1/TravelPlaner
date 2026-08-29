@@ -1,0 +1,848 @@
+{
+  "airport_name": "Quanzhou Jinjiang International Airport",
+  "iata_code": "JJN",
+  "city": "Quanzhou (Fujian)",
+  "country": "China",
+  "train_stations": [
+    "Quanzhou Railway Station (泉州站)",
+    "Quanzhou East Railway Station (泉州东站)"
+  ],
+  "hsr_routes": [
+    {
+      "destination_city": "Fuzhou",
+      "destination_station": "Fuzhou South",
+      "origin_station": "Quanzhou",
+      "duration": "0h 40m - 1h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Frequent daily (every 20-30 mins)"
+    },
+    {
+      "destination_city": "Xiamen",
+      "destination_station": "Xiamen North",
+      "origin_station": "Quanzhou",
+      "duration": "0h 30m - 0h 45m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Very frequent daily (every 15-30 mins)"
+    },
+    {
+      "destination_city": "Putian",
+      "destination_station": "Putian",
+      "origin_station": "Quanzhou",
+      "duration": "0h 25m - 0h 40m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Frequent daily"
+    },
+    {
+      "destination_city": "Zhangzhou",
+      "destination_station": "Zhangzhou",
+      "origin_station": "Quanzhou",
+      "duration": "0h 50m - 1h 10m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Multiple daily"
+    },
+    {
+      "destination_city": "Longyan",
+      "destination_station": "Longyan",
+      "origin_station": "Quanzhou",
+      "duration": "1h 30m - 2h 00m",
+      "train_types": "D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Shantou",
+      "destination_station": "Shantou",
+      "origin_station": "Quanzhou",
+      "duration": "2h 00m - 2h 30m",
+      "train_types": "D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Shenzhen",
+      "destination_station": "Shenzhen North",
+      "origin_station": "Quanzhou",
+      "duration": "3h 30m - 4h 30m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Multiple daily"
+    },
+    {
+      "destination_city": "Guangzhou",
+      "destination_station": "Guangzhou South",
+      "origin_station": "Quanzhou",
+      "duration": "4h 00m - 5h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Multiple daily"
+    },
+    {
+      "destination_city": "Shanghai",
+      "destination_station": "Shanghai Hongqiao",
+      "origin_station": "Quanzhou",
+      "duration": "6h 30m - 8h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Hangzhou",
+      "destination_station": "Hangzhou East",
+      "origin_station": "Quanzhou",
+      "duration": "5h 30m - 7h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Ningbo",
+      "destination_station": "Ningbo",
+      "origin_station": "Quanzhou",
+      "duration": "5h 00m - 6h 30m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Wenzhou",
+      "destination_station": "Wenzhou South",
+      "origin_station": "Quanzhou",
+      "duration": "3h 30m - 4h 30m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Multiple daily"
+    },
+    {
+      "destination_city": "Nanchang",
+      "destination_station": "Nanchang West",
+      "origin_station": "Quanzhou",
+      "duration": "3h 30m - 4h 30m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Changsha",
+      "destination_station": "Changsha South",
+      "origin_station": "Quanzhou",
+      "duration": "5h 00m - 6h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Wuhan",
+      "destination_station": "Wuhan",
+      "origin_station": "Quanzhou",
+      "duration": "6h 00m - 7h 30m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Hefei",
+      "destination_station": "Hefei South",
+      "origin_station": "Quanzhou",
+      "duration": "6h 00m - 7h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Nanjing",
+      "destination_station": "Nanjing South",
+      "origin_station": "Quanzhou",
+      "duration": "7h 00m - 8h 30m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Beijing",
+      "destination_station": "Beijing South",
+      "origin_station": "Quanzhou",
+      "duration": "10h 00m - 12h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Daily or multiple daily"
+    },
+    {
+      "destination_city": "Tianjin",
+      "destination_station": "Tianjin West",
+      "origin_station": "Quanzhou",
+      "duration": "10h 30m - 12h 30m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Daily or multiple daily"
+    },
+    {
+      "destination_city": "Jinan",
+      "destination_station": "Jinan West",
+      "origin_station": "Quanzhou",
+      "duration": "9h 00m - 10h 30m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Qingdao",
+      "destination_station": "Qingdao North",
+      "origin_station": "Quanzhou",
+      "duration": "10h 00m - 12h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Zhengzhou",
+      "destination_station": "Zhengzhou East",
+      "origin_station": "Quanzhou",
+      "duration": "8h 00m - 9h 30m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Xi'an",
+      "destination_station": "Xi'an North",
+      "origin_station": "Quanzhou",
+      "duration": "10h 00m - 12h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Chengdu",
+      "destination_station": "Chengdu East",
+      "origin_station": "Quanzhou",
+      "duration": "12h 00m - 14h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Daily or multiple daily"
+    },
+    {
+      "destination_city": "Chongqing",
+      "destination_station": "Chongqing West",
+      "origin_station": "Quanzhou",
+      "duration": "12h 00m - 14h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Daily or multiple daily"
+    },
+    {
+      "destination_city": "Kunming",
+      "destination_station": "Kunming South",
+      "origin_station": "Quanzhou",
+      "duration": "12h 00m - 14h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Guiyang",
+      "destination_station": "Guiyang North",
+      "origin_station": "Quanzhou",
+      "duration": "10h 00m - 12h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Nanning",
+      "destination_station": "Nanning East",
+      "origin_station": "Quanzhou",
+      "duration": "10h 00m - 12h 00m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Guilin",
+      "destination_station": "Guilin North",
+      "origin_station": "Quanzhou",
+      "duration": "8h 00m - 9h 30m",
+      "train_types": "G-Train / D-Train",
+      "frequency_notes": "Several daily"
+    },
+    {
+      "destination_city": "Haikou",
+      "destination_station": "Haikou East",
+      "origin_station": "Quanzhou",
+      "duration": "12h 00m - 14h 00m",
+      "train_types": "D-Train",
+      "frequency_notes": "Daily or multiple daily"
+    }
+  ],
+  "routes": [
+    {
+      "destination_city": "Beijing",
+      "destination_country": "China",
+      "destination_iata": "PEK/PKX",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "Air China"
+      ],
+      "flight_time": "2h 45m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Shanghai",
+      "destination_country": "China",
+      "destination_iata": "SHA/PVG",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "Spring Airlines"
+      ],
+      "flight_time": "1h 50m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Guangzhou",
+      "destination_country": "China",
+      "destination_iata": "CAN",
+      "airlines": [
+        "XiamenAir",
+        "China Southern Airlines"
+      ],
+      "flight_time": "1h 30m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Shenzhen",
+      "destination_country": "China",
+      "destination_iata": "SZX",
+      "airlines": [
+        "XiamenAir",
+        "Shenzhen Airlines",
+        "China Southern Airlines"
+      ],
+      "flight_time": "1h 20m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Chengdu",
+      "destination_country": "China",
+      "destination_iata": "TFU/CTU",
+      "airlines": [
+        "XiamenAir",
+        "Sichuan Airlines",
+        "China Eastern Airlines"
+      ],
+      "flight_time": "2h 30m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Chongqing",
+      "destination_country": "China",
+      "destination_iata": "CKG",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "West Air"
+      ],
+      "flight_time": "2h 20m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Kunming",
+      "destination_country": "China",
+      "destination_iata": "KMG",
+      "airlines": [
+        "XiamenAir",
+        "Kunming Airlines",
+        "China Eastern Airlines"
+      ],
+      "flight_time": "2h 30m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Xi'an",
+      "destination_country": "China",
+      "destination_iata": "XIY",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "Hainan Airlines"
+      ],
+      "flight_time": "2h 30m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Hangzhou",
+      "destination_country": "China",
+      "destination_iata": "HGH",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "Air China"
+      ],
+      "flight_time": "1h 30m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Nanjing",
+      "destination_country": "China",
+      "destination_iata": "NKG",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "Juneyao Airlines"
+      ],
+      "flight_time": "1h 40m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Wuhan",
+      "destination_country": "China",
+      "destination_iata": "WUH",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "China Southern Airlines"
+      ],
+      "flight_time": "1h 50m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Changsha",
+      "destination_country": "China",
+      "destination_iata": "CSX",
+      "airlines": [
+        "XiamenAir",
+        "China Southern Airlines",
+        "Okay Airways"
+      ],
+      "flight_time": "1h 30m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Zhengzhou",
+      "destination_country": "China",
+      "destination_iata": "CGO",
+      "airlines": [
+        "XiamenAir",
+        "China Southern Airlines",
+        "West Air"
+      ],
+      "flight_time": "2h 00m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Qingdao",
+      "destination_country": "China",
+      "destination_iata": "TAO",
+      "airlines": [
+        "XiamenAir",
+        "Shandong Airlines",
+        "China Eastern Airlines"
+      ],
+      "flight_time": "2h 10m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Dalian",
+      "destination_country": "China",
+      "destination_iata": "DLC",
+      "airlines": [
+        "XiamenAir",
+        "China Southern Airlines",
+        "Hainan Airlines"
+      ],
+      "flight_time": "2h 40m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Shenyang",
+      "destination_country": "China",
+      "destination_iata": "SHE",
+      "airlines": [
+        "XiamenAir",
+        "China Southern Airlines",
+        "Spring Airlines"
+      ],
+      "flight_time": "3h 00m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Harbin",
+      "destination_country": "China",
+      "destination_iata": "HRB",
+      "airlines": [
+        "XiamenAir",
+        "China Southern Airlines",
+        "Sichuan Airlines"
+      ],
+      "flight_time": "3h 30m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Tianjin",
+      "destination_country": "China",
+      "destination_iata": "TSN",
+      "airlines": [
+        "XiamenAir",
+        "Tianjin Airlines",
+        "China Eastern Airlines"
+      ],
+      "flight_time": "2h 30m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Jinan",
+      "destination_country": "China",
+      "destination_iata": "TNA",
+      "airlines": [
+        "XiamenAir",
+        "Shandong Airlines",
+        "China Eastern Airlines"
+      ],
+      "flight_time": "2h 00m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Hefei",
+      "destination_country": "China",
+      "destination_iata": "HFE",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "West Air"
+      ],
+      "flight_time": "1h 40m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Nanchang",
+      "destination_country": "China",
+      "destination_iata": "KHN",
+      "airlines": [
+        "XiamenAir",
+        "Jiangxi Air",
+        "China Eastern Airlines"
+      ],
+      "flight_time": "1h 10m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Guilin",
+      "destination_country": "China",
+      "destination_iata": "KWL",
+      "airlines": [
+        "XiamenAir",
+        "China Southern Airlines",
+        "GX Airlines"
+      ],
+      "flight_time": "1h 30m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Nanning",
+      "destination_country": "China",
+      "destination_iata": "NNG",
+      "airlines": [
+        "XiamenAir",
+        "China Southern Airlines",
+        "GX Airlines"
+      ],
+      "flight_time": "1h 50m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Guiyang",
+      "destination_country": "China",
+      "destination_iata": "KWE",
+      "airlines": [
+        "XiamenAir",
+        "China Southern Airlines",
+        "Colorful Guizhou Airlines"
+      ],
+      "flight_time": "2h 00m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Lanzhou",
+      "destination_country": "China",
+      "destination_iata": "LHW",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "Spring Airlines"
+      ],
+      "flight_time": "3h 00m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Urumqi",
+      "destination_country": "China",
+      "destination_iata": "URC",
+      "airlines": [
+        "XiamenAir",
+        "China Southern Airlines",
+        "Hainan Airlines"
+      ],
+      "flight_time": "5h 00m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Sanya",
+      "destination_country": "China",
+      "destination_iata": "SYX",
+      "airlines": [
+        "XiamenAir",
+        "China Southern Airlines",
+        "Sichuan Airlines"
+      ],
+      "flight_time": "2h 30m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Haikou",
+      "destination_country": "China",
+      "destination_iata": "HAK",
+      "airlines": [
+        "XiamenAir",
+        "Hainan Airlines",
+        "China Southern Airlines"
+      ],
+      "flight_time": "2h 20m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Zhuhai",
+      "destination_country": "China",
+      "destination_iata": "ZUH",
+      "airlines": [
+        "XiamenAir",
+        "China Southern Airlines",
+        "Shandong Airlines"
+      ],
+      "flight_time": "1h 30m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Wuxi",
+      "destination_country": "China",
+      "destination_iata": "WUX",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "Shenzhen Airlines"
+      ],
+      "flight_time": "1h 40m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Ningbo",
+      "destination_country": "China",
+      "destination_iata": "NGB",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "Spring Airlines"
+      ],
+      "flight_time": "1h 20m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Wenzhou",
+      "destination_country": "China",
+      "destination_iata": "WNZ",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "Air China"
+      ],
+      "flight_time": "1h 10m",
+      "route_type": "Domestic",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Fuzhou",
+      "destination_country": "China",
+      "destination_iata": "FOC",
+      "airlines": [
+        "XiamenAir",
+        "Fuzhou Airlines",
+        "China Eastern Airlines"
+      ],
+      "flight_time": "0h 50m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Xiamen",
+      "destination_country": "China",
+      "destination_iata": "XMN",
+      "airlines": [
+        "XiamenAir",
+        "China Eastern Airlines",
+        "Shandong Airlines"
+      ],
+      "flight_time": "0h 40m",
+      "route_type": "Domestic",
+      "frequency_notes": "Multiple flights daily"
+    },
+    {
+      "destination_city": "Hong Kong",
+      "destination_country": "China",
+      "destination_iata": "HKG",
+      "airlines": [
+        "XiamenAir",
+        "Cathay Dragon"
+      ],
+      "flight_time": "1h 30m",
+      "route_type": "Regional",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Macau",
+      "destination_country": "China",
+      "destination_iata": "MFM",
+      "airlines": [
+        "XiamenAir",
+        "Air Macau"
+      ],
+      "flight_time": "1h 20m",
+      "route_type": "Regional",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Taipei",
+      "destination_country": "China",
+      "destination_iata": "TPE",
+      "airlines": [
+        "XiamenAir",
+        "Mandarin Airlines",
+        "EVA Air"
+      ],
+      "flight_time": "1h 40m",
+      "route_type": "Regional",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Kaohsiung",
+      "destination_country": "China",
+      "destination_iata": "KHH",
+      "airlines": [
+        "XiamenAir",
+        "Mandarin Airlines"
+      ],
+      "flight_time": "1h 30m",
+      "route_type": "Regional",
+      "frequency_notes": "Several weekly"
+    },
+    {
+      "destination_city": "Manila",
+      "destination_country": "Philippines",
+      "destination_iata": "MNL",
+      "airlines": [
+        "XiamenAir",
+        "Philippine Airlines",
+        "Cebu Pacific"
+      ],
+      "flight_time": "2h 30m",
+      "route_type": "International",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Bangkok",
+      "destination_country": "Thailand",
+      "destination_iata": "BKK/DMK",
+      "airlines": [
+        "XiamenAir",
+        "Thai Airways",
+        "Thai Lion Air"
+      ],
+      "flight_time": "3h 30m",
+      "route_type": "International",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Singapore",
+      "destination_country": "Singapore",
+      "destination_iata": "SIN",
+      "airlines": [
+        "XiamenAir",
+        "Singapore Airlines",
+        "Scoot"
+      ],
+      "flight_time": "4h 00m",
+      "route_type": "International",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Kuala Lumpur",
+      "destination_country": "Malaysia",
+      "destination_iata": "KUL",
+      "airlines": [
+        "XiamenAir",
+        "Malaysia Airlines",
+        "AirAsia"
+      ],
+      "flight_time": "4h 00m",
+      "route_type": "International",
+      "frequency_notes": "Daily"
+    },
+    {
+      "destination_city": "Jakarta",
+      "destination_country": "Indonesia",
+      "destination_iata": "CGK",
+      "airlines": [
+        "XiamenAir",
+        "Garuda Indonesia",
+        "Lion Air"
+      ],
+      "flight_time": "5h 00m",
+      "route_type": "International",
+      "frequency_notes": "Several weekly"
+    },
+    {
+      "destination_city": "Ho Chi Minh City",
+      "destination_country": "Vietnam",
+      "destination_iata": "SGN",
+      "airlines": [
+        "XiamenAir",
+        "Vietnam Airlines",
+        "VietJet Air"
+      ],
+      "flight_time": "3h 00m",
+      "route_type": "International",
+      "frequency_notes": "Several weekly"
+    },
+    {
+      "destination_city": "Osaka",
+      "destination_country": "Japan",
+      "destination_iata": "KIX",
+      "airlines": [
+        "XiamenAir",
+        "Peach Aviation"
+      ],
+      "flight_time": "3h 30m",
+      "route_type": "International",
+      "frequency_notes": "Several weekly"
+    },
+    {
+      "destination_city": "Seoul",
+      "destination_country": "South Korea",
+      "destination_iata": "ICN",
+      "airlines": [
+        "XiamenAir",
+        "Korean Air",
+        "Jeju Air"
+      ],
+      "flight_time": "3h 00m",
+      "route_type": "International",
+      "frequency_notes": "Daily"
+    }
+  ],
+  "last_updated": "28 Aug 2026"
+}

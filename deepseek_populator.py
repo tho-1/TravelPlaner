@@ -205,7 +205,7 @@ def _apply_profile_to_row(ws, headers, row_idx, profile, country, continent, des
                 )
             )
 
-        total = int(rev.get("total_reviews_analyzed", 50) or 50)
+        total = int(rev.get("total_reviews_analyzed", 100) or 100)
         date_range = str(rev.get("date_range", "Feb 2024 - Feb 2026"))
 
         review_data = DestinationReviewData(
@@ -221,11 +221,7 @@ def _apply_profile_to_row(ws, headers, row_idx, profile, country, continent, des
 
         praise = str(rev.get("praise", "") or "").strip()
         dislikes = str(rev.get("dislikes", "") or "").strip()
-        tourist_summary = (
-            f"{praise} Recurring criticisms mention {dislikes} "
-            f"This assessment is based on {total} traveler reviews from {date_range}, "
-            f"with {result['Confidence']} confidence."
-        )
+        tourist_summary = f"{praise} Recurring criticisms mention {dislikes}"
 
         _set("Reviews", review_score)
         _set("Tourist Reviews", tourist_summary)
@@ -385,17 +381,13 @@ def refresh_reviews_with_deepseek(
         country=country,
         aspect_counts=aspect_counts,
         platform_ratings=platform_ratings,
-        total_reviews_analyzed=int(review.get("total_reviews_analyzed", 50)),
+        total_reviews_analyzed=int(review.get("total_reviews_analyzed", 100)),
         date_range=str(review.get("date_range", "Unknown")),
     )
     result = review_data.calculate_final_scores()
     praise = str(review["praise"]).strip()
     dislikes = str(review["dislikes"]).strip()
-    summary = (
-        f"{praise} Recurring criticisms mention {dislikes} "
-        f"This assessment is based on {review_data.total_reviews_analyzed} traveler reviews "
-        f"from {review_data.date_range}, with {result['Confidence']} confidence."
-    )
+    summary = f"{praise} Recurring criticisms mention {dislikes}"
     update_reviews(
         destination,
         result["Review Score (0-10)"],

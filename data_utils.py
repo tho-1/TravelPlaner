@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Optional, Tuple
@@ -10,6 +11,53 @@ import streamlit as st
 
 
 DATA_PATH = Path(__file__).resolve().parent / "Destinations.xlsx"
+
+OPEN_TABS_PATH = Path(__file__).resolve().parent / "open_destinations.json"
+
+
+def load_open_destinations() -> list:
+    """Load the persisted list of open destination tabs (JSON file)."""
+    try:
+        if OPEN_TABS_PATH.exists():
+            data = json.loads(OPEN_TABS_PATH.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                return [str(value) for value in data if str(value).strip()]
+    except Exception:
+        pass
+    return []
+
+
+def save_open_destinations(destinations) -> None:
+    """Persist the list of open destination tabs to a JSON file (best effort)."""
+    try:
+        OPEN_TABS_PATH.write_text(
+            json.dumps([str(d) for d in destinations], ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception:
+        pass
+
+
+def to_be_researched_mask(frame: pd.DataFrame, column: str) -> pd.Series:
+    """Return a boolean mask of rows whose 'to be researched' column is truthy.
+
+    Mirrors the value parsing used on the destination detail page: True / 1 /
+    "x" / "yes" / "y" / "ja" / "j" count as requiring research, and any string
+    containing an 'x' does too (the app's convention).
+    """
+    mask = pd.Series(False, index=frame.index, dtype=bool)
+    values = frame[column].tolist()
+    for pos, value in enumerate(values):
+        if pd.isna(value):
+            continue
+        if isinstance(value, bool):
+            mask.iloc[pos] = value
+        elif isinstance(value, (int, float)):
+            mask.iloc[pos] = (value == 1)
+        else:
+            text = str(value).strip().lower()
+            mask.iloc[pos] = text in {"yes", "y", "true", "1", "1.0", "ja", "j", "x"} or "x" in text
+    return mask
 
 
 class WorkbookLockedError(RuntimeError):
@@ -51,10 +99,20 @@ def classify_bool(series: pd.Series) -> pd.Series:
         if pd.isna(value):
             result.append(pd.NA)
             continue
+        if isinstance(value, bool):
+            result.append(value)
+            continue
+        if isinstance(value, (int, float)):
+            if value == 1:
+                result.append(True)
+                continue
+            elif value == 0:
+                result.append(False)
+                continue
         text = str(value).strip().lower().rstrip(",.").strip()
-        if text in {"yes", "y", "true", "1", "ja", "j", "x"} or "x" in text:
+        if text in {"yes", "y", "true", "1", "1.0", "ja", "j", "x"} or "x" in text:
             result.append(True)
-        elif text in {"no", "n", "false", "0", "nein"}:
+        elif text in {"no", "n", "false", "0", "0.0", "nein"}:
             result.append(False)
         else:
             result.append(pd.NA)
@@ -99,6 +157,7 @@ def _load_destinations_cached(path: Path, modified_ns: int) -> Tuple[pd.DataFram
                 break
     nearer_col = find_column(df.columns, ["näherer", "auswahl", "nahe", "nearer", "selection"])
     visited_col = find_column(df.columns, ["visited", "visited?"])
+    to_be_researched_col = find_column(df.columns, ["to be researched", "toberesearched", "research needed", "researched?"])
     safety_col = find_column(df.columns, ["safety", "safetyrating", "security", "risk"])
     cost_col = find_column(df.columns, ["costday", "costperday", "dailycost", "cost", "costday"])
     flight_col = find_column(df.columns, ["flighttime", "flight", "tofra", "travel", "duration"])
@@ -136,6 +195,8 @@ def _load_destinations_cached(path: Path, modified_ns: int) -> Tuple[pd.DataFram
         df[nearer_col] = classify_bool(df[nearer_col])
     if visited_col:
         df[visited_col] = classify_bool(df[visited_col])
+    if to_be_researched_col:
+        df[to_be_researched_col] = classify_bool(df[to_be_researched_col])
 
     _month_names = [
         "january", "february", "march", "april", "may", "june",
@@ -156,6 +217,7 @@ def _load_destinations_cached(path: Path, modified_ns: int) -> Tuple[pd.DataFram
         "eu_col": eu_col,
         "nearer_col": nearer_col,
         "visited_col": visited_col,
+        "to_be_researched_col": to_be_researched_col,
         "safety_col": safety_col,
         "cost_col": cost_col,
         "flight_col": flight_col,
@@ -319,6 +381,69 @@ def update_visited_status(destination_name: str, visited: bool, path: Path = DAT
     _clear_destination_cache()
 
 
+def update_to_be_researched_status(destination_name: str, to_be_researched: bool, path: Path = DATA_PATH) -> None:
+    """Set the ``To be researched`` value for a destination in the workbook."""
+    sheet_name = _find_destination_sheet(path)
+    if sheet_name is None:
+        return
+
+    try:
+        wb = openpyxl.load_workbook(path)
+    except PermissionError as exc:
+        raise WorkbookLockedError(
+            "Destinations.xlsx is currently open in another program (e.g. Excel). "
+            "Please close the file and press Retry."
+        ) from exc
+    ws = wb[sheet_name]
+
+    headers = {}
+    for col_idx in range(1, ws.max_column + 1):
+        cell_value = ws.cell(row=1, column=col_idx).value
+        if cell_value is not None:
+            headers[str(cell_value).strip()] = col_idx
+
+    dest_col_idx = None
+    research_col_idx = None
+    for header_name, col_idx in headers.items():
+        lower = header_name.lower()
+        if dest_col_idx is None and "destination" in lower:
+            dest_col_idx = col_idx
+        if research_col_idx is None and ("researched" in lower or "research" in lower):
+            research_col_idx = col_idx
+
+    if dest_col_idx is None:
+        wb.close()
+        return
+
+    if research_col_idx is None:
+        research_col_idx = ws.max_column + 1
+        ws.cell(row=1, column=research_col_idx, value="To be researched")
+
+    target_row = None
+    for row_idx in range(2, ws.max_row + 1):
+        cell_value = ws.cell(row=row_idx, column=dest_col_idx).value
+        if cell_value is not None and str(cell_value).strip().lower() == destination_name.strip().lower():
+            target_row = row_idx
+            break
+
+    if target_row is None:
+        wb.close()
+        return
+
+    ws.cell(row=target_row, column=research_col_idx).value = bool(to_be_researched)
+    try:
+        wb.save(path)
+    except PermissionError as exc:
+        wb.close()
+        raise WorkbookLockedError(
+            "Destinations.xlsx is currently open in another program (e.g. Excel). "
+            "Please close the file and press Retry."
+        ) from exc
+    wb.close()
+
+    _clear_destination_cache()
+
+
 def update_prio_thorsten(destination_name: str, value: int, path: Path = DATA_PATH) -> None:
     """Update the Prio Thorsten value for a destination in the workbook."""
     sheet_name = _find_destination_sheet(path)
@@ -358,7 +483,14 @@ def update_prio_thorsten(destination_name: str, value: int, path: Path = DATA_PA
         wb.close()
         return
 
-    ws.cell(row=target_row, column=prio_col_idx).value = int(value)
+    if value is None or str(value).strip() == "" or str(value).strip().lower() in {"none", "nan", "null", "—"}:
+        ws.cell(row=target_row, column=prio_col_idx).value = None
+    else:
+        try:
+            ws.cell(row=target_row, column=prio_col_idx).value = int(float(value))
+        except (ValueError, TypeError):
+            ws.cell(row=target_row, column=prio_col_idx).value = None
+
     wb.save(path)
     wb.close()
 
@@ -670,4 +802,112 @@ def add_new_destination(
     # Clear cached dataframe so it immediately reloads all rows on next run
     _clear_destination_cache()
     return True, f"Destination '{dest_clean}' has been successfully added to the catalog!"
+
+
+def load_airlines_color_map(path: Path = DATA_PATH) -> dict[str, dict[str, any]]:
+    """Load the Airlines sheet and return a mapping of normalized_name -> {name, color}."""
+    try:
+        df_air = pd.read_excel(path, sheet_name="Airlines", engine="openpyxl")
+    except Exception:
+        return {}
+
+    col_map = {}
+    for col in df_air.columns:
+        c_low = str(col).strip().lower()
+        if "airline" in c_low:
+            col_map["airline"] = col
+        elif "color" in c_low:
+            col_map["color"] = col
+
+    airline_col = col_map.get("airline", "Airline")
+    color_col = col_map.get("color", "Color")
+
+    mapping = {}
+    if airline_col in df_air.columns:
+        for _, row in df_air.iterrows():
+            val = row.get(airline_col)
+            if pd.notna(val) and str(val).strip():
+                name = str(val).strip()
+                color_val = row.get(color_col) if color_col in df_air.columns else None
+                color = str(color_val).strip().lower() if pd.notna(color_val) and str(color_val).strip() else None
+                mapping[normalize_text(name)] = {
+                    "name": name,
+                    "color": color,
+                }
+    return mapping
+
+
+def sync_airlines_to_excel(airlines: list[str], path: Path = DATA_PATH) -> int:
+    """Ensure all airlines in the list exist in the 'Airlines' sheet of Destinations.xlsx.
+    If not, appends them at the bottom with a blank Color.
+    Returns the number of newly added airlines.
+    """
+    if not airlines:
+        return 0
+
+    try:
+        wb = openpyxl.load_workbook(path)
+    except PermissionError as exc:
+        raise WorkbookLockedError(
+            f"Destinations.xlsx is currently open in another program. ({exc})"
+        ) from exc
+    except Exception:
+        return 0
+
+    sheet_name = "Airlines"
+    if sheet_name in wb.sheetnames:
+        ws = wb[sheet_name]
+    else:
+        ws = wb.create_sheet(title=sheet_name)
+        ws.cell(row=1, column=1, value="Airline")
+        ws.cell(row=1, column=2, value="Color")
+
+    # Find headers
+    headers = {}
+    for col_idx in range(1, max(ws.max_column, 2) + 1):
+        v = ws.cell(row=1, column=col_idx).value
+        if v:
+            headers[str(v).strip().lower()] = col_idx
+
+    airline_col_idx = headers.get("airline", 1)
+    color_col_idx = headers.get("color", 2)
+
+    # Ensure header row has titles if missing
+    if ws.cell(row=1, column=airline_col_idx).value is None:
+        ws.cell(row=1, column=airline_col_idx, value="Airline")
+    if ws.cell(row=1, column=color_col_idx).value is None:
+        ws.cell(row=1, column=color_col_idx, value="Color")
+
+    # Read existing airlines
+    existing_normalized = set()
+    for row_idx in range(2, ws.max_row + 1):
+        cell_val = ws.cell(row=row_idx, column=airline_col_idx).value
+        if cell_val is not None and str(cell_val).strip():
+            existing_normalized.add(normalize_text(str(cell_val)))
+
+    added_count = 0
+    next_row = ws.max_row + 1
+
+    for a in airlines:
+        clean_name = str(a).strip()
+        if not clean_name:
+            continue
+        norm = normalize_text(clean_name)
+        if norm not in existing_normalized:
+            ws.cell(row=next_row, column=airline_col_idx, value=clean_name)
+            ws.cell(row=next_row, column=color_col_idx, value=None)
+            existing_normalized.add(norm)
+            next_row += 1
+            added_count += 1
+
+    if added_count > 0:
+        try:
+            wb.save(path)
+        except PermissionError as exc:
+            wb.close()
+            raise WorkbookLockedError(
+                f"Destinations.xlsx is currently locked by another program. ({exc})"
+            ) from exc
+    wb.close()
+    return added_count
 

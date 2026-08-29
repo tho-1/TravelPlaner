@@ -116,9 +116,9 @@ Use exactly this schema:
     }
   },
   "reviews": {
-    "praise": "1-2 sentences: what travelers praise",
-    "dislikes": "1-2 sentences: recurring criticisms",
-    "total_reviews_analyzed": 50,
+    "praise": "detailed paragraph of 5 to 10 complete sentences about what travelers praise",
+    "dislikes": "detailed paragraph of 5 to 10 complete sentences about recurring criticisms and dislikes",
+    "total_reviews_analyzed": 100,
     "date_range": "Feb 2024 - Feb 2026",
     "aspects": {
       "Scenery & atmosphere": {"pos": int, "neutral": int, "neg": int},
@@ -145,6 +145,7 @@ Use exactly this schema:
 
 Rules:
 - month_ratings values must be exactly "ideal", "ok", or "bad".
+- "praise" and "dislikes" must each be a detailed, comprehensive paragraph containing 5 to 10 complete sentences.
 - Each aspect's pos+neutral+neg should be realistic; the positive share should
   reflect how much travelers like that aspect for this destination.
 - Each climate array must contain exactly 12 numbers, ordered January through December.
@@ -385,9 +386,9 @@ def generate_review_profile(destination: str, country: str) -> Dict[str, Any]:
 
 Return only this JSON object:
 {{
-  "praise": "1-2 specific sentences about what travelers praise",
-  "dislikes": "1-2 specific sentences about recurring criticisms",
-  "total_reviews_analyzed": 50,
+  "praise": "detailed paragraph of 5 to 10 specific sentences about what travelers praise",
+  "dislikes": "detailed paragraph of 5 to 10 specific sentences about recurring criticisms and dislikes",
+  "total_reviews_analyzed": 100,
   "date_range": "e.g. Feb 2024 - Feb 2026",
   "aspects": {{{aspect_schema}}},
   "platform_ratings": [
@@ -397,6 +398,7 @@ Return only this JSON object:
 }}
 
 Rules:
+- "praise" and "dislikes" must each be a detailed, comprehensive paragraph containing 5 to 10 complete sentences.
 - Use specific, destination-relevant observations; do not use generic wording such as
   "distinctive cultural and scenic attractions" without naming what travelers praise.
 - Treat the values as an evidence-based summary, not invented certainty. Keep all
@@ -438,4 +440,116 @@ Rules:
         raise RuntimeError("DeepSeek returned incomplete review text.")
     if not isinstance(result.get("aspects"), dict) or not isinstance(result.get("platform_ratings"), list):
         raise RuntimeError("DeepSeek returned an incomplete review breakdown.")
+    return result
+
+
+def generate_flight_routes(destination: str, country: str) -> Dict[str, Any]:
+    """Ask DeepSeek for comprehensive direct flight routes (inbound & outbound) and high-speed rail connections."""
+    from datetime import datetime
+
+    key = get_api_key()
+    if not key:
+        raise RuntimeError(
+            "The DeepSeek API key is not configured. Create a `deepseek_secrets.py` "
+            "file with `DEEPSEEK_API_KEY = \"...\"` or set the environment variable."
+        )
+
+    is_china = any(
+        c in str(country).strip().lower() for c in ["china", "peoples republic of china", "prc", "cn"]
+    ) or str(destination).strip().lower() in {
+        "nanchang", "beijing", "shanghai", "guangzhou", "shenzhen", "chengdu", "chongqing",
+        "hangzhou", "xian", "xi'an", "wuhan", "nanjing", "tianjin", "suzhou", "changsha",
+        "zhengzhou", "qingdao", "dalian", "kunming", "xiamen", "fuzhou", "harbin", "guilin",
+        "sanya", "haikou", "urumqi", "lhasa", "guiyang", "nanning", "hefei", "jinan"
+    }
+
+    hsr_schema = ""
+    if is_china:
+        hsr_schema = """
+  "train_stations": ["Primary High-Speed Railway Stations (e.g. Nanchang West Railway Station / 南昌西站, Nanchang Railway Station / 南昌站)"],
+  "hsr_routes": [
+    {
+      "destination_city": "City name (e.g. Changsha)",
+      "destination_station": "Arrival Station (e.g. Changsha South)",
+      "origin_station": "Departure Station (e.g. Nanchang West)",
+      "duration": "Typical Travel Time (e.g. 1h 15m - 1h 35m)",
+      "train_types": "G-Train (High-Speed 300-350 km/h) / D-Train",
+      "frequency_notes": "e.g. 30+ daily trains (every 15-30 mins)"
+    }
+  ],"""
+
+    user_prompt = f"""Research all major direct passenger flight routes (inbound and outbound) and operating airlines departing from or arriving at {str(destination).strip()}, {str(country).strip()}.
+{"Also research all major High-Speed Railway (HSR / 高铁/动车) connections from this city to other Chinese cities." if is_china else ""}
+
+Return ONLY this JSON object:
+{{
+  "airport_name": "Primary Airport Name (e.g. Nanchang Changbei International Airport)",
+  "iata_code": "IATA code (e.g. KHN)",
+  "city": "{str(destination).strip()}",
+  "country": "{str(country).strip()}",{hsr_schema}
+  "routes": [
+    {{
+      "destination_city": "City name (e.g. Shanghai)",
+      "destination_country": "Country name (e.g. China)",
+      "destination_iata": "Airport code(s) (e.g. SHA / PVG)",
+      "airlines": ["Airline A", "Airline B"],
+      "flight_time": "Estimated flight time (e.g. 1h 45m)",
+      "route_type": "Domestic" | "International" | "Regional",
+      "frequency_notes": "e.g. Multiple flights daily / Daily / 3x weekly / Seasonal"
+    }}
+  ]
+}}
+
+Rules:
+- Include all major direct non-stop destinations that regularly have passenger service from this city's airport(s).
+- Direct passenger routes operate bidirectionally (inbound and outbound).
+- Ensure the operating airlines list and flight_time estimate (e.g. "2h 15m") are accurate for each route.
+- Set route_type appropriately:
+  * "Domestic" for domestic flights within the same country
+  * "Regional" for Hong Kong, Macau, Taiwan (if applicable) or close regional dependencies
+  * "International" for cross-border international destinations
+- Provide between 15 to 45 direct flight routes if the airport is a medium/large hub, or all known direct routes if it is a smaller airport.
+{"- Provide 15 to 30 major direct High-Speed Rail (HSR) connections to other prominent Chinese cities with accurate travel times." if is_china else ""}
+- Return ONLY valid JSON.
+"""
+
+    payload = {
+        "model": get_model(),
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a professional aviation network and high-speed rail transit analyst. Return only valid JSON.",
+            },
+            {"role": "user", "content": user_prompt},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.1,
+    }
+    headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+
+    try:
+        resp = requests.post(
+            DEEPSEEK_API_URL, json=payload, headers=headers, timeout=REQUEST_TIMEOUT
+        )
+    except requests.exceptions.Timeout:
+        raise RuntimeError("The transport connections request timed out. Please try again.") from None
+    except requests.exceptions.RequestException as exc:
+        raise RuntimeError(f"Could not reach the DeepSeek API: {exc}") from exc
+
+    if resp.status_code != 200:
+        raise RuntimeError(
+            f"DeepSeek API request failed (HTTP {resp.status_code}): {resp.text[:300]}"
+        )
+
+    try:
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+        result = _extract_json(content)
+    except (KeyError, IndexError, ValueError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"DeepSeek returned an unparseable response: {exc}") from exc
+
+    if not isinstance(result.get("routes"), list):
+        raise RuntimeError("DeepSeek returned an invalid flight route list.")
+
+    result["last_updated"] = datetime.now().strftime("%d %b %Y")
     return result

@@ -1,12 +1,24 @@
 import datetime
 import html
+import json
+import re
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
-from data_utils import DATA_PATH, WorkbookLockedError, add_new_destination, load_destinations, normalize_text
+from data_utils import (
+    DATA_PATH,
+    WorkbookLockedError,
+    add_new_destination,
+    load_destinations,
+    normalize_text,
+    save_open_destinations,
+    to_be_researched_mask,
+)
 from deepseek_populator import add_destination_with_deepseek
 
 
@@ -73,6 +85,7 @@ def _show_add_destination_dialog():
             if new_dest.strip() not in open_destinations:
                 open_destinations.append(new_dest.strip())
                 st.session_state["open_destinations"] = open_destinations
+                save_open_destinations(open_destinations)
             st.rerun()
         else:
             st.error(msg)
@@ -217,6 +230,7 @@ def _navigate_to_destination(destination_name: str):
     if destination_name not in open_destinations:
         open_destinations.append(destination_name)
         st.session_state["open_destinations"] = open_destinations
+        save_open_destinations(open_destinations)
 
     detail_pages = st.session_state.get("_detail_pages", {})
     target_page = detail_pages.get(destination_name)
@@ -308,6 +322,8 @@ def render_world_map():
     safety_col = metadata.get("safety_col", "Safety Rating")
     cost_col = metadata.get("cost_col", "Avg. Cost/Day")
     reviews_col = metadata.get("reviews_col", "Reviews")
+    prio_col = metadata.get("prio_col")
+    to_be_researched_col = metadata.get("to_be_researched_col")
     month_columns = metadata.get("month_columns", MONTHS)
 
     # Clean rows that have destination and country
@@ -416,12 +432,30 @@ def render_world_map():
             else:
                 map_min_review = 0.0
 
-        if visited_col and visited_col in df_valid.columns:
-            only_unvisited = st.checkbox(
-                "Only show unvisited", value=True, key="map_filter_only_unvisited"
+        cb_col1, cb_col2 = st.columns(2)
+        with cb_col1:
+            if visited_col and visited_col in df_valid.columns:
+                only_unvisited = st.checkbox(
+                    "Only show unvisited", value=True, key="map_filter_only_unvisited"
+                )
+            else:
+                only_unvisited = False
+        with cb_col2:
+            show_city_labels = st.checkbox(
+                "🏷️ Show city text labels on map",
+                value=False,
+                key="map_show_city_labels",
+                help="Display city name text directly on the map. Keep unchecked for a cleaner map with hover tooltips only."
             )
-        else:
-            only_unvisited = False
+
+        f_col7, f_col8, _ = st.columns([1, 1, 2])
+        with f_col7:
+            map_research = st.selectbox(
+                "Requires research?",
+                ["All", "Yes", "No"],
+                key="map_filter_research",
+                help="Show only destinations that still require research (or exclude them).",
+            )
 
     # Apply filters to df_valid
     if map_continent != "All" and continent_col and continent_col in df_valid.columns:
@@ -442,6 +476,9 @@ def render_world_map():
     if only_unvisited and visited_col and visited_col in df_valid.columns:
         is_visited = df_valid[visited_col].eq(True).fillna(False)
         df_valid = df_valid[~is_visited]
+    if to_be_researched_col and to_be_researched_col in df_valid.columns and map_research != "All":
+        research_mask = to_be_researched_mask(df_valid, to_be_researched_col)
+        df_valid = df_valid[research_mask] if map_research == "Yes" else df_valid[~research_mask]
     # ────────────────────────────────────────────────────────────────────────
 
     matched_month_col = next(
@@ -495,7 +532,9 @@ def render_world_map():
                 "Continent": row.get(continent_col, "—"),
                 "Safety Rating": row.get(safety_col, "—"),
                 "Avg Cost/Day": row.get(cost_col, "—"),
-                "Reviews": row.get(metadata.get("reviews_col", "Reviews"), "—"),
+                "Reviews": row.get(reviews_col, "—") if reviews_col else "—",
+                "Prio Thorsten": row.get(prio_col, "—") if prio_col else "—",
+                "To be researched": row.get(to_be_researched_col, False) if to_be_researched_col else False,
                 "Population": row.get(metadata.get("population_col", "Population"), "—"),
                 "Highlights": row.get(metadata.get("highlights_col", "Highlights"), ""),
             }
@@ -601,6 +640,75 @@ def render_world_map():
             projection_type="natural earth"
         )
 
+        # ── City Pins Layer ─────────────────────────────────────────────────
+        coords_path = Path(__file__).resolve().parent.parent / "city_coordinates.json"
+        coords_cache = {}
+        if coords_path.exists():
+            try:
+                with open(coords_path, "r", encoding="utf-8") as f:
+                    coords_cache = json.load(f)
+            except Exception:
+                coords_cache = {}
+
+        city_lats = []
+        city_lons = []
+        city_texts = []
+        city_colors = []
+        city_customdata = []
+
+        condition_pin_colors = {
+            "Ideal": "#16a34a",
+            "Ok": "#f59e0b",
+            "Bad": "#dc2626",
+            "Unknown": "#94a3b8",
+        }
+
+        for dest_entry in destination_breakdown_rows:
+            raw_dest = dest_entry["Destination"]
+            clean_city = re.sub(r"\(.*?\)", "", raw_dest).strip()
+            norm = normalize_text(raw_dest)
+            coord_info = coords_cache.get(norm) or coords_cache.get(normalize_text(clean_city))
+            if coord_info:
+                cond = dest_entry.get("Travel Condition", "Unknown")
+                city_lats.append(coord_info["lat"])
+                city_lons.append(coord_info["lon"])
+                city_texts.append(clean_city)
+                city_colors.append(condition_pin_colors.get(cond, "#94a3b8"))
+                city_customdata.append([
+                    dest_entry["Country"],
+                    clean_city,
+                    selected_month,
+                    cond,
+                    raw_dest,
+                ])
+
+        if city_lats:
+            fig.add_trace(
+                go.Scattergeo(
+                    lat=city_lats,
+                    lon=city_lons,
+                    text=city_texts,
+                    mode="markers+text" if show_city_labels else "markers",
+                    textposition="top center",
+                    textfont=dict(size=9, color="#1e293b", family="sans-serif"),
+                    marker=dict(
+                        size=6.5,
+                        color=city_colors,
+                        line=dict(width=1.2, color="#ffffff"),
+                        opacity=0.95,
+                    ),
+                    customdata=city_customdata,
+                    hovertemplate=(
+                        "<b>%{customdata[1]}</b> (%{customdata[0]})<br>"
+                        "<b>%{customdata[2]}:</b> %{customdata[3]}<br>"
+                        "<i>Click to inspect</i>"
+                        "<extra></extra>"
+                    ),
+                    name="Destinations",
+                    showlegend=False,
+                )
+            )
+
         fig.update_layout(
             margin=dict(l=0, r=0, t=40, b=0),
             height=560,
@@ -647,14 +755,10 @@ def render_world_map():
     if current_active_country and current_active_country in country_to_destinations:
         st.markdown("---")
 
-        header_left, header_right = st.columns([5, 1])
+        header_left = st.container()
         with header_left:
             st.subheader(f"📍 Cities in **{current_active_country}** ({selected_month})")
             st.caption("Click on any city below to open its destination details tab:")
-        with header_right:
-            if st.button("✖ Clear", key="btn_clear_map_selection", help="Deselect country"):
-                st.session_state["active_country"] = None
-                st.rerun()
 
         # Display city cards for the active country
         country_dests = sorted(
@@ -662,77 +766,60 @@ def render_world_map():
             key=lambda item: item["Destination"].casefold(),
         )
         if country_dests:
+            st.markdown(
+                """
+                <style>
+                    a.dest-heading-link {
+                        display: block !important;
+                        font-size: 1.45rem !important;
+                        font-weight: 700 !important;
+                        color: #111827 !important;
+                        text-decoration: none !important;
+                        margin-bottom: 6px !important;
+                        line-height: 1.3 !important;
+                    }
+                    a.dest-heading-link:hover {
+                        color: #2563eb !important;
+                        text-decoration: underline !important;
+                    }
+                </style>
+                """,
+                unsafe_allow_html=True,
+            )
+            detail_urls = st.session_state.get("_detail_urls", {})
             card_cols = st.columns(min(3, max(1, len(country_dests))))
             for idx, dest_info in enumerate(country_dests):
                 city_name = dest_info["Destination"]
                 city_cond = dest_info["Travel Condition"]
                 badge = "🟢" if city_cond == "Ideal" else ("🟡" if city_cond == "Ok" else "🔴")
+                to_be_researched = dest_info.get("To be researched")
+                is_research = pd.notna(to_be_researched) and bool(to_be_researched) is True
+                q_mark = " ❓" if is_research else ""
+                prio = dest_info.get("Prio Thorsten", "—")
                 reviews = dest_info.get("Reviews", "—")
                 population = dest_info.get("Population", "—")
+                url_path = detail_urls.get(city_name, f"destination-{city_name.lower().replace(' ', '-')}")
 
                 with card_cols[idx % len(card_cols)]:
                     with st.container(border=True):
-                        st.markdown(f"#### {badge} {city_name}")
-                        
+                        st.markdown(
+                            f'<a href="{html.escape(url_path)}" target="_self" class="dest-heading-link">{badge} {html.escape(city_name)}{q_mark}</a>',
+                            unsafe_allow_html=True,
+                        )
+
                         info_items = []
-                        if reviews not in ("—", None, "") and pd.notna(reviews):
+                        if prio not in ("—", None, "") and pd.notna(prio) and str(prio).strip().lower() not in {"nan", "none", "null"}:
+                            try:
+                                prio_num = float(prio)
+                                prio_text = f"{prio_num:g}"
+                            except (ValueError, TypeError):
+                                prio_text = str(prio).strip()
+                            info_items.append(f"🎯 Prio Thorsten: **{prio_text}/10**")
+                        if reviews not in ("—", None, "") and pd.notna(reviews) and str(reviews).strip().lower() not in {"nan", "none", "null"}:
                             info_items.append(f"⭐ Reviews: **{reviews}/10**")
-                        if population not in ("—", None, "") and pd.notna(population):
+                        if population not in ("—", None, "") and pd.notna(population) and str(population).strip().lower() not in {"nan", "none", "null"}:
                             pop_val = int(population) if isinstance(population, float) and population == int(population) else population
                             info_items.append(f"👥 Population: **{pop_val:,}**" if isinstance(pop_val, (int, float)) else f"👥 Population: **{pop_val}**")
                         if info_items:
                             st.caption(" • ".join(info_items))
-
-                        if st.button(
-                            f"View {city_name} Details ➔",
-                            key=f"btn_city_{current_active_country}_{city_name}_{idx}",
-                            width="stretch",
-                            type="secondary"
-                        ):
-                            _navigate_to_destination(city_name)
         st.markdown("---")
-
-    # Complete Clickable Destination Directory
-    with st.expander(f"🧳 View All Global Destinations for {selected_month}", expanded=False):
-        filter_col1, filter_col2 = st.columns([2, 2])
-        with filter_col1:
-            condition_filter = st.selectbox(
-                "Filter by condition:",
-                options=["All Conditions", "🟢 Ideal only", "🟡 Ok only", "🔴 Bad / Off-season only"],
-                index=0,
-                key="dest_condition_filter"
-            )
-        with filter_col2:
-            search_query = st.text_input("🔍 Search destination or country:", "", key="dest_map_search_input")
-
-        # Apply filters
-        filtered_dest_df = df_dest_breakdown.copy()
-        if condition_filter == "🟢 Ideal only":
-            filtered_dest_df = filtered_dest_df[filtered_dest_df["Travel Condition"] == "Ideal"]
-        elif condition_filter == "🟡 Ok only":
-            filtered_dest_df = filtered_dest_df[filtered_dest_df["Travel Condition"] == "Ok"]
-        elif condition_filter == "🔴 Bad / Off-season only":
-            filtered_dest_df = filtered_dest_df[filtered_dest_df["Travel Condition"] == "Bad"]
-
-        if search_query:
-            q = search_query.strip().lower()
-            filtered_dest_df = filtered_dest_df[
-                filtered_dest_df["Destination"].str.lower().str.contains(q)
-                | filtered_dest_df["Country"].str.lower().str.contains(q)
-            ]
-
-        if filtered_dest_df.empty:
-            st.info("No destinations match the selected filter.")
-        else:
-            filtered_dest_df = filtered_dest_df.sort_values(by=["Country", "Destination"])
-            dest_columns = st.columns(3)
-            for idx, (_, row) in enumerate(filtered_dest_df.iterrows()):
-                d_name = row["Destination"]
-                c_name = row["Country"]
-                cond = row["Travel Condition"]
-                badge = "🟢" if cond == "Ideal" else ("🟡" if cond == "Ok" else "🔴")
-                
-                button_label = f"{badge} {c_name} — {d_name} ({cond})"
-                with dest_columns[idx % 3]:
-                    if st.button(button_label, key=f"global_dest_nav_{d_name}_{idx}", width="stretch"):
-                        _navigate_to_destination(d_name)

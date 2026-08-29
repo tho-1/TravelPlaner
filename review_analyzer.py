@@ -73,7 +73,7 @@ class DestinationReviewData:
     country: str
     aspect_counts: Dict[str, AspectSentiment] = field(default_factory=dict)
     platform_ratings: List[PlatformRating] = field(default_factory=list)
-    total_reviews_analyzed: int = 50
+    total_reviews_analyzed: int = 100
     date_range: str = "Feb 2024 - Feb 2026"
     notes: str = ""
 

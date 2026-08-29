@@ -1,0 +1,29 @@
+[
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\Gemini - Travel Planner\\Pictures\\gallery\\zigong-sichuan\\1.jpg",
+    "photo_id": "Z9PILd0Ds3A",
+    "photographer_name": "Zhixian Chen",
+    "photographer_url": "https://unsplash.com/@zx_chen",
+    "photo_url": "https://unsplash.com/photos/a-colorful-statue-of-a-person-with-a-cane-Z9PILd0Ds3A",
+    "alt": "A colorful statue of a person with a cane",
+    "thumb_url": "https://images.unsplash.com/photo-1725354785230-b354a626f880?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8MXx8Wmlnb25nJTJDJTIwQ2hpbmF8ZW58MXwwfHx8MTc4NzY5ODEzOXww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\Gemini - Travel Planner\\Pictures\\gallery\\zigong-sichuan\\2.jpg",
+    "photo_id": "J70DnwDVxdM",
+    "photographer_name": "Kexin Huang",
+    "photographer_url": "https://unsplash.com/@function_",
+    "photo_url": "https://unsplash.com/photos/a-crane-is-sitting-on-top-of-a-building-J70DnwDVxdM",
+    "alt": "A crane is sitting on top of a building",
+    "thumb_url": "https://images.unsplash.com/photo-1722501106404-6ce75d0ead53?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8Mnx8Wmlnb25nJTJDJTIwQ2hpbmF8ZW58MXwwfHx8MTc4NzY5ODEzOXww&ixlib=rb-4.1.0&q=80&w=200"
+  },
+  {
+    "image_path": "C:\\Users\\Thors\\OneDrive\\Documents\\Gemini - Travel Planner\\Pictures\\gallery\\zigong-sichuan\\3.jpg",
+    "photo_id": "ExDgghf_hCk",
+    "photographer_name": "Kexin Huang",
+    "photographer_url": "https://unsplash.com/@function_",
+    "photo_url": "https://unsplash.com/photos/a-view-of-a-city-skyline-at-night-ExDgghf_hCk",
+    "alt": "A view of a city skyline at night",
+    "thumb_url": "https://images.unsplash.com/photo-1723258434159-a1dc26be94c5?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3wxMDM3MjA2fDB8MXxzZWFyY2h8M3x8Wmlnb25nJTJDJTIwQ2hpbmF8ZW58MXwwfHx8MTc4NzY5ODEzOXww&ixlib=rb-4.1.0&q=80&w=200"
+  }
+]

@@ -1,0 +1,1010 @@
+{
+  "bogot": {
+    "destination": "Bogotá",
+    "city": "Bogotá",
+    "country": "Colombia",
+    "lat": 4.711,
+    "lon": -74.0721
+  },
+  "medellin": {
+    "destination": "Medellin",
+    "city": "Medellin",
+    "country": "Colombia",
+    "lat": 6.2442,
+    "lon": -75.5812
+  },
+  "mexicocity": {
+    "destination": "Mexico City",
+    "city": "Mexico City",
+    "country": "Mexico",
+    "lat": 19.4326,
+    "lon": -99.1332
+  },
+  "lima": {
+    "destination": "Lima",
+    "city": "Lima",
+    "country": "Peru",
+    "lat": -12.0464,
+    "lon": -77.0428
+  },
+  "cusco": {
+    "destination": "Cusco",
+    "city": "Cusco",
+    "country": "Peru",
+    "lat": -13.5319,
+    "lon": -71.9675
+  },
+  "chongqingchongqing": {
+    "destination": "Chongqing (Chongqing)",
+    "city": "Chongqing",
+    "country": "China",
+    "lat": 29.4316,
+    "lon": 106.9123
+  },
+  "santiagochile": {
+    "destination": "Santiago (Chile)",
+    "city": "Santiago",
+    "country": "Chile",
+    "lat": -33.4489,
+    "lon": -70.6693
+  },
+  "sanjoscostarica": {
+    "destination": "San José (Costa Rica)",
+    "city": "San José",
+    "country": "Costa Rica",
+    "lat": 9.9281,
+    "lon": -84.0907
+  },
+  "krakow": {
+    "destination": "Krakow",
+    "city": "Krakow",
+    "country": "Poland",
+    "lat": 50.0647,
+    "lon": 19.945
+  },
+  "guilinguangxi": {
+    "destination": "Guilin (Guangxi)",
+    "city": "Guilin",
+    "country": "China",
+    "lat": 25.2736,
+    "lon": 110.2902
+  },
+  "kerala": {
+    "destination": "Kerala",
+    "city": "Kerala",
+    "country": "India",
+    "lat": 10.8505,
+    "lon": 76.2711
+  },
+  "nagoya": {
+    "destination": "Nagoya",
+    "city": "Nagoya",
+    "country": "Japan",
+    "lat": 35.1815,
+    "lon": 136.9066
+  },
+  "saigon": {
+    "destination": "Saigon",
+    "city": "Saigon",
+    "country": "Vietnam",
+    "lat": 10.8231,
+    "lon": 106.6297
+  },
+  "sapporo": {
+    "destination": "Sapporo",
+    "city": "Sapporo",
+    "country": "Japan",
+    "lat": 43.0618,
+    "lon": 141.3545
+  },
+  "tallinn": {
+    "destination": "Tallinn",
+    "city": "Tallinn",
+    "country": "Estonia",
+    "lat": 59.437,
+    "lon": 24.7535
+  },
+  "kathmandu": {
+    "destination": "Kathmandu",
+    "city": "Kathmandu",
+    "country": "Nepal",
+    "lat": 27.7172,
+    "lon": 85.324
+  },
+  "cebucity": {
+    "destination": "Cebu City",
+    "city": "Cebu City",
+    "country": "Philippines",
+    "lat": 10.3157,
+    "lon": 123.8854
+  },
+  "kkkotakinabalu": {
+    "destination": "KK (Kota Kinabalu)",
+    "city": "KK",
+    "country": "Malaysia",
+    "lat": 5.9804,
+    "lon": 116.0735
+  },
+  "oslo": {
+    "destination": "Oslo",
+    "city": "Oslo",
+    "country": "Norway",
+    "lat": 59.9139,
+    "lon": 10.7522
+  },
+  "reykjavik": {
+    "destination": "Reykjavik",
+    "city": "Reykjavik",
+    "country": "Iceland",
+    "lat": 64.1466,
+    "lon": -21.9426
+  },
+  "vancouver": {
+    "destination": "Vancouver",
+    "city": "Vancouver",
+    "country": "Canada",
+    "lat": 49.2827,
+    "lon": -123.1207
+  },
+  "johannesburg": {
+    "destination": "Johannesburg",
+    "city": "Johannesburg",
+    "country": "South Africa",
+    "lat": -26.2041,
+    "lon": 28.0473
+  },
+  "capetown": {
+    "destination": "Cape Town",
+    "city": "Cape Town",
+    "country": "South Africa",
+    "lat": -33.9249,
+    "lon": 18.4241
+  },
+  "lapaz": {
+    "destination": "La Paz",
+    "city": "La Paz",
+    "country": "Bolivia",
+    "lat": -16.4897,
+    "lon": -68.1193
+  },
+  "sanjuan": {
+    "destination": "San Juan",
+    "city": "San Juan",
+    "country": "Puerto Rico",
+    "lat": 18.4655,
+    "lon": -66.1057
+  },
+  "algiers": {
+    "destination": "Algiers",
+    "city": "Algiers",
+    "country": "Algeria",
+    "lat": 36.7538,
+    "lon": 3.0588
+  },
+  "kunmingyunnan": {
+    "destination": "Kunming (Yunnan)",
+    "city": "Kunming",
+    "country": "China",
+    "lat": 25.0406,
+    "lon": 102.7129
+  },
+  "okinawa": {
+    "destination": "Okinawa",
+    "city": "Okinawa",
+    "country": "Japan",
+    "lat": 26.2124,
+    "lon": 127.6809
+  },
+  "mallorca": {
+    "destination": "Mallorca",
+    "city": "Mallorca",
+    "country": "Spain",
+    "lat": 39.6953,
+    "lon": 3.0176
+  },
+  "denpasar": {
+    "destination": "Denpasar",
+    "city": "Denpasar",
+    "country": "Indonesia",
+    "lat": -8.6705,
+    "lon": 115.2126
+  },
+  "bilbao": {
+    "destination": "Bilbao",
+    "city": "Bilbao",
+    "country": "Spain",
+    "lat": 43.263,
+    "lon": -2.935
+  },
+  "seville": {
+    "destination": "Seville",
+    "city": "Seville",
+    "country": "Spain",
+    "lat": 37.3891,
+    "lon": -5.9845
+  },
+  "haiphong": {
+    "destination": "Haiphong",
+    "city": "Haiphong",
+    "country": "Vietnam",
+    "lat": 20.8449,
+    "lon": 106.6881
+  },
+  "phuquoc": {
+    "destination": "Phu Quoc",
+    "city": "Phu Quoc",
+    "country": "Vietnam",
+    "lat": 10.2899,
+    "lon": 103.984
+  },
+  "malaga": {
+    "destination": "Malaga",
+    "city": "Malaga",
+    "country": "Spain",
+    "lat": 36.7213,
+    "lon": -4.4214
+  },
+  "helsinki": {
+    "destination": "Helsinki",
+    "city": "Helsinki",
+    "country": "Finland",
+    "lat": 60.1699,
+    "lon": 24.9384
+  },
+  "cantho": {
+    "destination": "Can Tho",
+    "city": "Can Tho",
+    "country": "Vietnam",
+    "lat": 10.0452,
+    "lon": 105.7469
+  },
+  "izmir": {
+    "destination": "Izmir",
+    "city": "Izmir",
+    "country": "Turkey",
+    "lat": 38.4237,
+    "lon": 27.1428
+  },
+  "ankara": {
+    "destination": "Ankara",
+    "city": "Ankara",
+    "country": "Turkey",
+    "lat": 39.9334,
+    "lon": 32.8597
+  },
+  "luangprabang": {
+    "destination": "Luang Prabang",
+    "city": "Luang Prabang",
+    "country": "Laos",
+    "lat": 19.8893,
+    "lon": 102.1357
+  },
+  "samarkand": {
+    "destination": "Samarkand",
+    "city": "Samarkand",
+    "country": "Uzbekistan",
+    "lat": 39.627,
+    "lon": 66.975
+  },
+  "makassar": {
+    "destination": "Makassar",
+    "city": "Makassar",
+    "country": "Indonesia",
+    "lat": -5.1477,
+    "lon": 119.4327
+  },
+  "manila": {
+    "destination": "Manila",
+    "city": "Manila",
+    "country": "Philippines",
+    "lat": 14.5995,
+    "lon": 120.9842
+  },
+  "fukuoka": {
+    "destination": "Fukuoka",
+    "city": "Fukuoka",
+    "country": "Japan",
+    "lat": 33.5904,
+    "lon": 130.4017
+  },
+  "xianshaanxi": {
+    "destination": "Xi'an (Shaanxi)",
+    "city": "Xi'an",
+    "country": "China",
+    "lat": 34.3416,
+    "lon": 108.9398
+  },
+  "wuhanhubei": {
+    "destination": "Wuhan (Hubei)",
+    "city": "Wuhan",
+    "country": "China",
+    "lat": 30.5928,
+    "lon": 114.3055
+  },
+  "pattaya": {
+    "destination": "Pattaya",
+    "city": "Pattaya",
+    "country": "Thailand",
+    "lat": 12.9236,
+    "lon": 100.8825
+  },
+  "hatyai": {
+    "destination": "Hat Yai",
+    "city": "Hat Yai",
+    "country": "Thailand",
+    "lat": 7.0084,
+    "lon": 100.4767
+  },
+  "vungtau": {
+    "destination": "Vung Tau",
+    "city": "Vung Tau",
+    "country": "Vietnam",
+    "lat": 10.346,
+    "lon": 107.0843
+  },
+  "vientiane": {
+    "destination": "Vientiane",
+    "city": "Vientiane",
+    "country": "Laos",
+    "lat": 17.9757,
+    "lon": 102.6331
+  },
+  "managua": {
+    "destination": "Managua",
+    "city": "Managua",
+    "country": "Nicaragua",
+    "lat": 12.115,
+    "lon": -86.2362
+  },
+  "melbourne": {
+    "destination": "Melbourne",
+    "city": "Melbourne",
+    "country": "Australia",
+    "lat": -37.8136,
+    "lon": 144.9631
+  },
+  "thessaloniki": {
+    "destination": "Thessaloniki",
+    "city": "Thessaloniki",
+    "country": "Greece",
+    "lat": 40.6401,
+    "lon": 22.9444
+  },
+  "auckland": {
+    "destination": "Auckland",
+    "city": "Auckland",
+    "country": "New Zealand",
+    "lat": -36.8485,
+    "lon": 174.7633
+  },
+  "cancun": {
+    "destination": "Cancun",
+    "city": "Cancun",
+    "country": "Mexico",
+    "lat": 21.1619,
+    "lon": -86.8515
+  },
+  "larnaca": {
+    "destination": "Larnaca",
+    "city": "Larnaca",
+    "country": "Cyprus",
+    "lat": 34.9003,
+    "lon": 33.6232
+  },
+  "marseille": {
+    "destination": "Marseille",
+    "city": "Marseille",
+    "country": "France",
+    "lat": 43.2965,
+    "lon": 5.3698
+  },
+  "nice": {
+    "destination": "Nice",
+    "city": "Nice",
+    "country": "France",
+    "lat": 43.7102,
+    "lon": 7.262
+  },
+  "edinburgh": {
+    "destination": "Edinburgh",
+    "city": "Edinburgh",
+    "country": "United Kingdom",
+    "lat": 55.9533,
+    "lon": -3.1883
+  },
+  "ubud": {
+    "destination": "Ubud",
+    "city": "Ubud",
+    "country": "Indonesia",
+    "lat": -8.5069,
+    "lon": 115.2625
+  },
+  "doha": {
+    "destination": "Doha",
+    "city": "Doha",
+    "country": "Qatar",
+    "lat": 25.2854,
+    "lon": 51.531
+  },
+  "medan": {
+    "destination": "Medan",
+    "city": "Medan",
+    "country": "Indonesia",
+    "lat": 3.5952,
+    "lon": 98.6722
+  },
+  "portmoresby": {
+    "destination": "Port Moresby",
+    "city": "Port Moresby",
+    "country": "Papua New Guinea",
+    "lat": -9.4438,
+    "lon": 147.1803
+  },
+  "cali": {
+    "destination": "Cali",
+    "city": "Cali",
+    "country": "Colombia",
+    "lat": 3.4516,
+    "lon": -76.532
+  },
+  "dhaka": {
+    "destination": "Dhaka",
+    "city": "Dhaka",
+    "country": "Bangladesh",
+    "lat": 23.8103,
+    "lon": 90.4125
+  },
+  "srilanka": {
+    "destination": "Sri Lanka",
+    "city": "Sri Lanka",
+    "country": "Sri Lanka",
+    "lat": 7.8731,
+    "lon": 80.7718
+  },
+  "cartagena": {
+    "destination": "Cartagena",
+    "city": "Cartagena",
+    "country": "Colombia",
+    "lat": 10.391,
+    "lon": -75.4794
+  },
+  "valencia": {
+    "destination": "Valencia",
+    "city": "Valencia",
+    "country": "Spain",
+    "lat": 39.4699,
+    "lon": -0.3763
+  },
+  "mumbai": {
+    "destination": "Mumbai",
+    "city": "Mumbai",
+    "country": "India",
+    "lat": 19.076,
+    "lon": 72.8777
+  },
+  "delhi": {
+    "destination": "Delhi",
+    "city": "Delhi",
+    "country": "India",
+    "lat": 28.7041,
+    "lon": 77.1025
+  },
+  "graz": {
+    "destination": "Graz",
+    "city": "Graz",
+    "country": "Austria",
+    "lat": 47.0707,
+    "lon": 15.4395
+  },
+  "arequipa": {
+    "destination": "Arequipa",
+    "city": "Arequipa",
+    "country": "Peru",
+    "lat": -16.409,
+    "lon": -71.5375
+  },
+  "quito": {
+    "destination": "Quito",
+    "city": "Quito",
+    "country": "Ecuador",
+    "lat": -0.1807,
+    "lon": -78.4678
+  },
+  "sucre": {
+    "destination": "Sucre",
+    "city": "Sucre",
+    "country": "Bolivia",
+    "lat": -19.0196,
+    "lon": -65.2619
+  },
+  "valparaiso": {
+    "destination": "Valparaiso",
+    "city": "Valparaiso",
+    "country": "Chile",
+    "lat": -33.0472,
+    "lon": -71.6127
+  },
+  "asuncin": {
+    "destination": "Asunción",
+    "city": "Asunción",
+    "country": "Paraguay",
+    "lat": -25.2637,
+    "lon": -57.5759
+  },
+  "salvador": {
+    "destination": "Salvador",
+    "city": "Salvador",
+    "country": "Brazil",
+    "lat": -12.9777,
+    "lon": -38.5016
+  },
+  "guayaquil": {
+    "destination": "Guayaquil",
+    "city": "Guayaquil",
+    "country": "Ecuador",
+    "lat": -2.1894,
+    "lon": -79.8891
+  },
+  "santacruz": {
+    "destination": "Santa Cruz",
+    "city": "Santa Cruz",
+    "country": "Bolivia",
+    "lat": -17.8146,
+    "lon": -63.1561
+  },
+  "hangzhouzhejiang": {
+    "destination": "Hangzhou (Zhejiang)",
+    "city": "Hangzhou",
+    "country": "China",
+    "lat": 30.2741,
+    "lon": 120.1551
+  },
+  "tianjintianjin": {
+    "destination": "Tianjin (Tianjin)",
+    "city": "Tianjin",
+    "country": "China",
+    "lat": 39.3434,
+    "lon": 117.3616
+  },
+  "rmqixinjiang": {
+    "destination": "Ürümqi (Xinjiang)",
+    "city": "Ürümqi",
+    "country": "China",
+    "lat": 43.8256,
+    "lon": 87.6168
+  },
+  "ulaanbaatar": {
+    "destination": "Ulaanbaatar",
+    "city": "Ulaanbaatar",
+    "country": "Mongolia",
+    "lat": 47.9212,
+    "lon": 106.9186
+  },
+  "sarajevo": {
+    "destination": "Sarajevo",
+    "city": "Sarajevo",
+    "country": "Bosnia and Herzegovina",
+    "lat": 43.8563,
+    "lon": 18.4131
+  },
+  "bucharest": {
+    "destination": "Bucharest",
+    "city": "Bucharest",
+    "country": "Romania",
+    "lat": 44.4268,
+    "lon": 26.1025
+  },
+  "chennai": {
+    "destination": "Chennai",
+    "city": "Chennai",
+    "country": "India",
+    "lat": 13.0827,
+    "lon": 80.2707
+  },
+  "shenyangliaoning": {
+    "destination": "Shenyang (Liaoning)",
+    "city": "Shenyang",
+    "country": "China",
+    "lat": 41.8057,
+    "lon": 123.4315
+  },
+  "harbinheilongjiang": {
+    "destination": "Harbin (Heilongjiang)",
+    "city": "Harbin",
+    "country": "China",
+    "lat": 45.8038,
+    "lon": 126.535
+  },
+  "luoyanghenan": {
+    "destination": "Luoyang (Henan)",
+    "city": "Luoyang",
+    "country": "China",
+    "lat": 34.6197,
+    "lon": 112.454
+  },
+  "datongshanxi": {
+    "destination": "Datong (Shanxi)",
+    "city": "Datong",
+    "country": "China",
+    "lat": 40.0768,
+    "lon": 113.3001
+  },
+  "suzhoujiangsu": {
+    "destination": "Suzhou (Jiangsu)",
+    "city": "Suzhou",
+    "country": "China",
+    "lat": 31.2989,
+    "lon": 120.5853
+  },
+  "qingdaoshandong": {
+    "destination": "Qingdao (Shandong)",
+    "city": "Qingdao",
+    "country": "China",
+    "lat": 36.0671,
+    "lon": 120.3826
+  },
+  "xiamenfujian": {
+    "destination": "Xiamen (Fujian)",
+    "city": "Xiamen",
+    "country": "China",
+    "lat": 24.4798,
+    "lon": 118.0894
+  },
+  "zhangjiajiehunan": {
+    "destination": "Zhangjiajie (Hunan)",
+    "city": "Zhangjiajie",
+    "country": "China",
+    "lat": 29.117,
+    "lon": 110.4789
+  },
+  "guiyangguizhou": {
+    "destination": "Guiyang (Guizhou)",
+    "city": "Guiyang",
+    "country": "China",
+    "lat": 26.647,
+    "lon": 106.6302
+  },
+  "panamacity": {
+    "destination": "Panama City",
+    "city": "Panama City",
+    "country": "Panama",
+    "lat": 8.9824,
+    "lon": -79.5199
+  },
+  "yogyakarta": {
+    "destination": "Yogyakarta",
+    "city": "Yogyakarta",
+    "country": "Indonesia",
+    "lat": -7.7956,
+    "lon": 110.3695
+  },
+  "bishkek": {
+    "destination": "Bishkek",
+    "city": "Bishkek",
+    "country": "Kyrgyzstan",
+    "lat": 42.8746,
+    "lon": 74.5698
+  },
+  "dubai": {
+    "destination": "Dubai",
+    "city": "Dubai",
+    "country": "UAE",
+    "lat": 25.2048,
+    "lon": 55.2708
+  },
+  "montevideo": {
+    "destination": "Montevideo",
+    "city": "Montevideo",
+    "country": "Uruguay",
+    "lat": -34.9011,
+    "lon": -56.1645
+  },
+  "windhoek": {
+    "destination": "Windhoek",
+    "city": "Windhoek",
+    "country": "Namibia",
+    "lat": -22.5609,
+    "lon": 17.0658
+  },
+  "nanjingjiangsu": {
+    "destination": "Nanjing (Jiangsu)",
+    "city": "Nanjing",
+    "country": "China",
+    "lat": 32.0603,
+    "lon": 118.7969
+  },
+  "nanningguangxi": {
+    "destination": "Nanning (Guangxi)",
+    "city": "Nanning",
+    "country": "China",
+    "lat": 22.817,
+    "lon": 108.3665
+  },
+  "nanchangjiangxi": {
+    "destination": "Nanchang (Jiangxi)",
+    "city": "Nanchang",
+    "country": "China",
+    "lat": 28.682,
+    "lon": 115.8579
+  },
+  "xiangyanghubei": {
+    "destination": "Xiangyang (Hubei)",
+    "city": "Xiangyang",
+    "country": "China",
+    "lat": 32.0087,
+    "lon": 112.1224
+  },
+  "quanzhoufujian": {
+    "destination": "Quanzhou (Fujian)",
+    "city": "Quanzhou",
+    "country": "China",
+    "lat": 24.8741,
+    "lon": 118.6757
+  },
+  "yichunjiangxi": {
+    "destination": "Yichun (Jiangxi)",
+    "city": "Yichun",
+    "country": "China",
+    "lat": 27.8043,
+    "lon": 114.3831
+  },
+  "bruneicapital": {
+    "destination": "Brunei (capital)",
+    "city": "Brunei",
+    "country": "Brunei",
+    "lat": 4.9031,
+    "lon": 114.9398
+  },
+  "malabo": {
+    "destination": "Malabo",
+    "city": "Malabo",
+    "country": "Equatorial Guinea",
+    "lat": 3.7504,
+    "lon": 8.7371
+  },
+  "nhatrang": {
+    "destination": "Nha Trang",
+    "city": "Nha Trang",
+    "country": "Vietnam",
+    "lat": 12.2388,
+    "lon": 109.1967
+  },
+  "wuxijiangsu": {
+    "destination": "Wuxi (Jiangsu)",
+    "city": "Wuxi",
+    "country": "China",
+    "lat": 31.4912,
+    "lon": 120.3119
+  },
+  "bangalore": {
+    "destination": "Bangalore",
+    "city": "Bangalore",
+    "country": "India",
+    "lat": 12.9716,
+    "lon": 77.5946
+  },
+  "tunis": {
+    "destination": "Tunis",
+    "city": "Tunis",
+    "country": "Tunisia",
+    "lat": 36.8065,
+    "lon": 10.1815
+  },
+  "jakarta": {
+    "destination": "Jakarta",
+    "city": "Jakarta",
+    "country": "Indonesia",
+    "lat": -6.2088,
+    "lon": 106.8456
+  },
+  "marrakesh": {
+    "destination": "Marrakesh",
+    "city": "Marrakesh",
+    "country": "Morocco",
+    "lat": 31.6295,
+    "lon": -7.9811
+  },
+  "tbilisi": {
+    "destination": "Tbilisi",
+    "city": "Tbilisi",
+    "country": "Georgia",
+    "lat": 41.7151,
+    "lon": 44.8271
+  },
+  "bukhara": {
+    "destination": "Bukhara",
+    "city": "Bukhara",
+    "country": "Uzbekistan",
+    "lat": 39.7681,
+    "lon": 64.4219
+  },
+  "khiva": {
+    "destination": "Khiva",
+    "city": "Khiva",
+    "country": "Uzbekistan",
+    "lat": 41.3783,
+    "lon": 60.3639
+  },
+  "ipoh": {
+    "destination": "Ipoh",
+    "city": "Ipoh",
+    "country": "Malaysia",
+    "lat": 4.5975,
+    "lon": 101.0901
+  },
+  "daliyunnan": {
+    "destination": "Dali (Yunnan)",
+    "city": "Dali",
+    "country": "China",
+    "lat": 25.6065,
+    "lon": 100.2676
+  },
+  "lijiangyunnan": {
+    "destination": "Lijiang (Yunnan)",
+    "city": "Lijiang",
+    "country": "China",
+    "lat": 26.855,
+    "lon": 100.2277
+  },
+  "amman": {
+    "destination": "Amman",
+    "city": "Amman",
+    "country": "Jordan",
+    "lat": 31.9454,
+    "lon": 35.9284
+  },
+  "kashgarxinjiang": {
+    "destination": "Kashgar (Xinjiang)",
+    "city": "Kashgar",
+    "country": "China",
+    "lat": 39.4677,
+    "lon": 75.9898
+  },
+  "zanzibarstonetown": {
+    "destination": "Zanzibar (Stone Town)",
+    "city": "Zanzibar",
+    "country": "Tanzania",
+    "lat": -6.1659,
+    "lon": 39.2026
+  },
+  "tainan": {
+    "destination": "Tainan",
+    "city": "Tainan",
+    "country": "Taiwan",
+    "lat": 22.9997,
+    "lon": 120.227
+  },
+  "hiroshima": {
+    "destination": "Hiroshima",
+    "city": "Hiroshima",
+    "country": "Japan",
+    "lat": 34.3853,
+    "lon": 132.4553
+  },
+  "kuching": {
+    "destination": "Kuching",
+    "city": "Kuching",
+    "country": "Malaysia",
+    "lat": 1.5533,
+    "lon": 110.3592
+  },
+  "tashkent": {
+    "destination": "Tashkent",
+    "city": "Tashkent",
+    "country": "Uzbekistan",
+    "lat": 41.2995,
+    "lon": 69.2401
+  },
+  "oaxacacity": {
+    "destination": "Oaxaca City",
+    "city": "Oaxaca City",
+    "country": "Mexico",
+    "lat": 17.0732,
+    "lon": -96.7266
+  },
+  "crdoba": {
+    "destination": "Córdoba",
+    "city": "Córdoba",
+    "country": "Argentina",
+    "lat": -31.4201,
+    "lon": -64.1888
+  },
+  "kanazawa": {
+    "destination": "Kanazawa",
+    "city": "Kanazawa",
+    "country": "Japan",
+    "lat": 36.5613,
+    "lon": 136.6562
+  },
+  "nagasaki": {
+    "destination": "Nagasaki",
+    "city": "Nagasaki",
+    "country": "Japan",
+    "lat": 32.7503,
+    "lon": 129.8777
+  },
+  "taichung": {
+    "destination": "Taichung",
+    "city": "Taichung",
+    "country": "Taiwan",
+    "lat": 24.1477,
+    "lon": 120.6736
+  },
+  "puebla": {
+    "destination": "Puebla",
+    "city": "Puebla",
+    "country": "Mexico",
+    "lat": 19.0414,
+    "lon": -98.2063
+  },
+  "guadalajara": {
+    "destination": "Guadalajara",
+    "city": "Guadalajara",
+    "country": "Mexico",
+    "lat": 20.6597,
+    "lon": -103.3496
+  },
+  "cairo": {
+    "destination": "Cairo",
+    "city": "Cairo",
+    "country": "Egypt",
+    "lat": 30.0444,
+    "lon": 31.2357
+  },
+  "alexandria": {
+    "destination": "Alexandria",
+    "city": "Alexandria",
+    "country": "Egypt",
+    "lat": 31.2001,
+    "lon": 29.9187
+  },
+  "fez": {
+    "destination": "Fez",
+    "city": "Fez",
+    "country": "Morocco",
+    "lat": 34.0181,
+    "lon": -5.0078
+  },
+  "muscat": {
+    "destination": "Muscat",
+    "city": "Muscat",
+    "country": "Oman",
+    "lat": 23.588,
+    "lon": 58.3829
+  },
+  "zigongsichuan": {
+    "destination": "Zigong (Sichuan)",
+    "city": "Zigong",
+    "country": "China",
+    "lat": 29.3392,
+    "lon": 104.7784
+  },
+  "lanzhougansu": {
+    "destination": "Lanzhou (Gansu)",
+    "city": "Lanzhou",
+    "country": "China",
+    "lat": 36.0611,
+    "lon": 103.8343
+  },
+  "jinanshandong": {
+    "destination": "Jinan (Shandong)",
+    "city": "Jinan",
+    "country": "China",
+    "lat": 36.6512,
+    "lon": 117.1201
+  },
+  "kaifenghenan": {
+    "destination": "Kaifeng (Henan)",
+    "city": "Kaifeng",
+    "country": "China",
+    "lat": 34.7972,
+    "lon": 114.3076
+  },
+  "liuzhouguangxi": {
+    "destination": "Liuzhou (Guangxi)",
+    "city": "Liuzhou",
+    "country": "China",
+    "lat": 24.3255,
+    "lon": 109.4283
+  }
+}

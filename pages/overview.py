@@ -3,7 +3,14 @@ import html
 import streamlit as st
 import pandas as pd
 
-from data_utils import DATA_PATH, WorkbookLockedError, add_new_destination, load_destinations
+from data_utils import (
+    DATA_PATH,
+    WorkbookLockedError,
+    add_new_destination,
+    load_destinations,
+    save_open_destinations,
+    to_be_researched_mask,
+)
 from deepseek_populator import add_destination_with_deepseek
 from pages.world_map import COUNTRY_ISO3_MAP
 
@@ -71,6 +78,7 @@ def _show_add_destination_dialog():
             if new_dest.strip() not in open_destinations:
                 open_destinations.append(new_dest.strip())
                 st.session_state["open_destinations"] = open_destinations
+                save_open_destinations(open_destinations)
             st.rerun()
         else:
             st.error(msg)
@@ -100,6 +108,7 @@ def render_overview():
     eu_col = metadata["eu_col"]
     nearer_col = metadata["nearer_col"]
     visited_col = metadata.get("visited_col")
+    to_be_researched_col = metadata.get("to_be_researched_col")
     safety_col = metadata["safety_col"]
     cost_col = metadata["cost_col"]
     reviews_col = metadata.get("reviews_col")
@@ -124,6 +133,7 @@ def render_overview():
                     if destination_name not in open_destinations:
                         open_destinations.append(destination_name)
                 st.session_state["open_destinations"] = open_destinations
+                save_open_destinations(open_destinations)
                 st.rerun()
             else:
                 st.info("No favorites found (no destination has an 'x' in 'In näherer Auswahl 2025?').")
@@ -198,11 +208,14 @@ def render_overview():
                 review_max = float(df[reviews_col].dropna().max())
             min_review = st.slider("Minimum review score", min_value=float(review_min), max_value=float(review_max), value=float(review_min))
 
-        if visited_col and visited_col in df.columns:
-            with st.container():
+        f_col7, f_col8 = st.columns(2)
+        with f_col7:
+            research_filter = st.selectbox("Requires research?", ["All", "Yes", "No"])
+        with f_col8:
+            if visited_col and visited_col in df.columns:
                 only_unvisited = st.checkbox("Only show unvisited", value=True)
-        else:
-            only_unvisited = False
+            else:
+                only_unvisited = False
 
     filtered = df.copy()
     if selected_continent != "All":
@@ -231,6 +244,13 @@ def render_overview():
     if only_unvisited and visited_col and visited_col in filtered.columns:
         is_visited = filtered[visited_col].eq(True).fillna(False)
         filtered = filtered[~is_visited]
+
+    if to_be_researched_col and to_be_researched_col in filtered.columns and research_filter != "All":
+        research_mask = to_be_researched_mask(filtered, to_be_researched_col)
+        if research_filter == "Yes":
+            filtered = filtered[research_mask]
+        else:
+            filtered = filtered[~research_mask]
 
     if filtered.empty:
         st.info("No destinations match the current filters.")
@@ -311,6 +331,7 @@ def render_overview():
                         if destination_name not in open_destinations:
                             open_destinations.append(destination_name)
                             st.session_state["open_destinations"] = open_destinations
+                            save_open_destinations(open_destinations)
                         target_page = detail_pages.get(destination_name)
                         if target_page is not None:
                             st.switch_page(target_page)
