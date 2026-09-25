@@ -3,7 +3,7 @@ from pathlib import Path
 import openpyxl
 
 
-WORKBOOK = Path(__file__).resolve().parent / "Destinations.xlsx"
+WORKBOOK = Path(__file__).resolve().parent / "Destinations-local.xlsx"
 
 DESTINATION_DETAILS = {
     "Panama City": {

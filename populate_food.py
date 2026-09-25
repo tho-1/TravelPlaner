@@ -59,9 +59,9 @@ def populate_food(
     for name, country in targets:
         try:
             profile = generate_food_profile(name, country)
-            update_food(name, profile["spiciness"], profile["description"], path=path)
+            update_food(name, profile["spiciness"], profile["description"], dishes=profile.get("dishes"), path=path)
             done += 1
-            print(f"{name}: spiciness {profile['spiciness']:g}/10")
+            print(f"{name}: spiciness {profile['spiciness']:g}/10, dishes: {profile.get('dishes', [])}")
         except (RuntimeError, WorkbookLockedError) as exc:
             warnings.append(f"{name}: {exc}")
             print(f"{name}: ERROR {exc}")

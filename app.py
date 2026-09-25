@@ -8,7 +8,9 @@ from data_utils import (
     load_open_destinations,
     save_open_destinations,
 )
+from environment import is_cloud_mode, is_local_mode
 from pages.destination_detail import render_destination
+from pages.itinerary import render_itinerary, render_sidebar_trips
 from pages.overview import render_overview
 from pages.world_map import render_world_map
 
@@ -20,6 +22,12 @@ def slugify(value: str) -> str:
 
 
 st.set_page_config(page_title="Travel Planner", page_icon="✈️", layout="wide", initial_sidebar_state="expanded")
+
+# Display environment indicator (local vs cloud)
+if is_cloud_mode():
+    st.info("☁️ **Cloud Mode** — Changes saved to cloud only", icon="☁️")
+elif is_local_mode():
+    st.warning("💻 **Local Mode** — Changes saved locally only", icon="💻")
 
 df, metadata = load_destinations(DATA_PATH)
 destination_col = metadata["destination_col"]
@@ -74,12 +82,14 @@ st.session_state["_detail_urls"] = detail_urls
 
 world_map_page = st.Page(render_world_map, title="World Map", icon="🌍", default=True)
 overview_page = st.Page(render_overview, title="Overview", icon="🗺️")
+itinerary_page = st.Page(render_itinerary, title="Itinerary Planner", icon="🧭",
+                         url_path="itinerary")
 
 # Expose the overview/map page objects so detail pages can switch back on close.
 st.session_state["_overview_page"] = overview_page
 st.session_state["_world_map_page"] = world_map_page
 
-pages = [world_map_page, overview_page] + list(detail_pages.values())
+pages = [world_map_page, overview_page, itinerary_page] + list(detail_pages.values())
 
 # Hide the built-in nav menu and render a custom sidebar instead, so every open
 # destination tab can have its own close (✖) button next to it.
@@ -109,12 +119,23 @@ with st.sidebar:
             margin-top: 0px !important;
             margin-bottom: 0px !important;
         }
+        /* Travel Itineraries list: keep each trip (button + stats caption)
+           visually together with minimal gaps between rows. */
+        [data-testid="stSidebar"] .st-key-itin_trips {
+            row-gap: 2px !important;
+            padding-top: 0px !important;
+            padding-bottom: 0px !important;
+        }
+        [data-testid="stSidebar"] .st-key-itin_trips [data-testid="stVerticalBlock"] {
+            row-gap: 2px !important;
+        }
         </style>
         """
     )
     st.markdown("### ✈️ Travel Planner")
     st.page_link(world_map_page, width="stretch")
     st.page_link(overview_page, width="stretch")
+    st.page_link(itinerary_page, width="stretch")
     st.markdown("---")
 
     if open_destinations:
@@ -140,5 +161,23 @@ with st.sidebar:
                             st.rerun()
     else:
         st.caption("No open destinations")
+
+    st.markdown("---")
+    render_sidebar_trips(pg, itinerary_page)
+
+    # One-click copy of the live workbook: cloud edits live on an ephemeral
+    # container, so a downloadable backup prevents losing them to a redeploy.
+    try:
+        st.download_button(
+            "⬇ Download workbook",
+            data=DATA_PATH.read_bytes(),
+            file_name=DATA_PATH.name,
+            mime="application/vnd.openxmlformats-officedocument"
+                 ".spreadsheetml.sheet",
+            help="Save a copy of the current destinations workbook "
+                 "(recommended before reinstalls or redeploys)",
+        )
+    except OSError as exc:
+        st.caption(f"Workbook download unavailable: {exc}")
 
 pg.run()

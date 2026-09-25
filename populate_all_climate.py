@@ -10,7 +10,7 @@ Each entry has:
 import openpyxl
 from pathlib import Path
 
-WORKBOOK = Path(r"c:\Users\Thors\OneDrive\Documents\Gemini - Travel Planner\Destinations.xlsx")
+WORKBOOK = Path(__file__).resolve().parent / "Destinations-local.xlsx"
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 # Destination climate datasets
@@ -496,7 +496,23 @@ ALL_REMAINING_CLIMATE = {
         "Low":  [21, 22, 24, 27, 28, 28, 26, 26, 25, 24, 23, 22],
         "RainyDays": [2, 1, 1, 1, 2, 4, 7, 9, 8, 11, 12, 6],
         "Rain": [25, 8, 5, 15, 45, 55, 100, 130, 140, 300, 360, 140],
-        "AQI":  [95, 85, 75, 68, 70, 72, 65, 62, 60, 78, 105, 110]
+        # US AQI (IQAir/CPCB): winter peak (Nov-Feb, IQAir lists Jan as "Unhealthy"),
+        # cleanest during the SW-monsoon tail (Jul-Sep). 2019 annual PM2.5 34.6 ug/m3.
+        "AQI":  [150, 110, 95, 90, 100, 85, 80, 75, 75, 95, 125, 150]
+    },
+
+    # ----------------------------------------------------
+    # Row 113: Bangalore, India
+    # Tropical savanna at ~900 m elevation; cleanest during the SW monsoon
+    # (Jul-Aug), worst in winter (Dec-Feb; IQAir lists Jan as "Unhealthy",
+    # 2019 annual PM2.5 32.6 ug/m3). US AQI scale, comparable with Delhi/Mumbai rows.
+    # ----------------------------------------------------
+    "Bangalore": {
+        "High": [28, 31, 34, 35, 34, 30, 29, 28, 29, 30, 28, 27],
+        "Low":  [16, 18, 21, 23, 23, 22, 21, 20, 20, 20, 18, 16],
+        "RainyDays": [1, 1, 2, 4, 7, 9, 11, 11, 9, 7, 3, 1],
+        "Rain": [5, 5, 10, 40, 100, 110, 115, 140, 190, 150, 50, 15],
+        "AQI":  [150, 115, 100, 85, 80, 70, 60, 55, 60, 100, 105, 125]
     },
 
     # ----------------------------------------------------

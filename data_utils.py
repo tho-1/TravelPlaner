@@ -9,8 +9,10 @@ import openpyxl
 import pandas as pd
 import streamlit as st
 
+from environment import WORKBOOK_PATH
 
-DATA_PATH = Path(__file__).resolve().parent / "Destinations.xlsx"
+
+DATA_PATH = WORKBOOK_PATH
 
 OPEN_TABS_PATH = Path(__file__).resolve().parent / "open_destinations.json"
 
@@ -175,6 +177,7 @@ def _load_destinations_cached(path: Path, modified_ns: int) -> Tuple[pd.DataFram
     malaria_risk_col = find_column(df.columns, ["malaria risk", "malaria", "malariarisk"])
     food_spiciness_col = find_column(df.columns, ["food - spicyness", "food spicyness"])
     food_description_col = find_column(df.columns, ["food - description", "food description"])
+    food_dishes_col = find_column(df.columns, ["food - main dishes", "food main dishes", "main dishes", "food - dishes", "food dishes", "main dishes (in local language)"])
 
     if destination_col is None:
         destination_col = df.columns[0]
@@ -235,6 +238,7 @@ def _load_destinations_cached(path: Path, modified_ns: int) -> Tuple[pd.DataFram
         "malaria_risk_col": malaria_risk_col,
         "food_spiciness_col": food_spiciness_col,
         "food_description_col": food_description_col,
+        "food_dishes_col": food_dishes_col,
         "month_columns": month_columns,
     }
     return df, metadata
@@ -634,9 +638,10 @@ def update_food(
     destination_name: str,
     spiciness: float,
     description: str,
+    dishes: Optional[Union[str, list[str]]] = None,
     path: Path = DATA_PATH,
 ) -> None:
-    """Write the Food rating and description for a destination."""
+    """Write the Food rating, description, and main dishes for a destination."""
     sheet_name = _find_destination_sheet(path)
     if sheet_name is None:
         return
@@ -668,6 +673,20 @@ def update_food(
         (col_idx for name, col_idx in headers.items() if normalize_text(name) == "fooddescription"),
         None,
     )
+    dishes_col_idx = next(
+        (
+            col_idx
+            for name, col_idx in headers.items()
+            if normalize_text(name) in {
+                "foodmaindishes",
+                "fooddishes",
+                "maindishes",
+                "foodmaindishesinlocallanguage",
+                "maindishesinlocallanguage",
+            }
+        ),
+        None,
+    )
 
     if dest_col_idx is None:
         wb.close()
@@ -678,6 +697,9 @@ def update_food(
     if description_col_idx is None:
         description_col_idx = ws.max_column + 1
         ws.cell(row=1, column=description_col_idx, value="Food - Description")
+    if dishes is not None and dishes_col_idx is None:
+        dishes_col_idx = ws.max_column + 1
+        ws.cell(row=1, column=dishes_col_idx, value="Food - Main Dishes")
 
     target_row = next(
         (
@@ -695,6 +717,13 @@ def update_food(
 
     ws.cell(row=target_row, column=spiciness_col_idx).value = float(spiciness)
     ws.cell(row=target_row, column=description_col_idx).value = str(description).strip()
+    if dishes is not None and dishes_col_idx is not None:
+        if isinstance(dishes, list):
+            dishes_str = ", ".join(str(d).strip() for d in dishes if str(d).strip())
+        else:
+            dishes_str = str(dishes).strip()
+        ws.cell(row=target_row, column=dishes_col_idx).value = dishes_str
+
     try:
         wb.save(path)
     except PermissionError as exc:

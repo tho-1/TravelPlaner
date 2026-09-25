@@ -292,7 +292,7 @@ Rules:
 
 
 def generate_food_profile(destination: str, country: str) -> Dict[str, Any]:
-    """Ask DeepSeek for a city-specific food description and spice rating."""
+    """Ask DeepSeek for a city-specific food description, spice rating, and main dishes."""
     key = get_api_key()
     if not key:
         raise RuntimeError(
@@ -309,12 +309,14 @@ def generate_food_profile(destination: str, country: str) -> Dict[str, Any]:
 Return exactly this JSON object:
 {{
   "spiciness": number,
+  "dishes": ["Dish 1", "Dish 2", "Dish 3", "Dish 4", "Dish 5"],
   "description": "one paragraph of 5 to 10 sentences"
 }}
 
 Rules:
 - Focus especially on how spicy the local food is and mention representative dishes.
 - Rate spiciness from 0 (not spicy at all) to 10 (Sichuan spicy); values above 10 are allowed.
+- In "dishes", list 4 to 8 representative main dishes named in their local language (using Romanized script/transliteration, e.g. "Masala Dosa", "Ven Pongal", "Chettinad Chicken", "Pad Thai", "Tom Yum Goong", "Ceviche").
 - The description must be one paragraph containing 5 to 10 complete sentences.
 - Discuss the typical local food, not only one restaurant or isolated dish.
 """
@@ -361,7 +363,16 @@ Rules:
             "DeepSeek returned an invalid food profile; expected a 5-10 sentence "
             "paragraph and a non-negative spiciness rating."
         )
-    return {"spiciness": spiciness, "description": description}
+
+    raw_dishes = result.get("dishes", [])
+    if isinstance(raw_dishes, str):
+        dishes = [d.strip() for d in re.split(r"[,;\n]+", raw_dishes) if d.strip()]
+    elif isinstance(raw_dishes, list):
+        dishes = [str(d).strip() for d in raw_dishes if str(d).strip()]
+    else:
+        dishes = []
+
+    return {"spiciness": spiciness, "description": description, "dishes": dishes}
 
 
 def generate_review_profile(destination: str, country: str) -> Dict[str, Any]:

@@ -257,6 +257,19 @@ def _apply_profile_to_row(ws, headers, row_idx, profile, country, continent, des
 
     _set("Avg AQI", _avg(climate.get("aqi")))
 
+    # ── IQAir world ranking (from the cached iqair_cache snapshot) ────────────
+    # rank_for_destination never triggers a scrape; silently skipped when the
+    # snapshot is missing or the city is not in the ranking.
+    try:
+        from iqair_ranking import rank_for_destination
+        iqair = rank_for_destination(dest_clean, str(country) if country else None)
+        if iqair:
+            _set("IQAir Rank", iqair["rank"])
+            if iqair.get("pm25_avg") is not None:
+                _set("IQAir PM2.5", iqair["pm25_avg"])
+    except Exception:
+        pass
+
     return review_score
 
 

@@ -3,6 +3,7 @@ import html
 import io
 import re
 import unicodedata
+import urllib.parse
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -29,6 +30,10 @@ from unsplash_gallery import (
     build_destination_gallery,
     get_access_key,
     refresh_single_gallery_image,
+)
+from ddg_gallery import (
+    build_ddg_gallery,
+    refresh_single_ddg_image,
 )
 from flight_routes import render_flight_routes_section
 
@@ -342,6 +347,7 @@ def _render_food_section(
     metadata: dict,
     food_spiciness: object,
     food_description: object,
+    food_dishes: object = None,
 ) -> None:
     st.subheader("Food")
     spice_text = f"{float(food_spiciness):g}/10" if pd.notna(food_spiciness) else "—"
@@ -350,13 +356,35 @@ def _render_food_section(
         if pd.notna(food_description) and str(food_description).strip()
         else "—"
     )
+
+    if pd.notna(food_dishes) and str(food_dishes).strip():
+        raw_dishes = [d.strip() for d in re.split(r"[,;\n]+", str(food_dishes)) if d.strip()]
+        dish_elements = []
+        for dish in raw_dishes:
+            query = f"{dish} {dest_title}".strip()
+            encoded_query = urllib.parse.quote_plus(query)
+            url = f"https://www.google.com/search?tbm=isch&q={encoded_query}"
+            escaped_dish = html.escape(dish)
+            dish_elements.append(
+                f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
+                f'style="text-decoration: underline; font-weight: 500;">{escaped_dish}</a>'
+            )
+        dishes_display = ", ".join(dish_elements)
+    else:
+        dishes_display = "—"
+
     st.markdown(
         f"""
-        <div style="display:flex; gap:2rem; align-items:flex-start; width:100%;">
-            <div style="flex:0 0 max-content;">
-                <strong>Spiciness</strong><br>{html.escape(spice_text)}
+        <div style="display:flex; flex-direction:column; gap:0.6rem; width:100%;">
+            <div style="display:flex; gap:2.5rem; align-items:flex-start; flex-wrap:wrap;">
+                <div style="flex:0 0 auto;">
+                    <strong>Spiciness</strong><br>{html.escape(spice_text)}
+                </div>
+                <div style="flex:1 1 350px;">
+                    <strong>Main dishes (in local language)</strong><br>{dishes_display}
+                </div>
             </div>
-            <div style="flex:1 1 auto; min-width:0;">
+            <div>
                 <strong>Description</strong><br>{description_text}
             </div>
         </div>
@@ -367,6 +395,7 @@ def _render_food_section(
     food_is_populated = (
         pd.notna(food_spiciness)
         or (pd.notna(food_description) and bool(str(food_description).strip()))
+        or (pd.notna(food_dishes) and bool(str(food_dishes).strip()))
     )
     if food_is_populated:
         return
@@ -381,6 +410,7 @@ def _render_food_section(
                 destination_name,
                 food_profile["spiciness"],
                 food_profile["description"],
+                dishes=food_profile.get("dishes"),
             )
             st.success("Food information saved.")
             st.rerun()
@@ -415,6 +445,7 @@ def render_destination(destination_name: str):
     malaria_risk_col = metadata.get("malaria_risk_col")
     food_spiciness_col = metadata.get("food_spiciness_col")
     food_description_col = metadata.get("food_description_col")
+    food_dishes_col = metadata.get("food_dishes_col")
     status_col = metadata.get("status_col")
     comment_col = metadata.get("comment_col")
     month_columns = metadata["month_columns"]
@@ -1008,6 +1039,7 @@ def render_destination(destination_name: str):
 
     food_spiciness = selected_row.get(food_spiciness_col) if food_spiciness_col else None
     food_description = selected_row.get(food_description_col) if food_description_col else None
+    food_dishes = selected_row.get(food_dishes_col) if food_dishes_col else None
     visa_value = selected_row.get(visa_requirement_col) if visa_requirement_col else None
     malaria_value = selected_row.get(malaria_risk_col) if malaria_risk_col else None
 
@@ -1075,6 +1107,7 @@ def render_destination(destination_name: str):
         metadata,
         food_spiciness,
         food_description,
+        food_dishes,
     )
 
     if month_columns:
@@ -1306,7 +1339,7 @@ def render_destination_gallery(dest_title: str, selected_row: pd.Series, metadat
 
     st.divider()
     st.subheader("📷 Gallery")
-    st.caption("Photos from Unsplash. Use 🔄 Replace to swap an individual photo for a fresh one.")
+    st.caption("Photos from DuckDuckGo & Unsplash. Use 🔄 Replace to swap an individual photo for a fresh one.")
 
     # Inject CSS + JS to shrink the 🔄 replace buttons down to just the emoji
     # size (no padding, no border, transparent background). The JS finds
@@ -1368,9 +1401,10 @@ def render_destination_gallery(dest_title: str, selected_row: pd.Series, metadat
 
     country = _country_text(selected_row, metadata) or None
 
-    entries = build_destination_gallery(dest_title, country=country, pictures_dir=pictures_dir)
+    ddg_entries = build_ddg_gallery(dest_title, country=country, pictures_dir=pictures_dir, count=12)
+    unsplash_entries = build_destination_gallery(dest_title, country=country, pictures_dir=pictures_dir)
 
-    if not entries:
+    if not ddg_entries and not unsplash_entries:
         access_key = get_access_key()
         if not access_key:
             st.info("Gallery images are unavailable — the Unsplash Access Key is not configured.")
@@ -1378,36 +1412,64 @@ def render_destination_gallery(dest_title: str, selected_row: pd.Series, metadat
             st.info("Gallery images could not be loaded for this destination.")
         return
 
-    # Responsive grid: 4 images per row. Each cell shows the image plus an
-    # attribution caption with a tiny 🔄 button on the same row (no separate
-    # button row) so you can replace just that one photo.
     COLUMNS_PER_ROW = 4
-    for row_start in range(0, len(entries), COLUMNS_PER_ROW):
-        row_entries = entries[row_start:row_start + COLUMNS_PER_ROW]
-        cols = st.columns(COLUMNS_PER_ROW)
-        for col_offset, entry in enumerate(row_entries):
-            absolute_index = row_start + col_offset
-            with cols[col_offset]:
-                try:
-                    st.image(str(entry["image_path"]), width="stretch")
-                except Exception:
-                    st.warning("An image could not be displayed.")
-                # Caption + tiny replace button share one row.
-                cap_col, btn_col = st.columns([8, 1])
-                with cap_col:
-                    photographer = entry.get("photographer_name", "Unsplash")
-                    photographer_url = entry.get("photographer_url", "https://unsplash.com")
-                    photo_url = entry.get("photo_url", "https://unsplash.com")
-                    st.caption(
-                        f"Photo by [{photographer}]({photographer_url}) on "
-                        f"[Unsplash]({photo_url})"
-                    )
-                with btn_col:
-                    if st.button("🔄", key=f"replace_gallery_{dest_title}_{absolute_index}", help="Replace this photo"):
-                        refresh_single_gallery_image(
-                            dest_title, country, pictures_dir, absolute_index
+
+    # 1. DuckDuckGo Web Photos (rendered before Unsplash)
+    if ddg_entries:
+        st.markdown("**🌐 Web Photos (DuckDuckGo)**")
+        for row_start in range(0, len(ddg_entries), COLUMNS_PER_ROW):
+            row_entries = ddg_entries[row_start:row_start + COLUMNS_PER_ROW]
+            cols = st.columns(COLUMNS_PER_ROW)
+            for col_offset, entry in enumerate(row_entries):
+                absolute_index = row_start + col_offset
+                with cols[col_offset]:
+                    try:
+                        st.image(str(entry["image_path"]), width="stretch")
+                    except Exception:
+                        st.warning("An image could not be displayed.")
+                    cap_col, btn_col = st.columns([8, 1])
+                    with cap_col:
+                        title = entry.get("title", "DuckDuckGo Image")
+                        short_title = (title[:28] + "…") if len(title) > 30 else title
+                        source_url = entry.get("source_url", "https://duckduckgo.com")
+                        st.caption(f"[{short_title}]({source_url}) · *DuckDuckGo*")
+                    with btn_col:
+                        if st.button("🔄", key=f"replace_ddg_{dest_title}_{absolute_index}", help="Replace this photo"):
+                            refresh_single_ddg_image(
+                                dest_title, country, pictures_dir, absolute_index
+                            )
+                            st.rerun()
+
+    # 2. Unsplash Photos
+    if unsplash_entries:
+        if ddg_entries:
+            st.markdown("**📸 Unsplash Photos**")
+        for row_start in range(0, len(unsplash_entries), COLUMNS_PER_ROW):
+            row_entries = unsplash_entries[row_start:row_start + COLUMNS_PER_ROW]
+            cols = st.columns(COLUMNS_PER_ROW)
+            for col_offset, entry in enumerate(row_entries):
+                absolute_index = row_start + col_offset
+                with cols[col_offset]:
+                    try:
+                        st.image(str(entry["image_path"]), width="stretch")
+                    except Exception:
+                        st.warning("An image could not be displayed.")
+                    # Caption + tiny replace button share one row.
+                    cap_col, btn_col = st.columns([8, 1])
+                    with cap_col:
+                        photographer = entry.get("photographer_name", "Unsplash")
+                        photographer_url = entry.get("photographer_url", "https://unsplash.com")
+                        photo_url = entry.get("photo_url", "https://unsplash.com")
+                        st.caption(
+                            f"Photo by [{photographer}]({photographer_url}) on "
+                            f"[Unsplash]({photo_url})"
                         )
-                        st.rerun()
+                    with btn_col:
+                        if st.button("🔄", key=f"replace_gallery_{dest_title}_{absolute_index}", help="Replace this photo"):
+                            refresh_single_gallery_image(
+                                dest_title, country, pictures_dir, absolute_index
+                            )
+                            st.rerun()
 
 
 def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df: pd.DataFrame):
@@ -1427,6 +1489,9 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
     rainy_days = [selected_row.get(f"{m} Rainy Days") for m in months]
     rain_mm = [selected_row.get(f"{m} Rain (mm)") for m in months]
     aqi_vals = [selected_row.get(f"{m} AQI") for m in months]
+    ground_aqi_vals = [selected_row.get(f"{m} AQI (Ground)") for m in months]
+    typical_vals = [selected_row.get(f"{m} AQI (Typical)") for m in months]
+    ground_typical_vals = [selected_row.get(f"{m} AQI (Ground Typical)") for m in months]
 
     # Check if this destination has monthly climate data populated
     has_data = any(pd.notna(v) for v in highs_c + rain_mm + aqi_vals)
@@ -1487,7 +1552,23 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
         aqi_str = "—"
         aqi_badge = "⚪"
 
-    # 4. Best Months
+    # 4. IQAir world rank (from workbook columns written by iqair_ranking.py)
+    iqair_rank_raw = selected_row.get("IQAir Rank")
+    iqair_pm25_raw = selected_row.get("IQAir PM2.5")
+    iqair_rank = int(iqair_rank_raw) if pd.notna(iqair_rank_raw) else None
+    iqair_pm25 = (f"{float(iqair_pm25_raw):.1f}"
+                  if pd.notna(iqair_pm25_raw) else None)
+    if iqair_rank is not None:
+        if iqair_pm25 is not None:
+            iqair_value = f"#{iqair_rank:,} ({iqair_pm25} µg/m³)"
+        else:
+            iqair_value = f"#{iqair_rank:,}"
+        iqair_sub = ""
+    else:
+        iqair_value = "—"
+        iqair_sub = "not in ranking"
+
+    # 5. Best Months
     ideal_candidates = []
     # Check spreadsheet rating columns first
     for full_m, short_m in zip(full_months, months):
@@ -1503,7 +1584,7 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
     best_months_str = ", ".join(ideal_candidates[:4]) if ideal_candidates else "Varies"
 
     # Render KPI Cards in a modern grid
-    kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+    kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
     card_style = (
         "padding: 14px 16px; border-radius: 12px; border: 1px solid #e2e8f0; "
         "background: #ffffff; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 16px;"
@@ -1511,38 +1592,49 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
 
     with kpi1:
         st.markdown(
-            f"""<div style="{card_style}">
-                <div style="font-size: 0.82rem; color: #64748b; font-weight: 600;">🌡️ PEAK HIGH</div>
-                <div style="font-size: 1.45rem; font-weight: 700; color: #0f172a; margin-top: 4px;">{peak_high_str}</div>
-            </div>""",
-            unsafe_allow_html=True
+            f'<div style="{card_style}">'
+            f'<div style="font-size: 0.82rem; color: #64748b; font-weight: 600;">🌡️ PEAK HIGH</div>'
+            f'<div style="font-size: 1.45rem; font-weight: 700; color: #0f172a; margin-top: 4px;">{peak_high_str}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
         )
 
     with kpi2:
         st.markdown(
-            f"""<div style="{card_style}">
-                <div style="font-size: 0.82rem; color: #64748b; font-weight: 600;">💧 WETTEST MONTH</div>
-                <div style="font-size: 1.45rem; font-weight: 700; color: #0284c7; margin-top: 4px;">{wettest_str}</div>
-            </div>""",
-            unsafe_allow_html=True
+            f'<div style="{card_style}">'
+            f'<div style="font-size: 0.82rem; color: #64748b; font-weight: 600;">💧 WETTEST MONTH</div>'
+            f'<div style="font-size: 1.45rem; font-weight: 700; color: #0284c7; margin-top: 4px;">{wettest_str}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
         )
 
     with kpi3:
         st.markdown(
-            f"""<div style="{card_style}">
-                <div style="font-size: 0.82rem; color: #64748b; font-weight: 600;">🍃 AVERAGE AQI</div>
-                <div style="font-size: 1.35rem; font-weight: 700; color: #0f172a; margin-top: 4px;">{aqi_badge} {aqi_str}</div>
-            </div>""",
-            unsafe_allow_html=True
+            f'<div style="{card_style}">'
+            f'<div style="font-size: 0.82rem; color: #64748b; font-weight: 600;">🍃 AVERAGE AQI</div>'
+            f'<div style="font-size: 1.35rem; font-weight: 700; color: #0f172a; margin-top: 4px;">{aqi_badge} {aqi_str}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
         )
 
     with kpi4:
+        sub_html = f'<div style="font-size: 0.72rem; color: #94a3b8; margin-top: 2px;">{iqair_sub}</div>' if iqair_sub else ""
         st.markdown(
-            f"""<div style="{card_style}">
-                <div style="font-size: 0.82rem; color: #64748b; font-weight: 600;">🎯 BEST MONTHS</div>
-                <div style="font-size: 1.45rem; font-weight: 700; color: #16a34a; margin-top: 4px;">{best_months_str}</div>
-            </div>""",
-            unsafe_allow_html=True
+            f'<div style="{card_style}">'
+            f'<div style="font-size: 0.82rem; color: #64748b; font-weight: 600;">🌍 # WORST AIR</div>'
+            f'<div style="font-size: 1.25rem; font-weight: 700; color: #0f172a; margin-top: 4px;">{iqair_value}</div>'
+            f'{sub_html}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    with kpi5:
+        st.markdown(
+            f'<div style="{card_style}">'
+            f'<div style="font-size: 0.82rem; color: #64748b; font-weight: 600;">🎯 BEST MONTHS</div>'
+            f'<div style="font-size: 1.45rem; font-weight: 700; color: #16a34a; margin-top: 4px;">{best_months_str}</div>'
+            f'</div>',
+            unsafe_allow_html=True,
         )
 
     # ── Chart 1: Temperature Range & Rainfall (Dual Y-Axis) ─────────────────
@@ -1643,21 +1735,92 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
     st.markdown("**🍃 Air Quality Index (AQI) Profile**")
     fig_aqi = go.Figure()
 
-    # AQI Trendline
-    fig_aqi.add_trace(
-        go.Scatter(
-            x=months,
-            y=aqi_vals,
-            name="Monthly AQI",
-            mode="lines+markers",
-            line=dict(color="#78350f", width=3),
-            marker=dict(size=8, color="#451a03", symbol="circle"),
-            hovertemplate="<b>%{x}</b> AQI: %{y}<extra></extra>"
-        )
-    )
+    # Up to four always-on series, read straight from the workbook columns
+    # (works on Streamlit Cloud — aqi_cache/ is not deployed):
+    #   dotted  = trailing 12 complete months (12M)
+    #   solid   = multi-year typical — mean of the yearly monthly means,
+    #             2023 -> last complete month (climate-normal convention)
+    #   amber/brown = Open-Meteo CAMS model; teal = OpenAQ ground stations.
+    # X is numeric (0..11 = Jan..Dec) so the seasonal Dec->Jan wrap fits in
+    # the HALF-month slots at the edges: when a series has BOTH endpoint
+    # months, a short stub continues December to x=11.5 (holding January's
+    # value) and a stub enters January from x=-0.5 (holding December's
+    # value). The axis range is clamped to [-0.5, 11.5], so every month
+    # slot is exactly one unit wide — the edge months do not look stretched.
+    # Without the wrap, a month whose neighbours are empty (e.g. a lone
+    # December dot between two missing months) floats unconnected.
+    has_ground = any(pd.notna(v) for v in ground_aqi_vals)
+    has_typ = any(pd.notna(v) for v in typical_vals)
+    has_ground_typ = any(pd.notna(v) for v in ground_typical_vals)
 
-    # Calculate AQI Y-axis bounds
+    x_main = list(range(12))
+
+    def _closes_cycle(vals):
+        return pd.notna(vals[0]) and pd.notna(vals[11])
+
+    def _add_lines_series(name, vals, line_style, label):
+        """Lines-only series (12M traces): wrap points appended directly."""
+        xs, ys, cd = x_main, list(vals), list(months)
+        if _closes_cycle(vals):
+            xs = [-0.5] + xs + [11.5]
+            ys = [vals[11]] + ys + [vals[0]]
+            cd = [months[11]] + cd + [months[0]]
+        fig_aqi.add_trace(
+            go.Scatter(
+                x=xs, y=ys, customdata=cd, name=name, mode="lines",
+                line=line_style, connectgaps=False,
+                hovertemplate=(f"<b>%{{customdata}}</b> {label}: "
+                               f"%{{y}}<extra></extra>"),
+            )
+        )
+
+    def _add_marker_series(name, vals, line_style, marker_style, label):
+        """Lines+markers series (typical traces): markers stay on the real
+        months; the Dec->Jan wrap is drawn by a legend-hidden, hover-silent
+        companion trace (its None point splits it into the two margin
+        segments without touching the real line)."""
+        fig_aqi.add_trace(
+            go.Scatter(
+                x=x_main, y=list(vals), customdata=list(months), name=name,
+                mode="lines+markers", line=line_style, marker=marker_style,
+                connectgaps=False,
+                hovertemplate=(f"<b>%{{customdata}}</b> {label}: "
+                               f"%{{y}}<extra></extra>"),
+            )
+        )
+        if _closes_cycle(vals):
+            fig_aqi.add_trace(
+                go.Scatter(
+                    x=[-0.5, 0, 5.5, 11, 11.5],
+                    y=[vals[11], vals[0], None, vals[11], vals[0]],
+                    mode="lines", line=line_style, connectgaps=False,
+                    showlegend=False, hoverinfo="skip",
+                )
+            )
+
+    # 12M traces first, so the solid "typical" lines draw on top of them.
+    if has_ground:
+        _add_lines_series("OpenAQ Ground (rolling 12M)", ground_aqi_vals,
+                          dict(color="#22d3ee", width=2.2, dash="dot"),
+                          "OpenAQ Ground (rolling 12M)")
+    _add_lines_series("Open-Meteo (rolling 12M)", aqi_vals,
+                      dict(color="#a16207", width=2.2, dash="dot"),
+                      "Open-Meteo (rolling 12M)")
+    if has_ground_typ:
+        _add_marker_series("OpenAQ Ground (multi-year average)", ground_typical_vals,
+                           dict(color="#0e7490", width=2.8),
+                           dict(size=7, color="#0e7490", symbol="diamond"),
+                           "OpenAQ Ground (multi-year average)")
+    if has_typ:
+        _add_marker_series("Open-Meteo (multi-year average)", typical_vals,
+                           dict(color="#78350f", width=3.2),
+                           dict(size=7, color="#451a03", symbol="circle"),
+                           "Open-Meteo (multi-year average)")
+
+    # Calculate AQI Y-axis bounds across all series
     valid_aqi_nums = [float(v) for v in aqi_vals if pd.notna(v)]
+    for series in (ground_aqi_vals, typical_vals, ground_typical_vals):
+        valid_aqi_nums += [float(v) for v in series if pd.notna(v)]
     top_aqi = max(valid_aqi_nums) if valid_aqi_nums else 100
     aqi_y_max = max(130, int(top_aqi * 1.25))
 
@@ -1716,8 +1879,95 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
             showgrid=True,
             gridcolor="#e2e8f0"
         ),
-        xaxis=dict(showgrid=True, gridcolor="#f1f5f9"),
-        showlegend=False
+        xaxis=dict(
+            showgrid=True,
+            gridcolor="#f1f5f9",
+            tickvals=list(range(12)),
+            ticktext=months,
+            range=[-0.5, 11.5],
+        ),
+        showlegend=True,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
     )
 
     st.plotly_chart(fig_aqi, width="stretch")
+
+    # ── Table: IQAir Annual PM2.5 History ────────────────────────────────────
+    country_val = next(
+        (str(selected_row[c]).strip() for c in selected_row.index if "country" in str(c).lower() and pd.notna(selected_row[c])),
+        None
+    )
+    _render_iqair_pm25_table(destination_name, country_val)
+
+
+def _render_iqair_pm25_table(destination_name: str, country_name: str | None) -> None:
+    try:
+        from iqair_ranking import _load_snapshot, build_matcher, lookup
+        snap = _load_snapshot()
+        if not snap or not snap.get("cities"):
+            return
+        matcher = build_matcher(snap)
+        res = lookup(destination_name, matcher, country_name)
+    except Exception:
+        return
+
+    if not res or res.get("status") not in ("city", "capital") or "entry" not in res:
+        return
+
+    entry = res["entry"]
+    pm25_data = entry.get("pm25", {})
+    if not pm25_data:
+        return
+
+    years = sorted(pm25_data.keys(), reverse=True)
+    if not years:
+        return
+
+    matched_city = entry.get("city", destination_name)
+    matched_country = entry.get("country", country_name or "")
+    rank = entry.get("rank")
+    rank_str = f" · World Rank #{rank:,}" if rank else ""
+    via_str = f" (via {res['via']})" if res.get("via") else ""
+    pm25_avg = res.get("pm25_avg")
+    avg_str = f"{pm25_avg:.1f}" if pm25_avg is not None else "—"
+
+    st.markdown(
+        f"**📊 IQAir Annual PM2.5 (µg/m³)** &nbsp;<span style='font-size:0.85rem; color:#64748b; font-weight:normal;'>{html.escape(matched_city)}{html.escape(via_str)}, {html.escape(matched_country)}{rank_str}</span>",
+        unsafe_allow_html=True,
+    )
+
+    header_cols = "".join(f"<th style='padding:8px 10px; font-weight:600; text-align:center;'>{html.escape(y)}</th>" for y in years)
+    val_cols = "".join(
+        f"<td style='padding:8px 10px; text-align:center;'>{pm25_data[y]:.1f}</td>"
+        if pm25_data.get(y) is not None
+        else "<td style='padding:8px 10px; text-align:center; color:#94a3b8;'>—</td>"
+        for y in years
+    )
+
+    table_html = f"""
+    <div style="overflow-x:auto; margin-top:4px; margin-bottom:20px; border-radius:8px; border:1px solid #e2e8f0; background:#ffffff; box-shadow:0 1px 3px rgba(0,0,0,0.04);">
+      <table style="width:100%; border-collapse:collapse; font-size:0.88rem;">
+        <thead>
+          <tr style="background:#f8fafc; border-bottom:1px solid #e2e8f0; color:#475569;">
+            <th style="padding:8px 14px; text-align:left; font-weight:600;">Metric</th>
+            {header_cols}
+            <th style="padding:8px 14px; font-weight:700; text-align:center; background:#f1f5f9; color:#0f172a;">5-Yr Avg</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:8px 14px; text-align:left; font-weight:600; color:#334155;">PM2.5 (µg/m³)</td>
+            {val_cols}
+            <td style="padding:8px 14px; font-weight:700; text-align:center; background:#f8fafc; color:#0f172a;">{avg_str}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    """
+    st.markdown(table_html, unsafe_allow_html=True)
