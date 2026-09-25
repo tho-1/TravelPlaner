@@ -18,14 +18,36 @@ scratch/
 check_rows.py
 inspect_workbook.py
 tmp_inspect_destinations.py
+scratch_*.py
+
+# Run artifacts (never commit)
+*.log
+
+# IQAir scraper cache (rebuildable via python -m iqair_ranking)
+iqair_cache/
 
 # Backup workbooks (never commit)
 Destinations.before-*.xlsx
 
+# Environment-specific workbooks (never commit)
+# Local development uses Destinations-local.xlsx (git-ignored)
+# Cloud deployment uses committed Destinations-cloud.xlsx
+Destinations-local.xlsx
+Destinations.xlsx
+
 # API credentials (never commit secrets)
 unsplash_secrets.py
 deepseek_secrets.py
+openaq_secrets.py
 .streamlit/secrets.toml
+
+# AQI fetcher runtime data (aqi_api.py)
+aqi_cache/
+
+# Itinerary planner runtime data
+trips.json
+trips_backups/
+itinerary_cache/
 
 # Runtime state (never commit)
 open_destinations.json
