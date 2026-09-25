@@ -51,3 +51,6 @@ itinerary_cache/
 
 # Runtime state (never commit)
 open_destinations.json
+
+# DDG photo cache (large, refetchable)
+Pictures/gallery_ddg/
