@@ -11,6 +11,20 @@ import os
 from pathlib import Path
 
 
+def _is_cloud_runtime(environ: dict, source_path: Path, home: str) -> bool:
+    """Recognize Streamlit Cloud's mounted source tree and runtime markers."""
+    if environ.get("STREAMLIT_RUNTIME_GATING_ALLOWLIST"):
+        return True
+
+    source = source_path.as_posix()
+    if source.startswith("/mount/src/"):
+        return True
+
+    if environ.get("STREAMLIT_SERVER_HEADLESS") == "true":
+        return "appuser" in home or "/streamlit" in home.lower()
+    return False
+
+
 def detect_environment() -> str:
     """
     Detect whether the app is running locally or on Streamlit Cloud.
@@ -23,18 +37,9 @@ def detect_environment() -> str:
     - Streamlit Cloud also runs with STREAMLIT_SERVER_HEADLESS=true
     - Cloud home directory typically differs from local Windows path
     """
-    # Check for Streamlit Cloud-specific environment variables
-    if os.environ.get("STREAMLIT_RUNTIME_GATING_ALLOWLIST"):
-        return "cloud"
-    
-    if os.environ.get("STREAMLIT_SERVER_HEADLESS") == "true":
-        # Additional check: Streamlit Cloud homedir is typically /home/appuser
-        # Local is typically /home/<user> on Linux or C:\Users\<user> on Windows
-        home = os.path.expanduser("~")
-        if "appuser" in home or "/streamlit" in home.lower():
-            return "cloud"
-    
-    return "local"
+    return "cloud" if _is_cloud_runtime(
+        os.environ, Path(__file__).resolve(), os.path.expanduser("~")
+    ) else "local"
 
 
 def get_workbook_path() -> Path:
