@@ -34,6 +34,7 @@ Destinations.before-*.xlsx
 # Cloud deployment uses committed Destinations-cloud.xlsx
 Destinations-local.xlsx
 Destinations.xlsx
+Destinations-cloud_download.xlsx
 
 # API credentials (never commit secrets)
 unsplash_secrets.py
