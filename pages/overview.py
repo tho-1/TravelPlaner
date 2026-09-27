@@ -42,7 +42,7 @@ def _show_add_destination_dialog():
         ),
     )
 
-    retry_key = "add_destination_retry_pending"
+    retry_key = "overview_add_destination_retry_pending"
 
     def _attempt_add():
         if not new_dest.strip():
@@ -88,7 +88,7 @@ def _show_add_destination_dialog():
 
     if st.session_state.get(retry_key):
         st.error(st.session_state[retry_key])
-        if st.button("Retry", type="primary", width="stretch"):
+        if st.button("Retry", type="primary", width="stretch", key="overview_add_retry"):
             _attempt_add()
 
 

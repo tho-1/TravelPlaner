@@ -49,7 +49,7 @@ def _show_add_destination_dialog():
         ),
     )
 
-    retry_key = "add_destination_retry_pending"
+    retry_key = "worldmap_add_destination_retry_pending"
 
     def _attempt_add():
         if not new_dest.strip():
@@ -95,7 +95,7 @@ def _show_add_destination_dialog():
 
     if st.session_state.get(retry_key):
         st.error(st.session_state[retry_key])
-        if st.button("Retry", type="primary", width="stretch"):
+        if st.button("Retry", type="primary", width="stretch", key="worldmap_add_retry"):
             _attempt_add()
 
 # Comprehensive Country name / aliases to ISO-3 standard mapping
@@ -763,27 +763,7 @@ def render_world_map():
             key=lambda item: item["Destination"].casefold(),
         )
         if country_dests:
-            st.markdown(
-                """
-                <style>
-                    a.dest-heading-link {
-                        display: block !important;
-                        font-size: 1.45rem !important;
-                        font-weight: 700 !important;
-                        color: #111827 !important;
-                        text-decoration: none !important;
-                        margin-bottom: 6px !important;
-                        line-height: 1.3 !important;
-                    }
-                    a.dest-heading-link:hover {
-                        color: #2563eb !important;
-                        text-decoration: underline !important;
-                    }
-                </style>
-                """,
-                unsafe_allow_html=True,
-            )
-            detail_urls = st.session_state.get("_detail_urls", {})
+            detail_pages = st.session_state.get("_detail_pages", {})
             card_cols = st.columns(min(3, max(1, len(country_dests))))
             for idx, dest_info in enumerate(country_dests):
                 city_name = dest_info["Destination"]
@@ -795,14 +775,15 @@ def render_world_map():
                 prio = dest_info.get("Prio Thorsten", "—")
                 reviews = dest_info.get("Reviews", "—")
                 population = dest_info.get("Population", "—")
-                url_path = detail_urls.get(city_name, f"destination-{city_name.lower().replace(' ', '-')}")
 
                 with card_cols[idx % len(card_cols)]:
                     with st.container(border=True):
-                        st.markdown(
-                            f'<a href="{html.escape(url_path)}" target="_self" class="dest-heading-link">{badge} {html.escape(city_name)}{q_mark}</a>',
-                            unsafe_allow_html=True,
-                        )
+                        if st.button(
+                            f"{badge} {city_name}{q_mark}",
+                            key=f"map_open_{city_name}",
+                            type="tertiary",
+                        ):
+                            _navigate_to_destination(city_name)
 
                         info_items = []
                         if prio not in ("—", None, "") and pd.notna(prio) and str(prio).strip().lower() not in {"nan", "none", "null"}:

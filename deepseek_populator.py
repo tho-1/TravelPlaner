@@ -42,6 +42,32 @@ def add_destination_with_deepseek(
     Returns ``(success, message)``. Raises ``WorkbookLockedError`` if the file
     is locked, and ``RuntimeError`` if the API call itself fails.
     """
+    dest_clean = str(destination).strip()
+    if dest_clean:
+        try:
+            import pandas as pd
+
+            with pd.ExcelFile(path, engine="openpyxl") as excel_file:
+                for sheet_name in excel_file.sheet_names:
+                    try:
+                        frame = pd.read_excel(path, sheet_name=sheet_name, engine="openpyxl", nrows=0)
+                    except Exception:
+                        continue
+                    columns = [str(col) for col in frame.columns]
+                    if not any(
+                        keyword in " ".join(columns).lower()
+                        for keyword in ["destination", "continent", "safety", "cost", "flight", "population", "month"]
+                    ):
+                        continue
+                    existing = pd.read_excel(
+                        path, sheet_name=sheet_name, engine="openpyxl", usecols=lambda c: "destination" in str(c).lower()
+                    )
+                    for col in existing.columns:
+                        if existing[col].astype(str).str.strip().str.lower().eq(dest_clean.lower()).any():
+                            return False, f"Destination '{dest_clean}' already exists in the workbook."
+                    break
+        except Exception:
+            pass
     profile = generate_destination_profile(destination, country, continent)
     return populate_destination_with_ai(destination, country, continent, profile, path=path)
 

@@ -118,6 +118,27 @@ def _interpolate_color(start_hex: str, end_hex: str, ratio: float) -> str:
     return "#" + "".join(f"{part:02x}" for part in rgb)
 
 
+def _safe_float(value: object) -> float | None:
+    """Parse a number from workbook text without crashing the page.
+
+    Handles stray strings like "8/10" (→ 8.0) and returns None when no
+    number is present.
+    """
+    if pd.isna(value):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        pass
+    match = re.search(r"[-+]?\d+(?:\.\d+)?", str(value))
+    if match:
+        try:
+            return float(match.group(0))
+        except ValueError:
+            return None
+    return None
+
+
 def _metric_color(value: object, mode: str, label: str = "") -> str:
     if pd.isna(value) or str(value).strip() == "" or str(value).strip().lower() in {"nan", "none", "null"}:
         if "prio" in label.lower():
@@ -347,7 +368,8 @@ def _render_food_section(
     food_dishes: object = None,
 ) -> None:
     st.subheader("Food")
-    spice_text = f"{float(food_spiciness):g}/10" if pd.notna(food_spiciness) else "—"
+    _spice_num = _safe_float(food_spiciness)
+    spice_text = f"{_spice_num:g}/10" if _spice_num is not None else "—"
     description_text = (
         html.escape(str(food_description).strip())
         if pd.notna(food_description) and str(food_description).strip()
@@ -1046,10 +1068,10 @@ def render_destination(destination_name: str):
 
                     btn_c1, btn_c2 = st.columns(2)
                     with btn_c1:
-                        if st.button("Save", key=save_key, type="primary", use_container_width=True):
+                        if st.button("Save", key=save_key, type="primary", width="stretch"):
                             _save_prio(new_value_str)
                     with btn_c2:
-                        if st.button("Cancel", key=f"cancel_prio_{destination_name}", use_container_width=True):
+                        if st.button("Cancel", key=f"cancel_prio_{destination_name}", width="stretch"):
                             st.session_state.pop(prio_error_key, None)
                             st.session_state.pop(edit_state_key, None)
                             st.rerun()
@@ -1599,9 +1621,10 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
     # 4. IQAir world rank (from workbook columns written by iqair_ranking.py)
     iqair_rank_raw = selected_row.get("IQAir Rank")
     iqair_pm25_raw = selected_row.get("IQAir PM2.5")
-    iqair_rank = int(iqair_rank_raw) if pd.notna(iqair_rank_raw) else None
-    iqair_pm25 = (f"{float(iqair_pm25_raw):.1f}"
-                  if pd.notna(iqair_pm25_raw) else None)
+    _rank_num = _safe_float(iqair_rank_raw)
+    iqair_rank = int(_rank_num) if _rank_num is not None else None
+    _pm25_num = _safe_float(iqair_pm25_raw)
+    iqair_pm25 = f"{_pm25_num:.1f}" if _pm25_num is not None else None
     if iqair_rank is not None:
         if iqair_pm25 is not None:
             iqair_value = f"#{iqair_rank:,} ({iqair_pm25} µg/m³)"

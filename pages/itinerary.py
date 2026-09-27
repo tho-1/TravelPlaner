@@ -259,20 +259,20 @@ def _stop_header(stop: dict, index: int, total: int) -> None:
     with head_r:
         cols = st.columns(4)
         if cols[0].button("↑", key=f"up_{stop['id']}",
-                          disabled=index == 0, use_container_width=True,
+                          disabled=index == 0, width="stretch",
                           help="Move up"):
             _move_stop(stop["id"], -1)
         if cols[1].button("↓", key=f"down_{stop['id']}",
-                          disabled=index == total - 1, use_container_width=True,
+                          disabled=index == total - 1, width="stretch",
                           help="Move down"):
             _move_stop(stop["id"], +1)
         eye = "👁️" if selected else "👁"
         if cols[2].button(eye, key=f"eye_{stop['id']}",
-                          use_container_width=True,
+                          width="stretch",
                           help="Highlight on map"):
             _select_stop(None if selected else stop["id"])
         if cols[3].button("🗑", key=f"del_{stop['id']}",
-                          use_container_width=True, type="primary",
+                          width="stretch", type="primary",
                           help="Remove stop"):
             st.session_state["itin_del_stop_pending"] = stop["id"]
             st.rerun()
@@ -323,7 +323,8 @@ def _stop_editor(stop: dict) -> None:
             with c1:
                 nights = st.number_input(
                     "Nights", min_value=0, max_value=90, step=1,
-                    value=int(stop.get("nights") or 0), key=f"nights_{stop['id']}")
+                    value=int(stop.get("nights") or 0), key=f"nights_{stop['id']}",
+                    help="Leave 0 to keep nights unset (total falls back to dates).")
             with c2:
                 arr_t = st.text_input("Arrival time", value=stop.get("arrival_time") or "",
                                       key=f"arrt_{stop['id']}", placeholder="09:30",
@@ -337,14 +338,14 @@ def _stop_editor(stop: dict) -> None:
         auto_clicked = False
         if is_origin:
             apply_clicked = st.button("Save stop", key=f"save_{stop['id']}",
-                                      type="primary", use_container_width=True)
+                                      type="primary", width="stretch")
         else:
             b1, b2 = st.columns(2)
             apply_clicked = b1.button("Save stop", key=f"save_{stop['id']}",
-                                      type="primary", use_container_width=True)
+                                      type="primary", width="stretch")
             auto_clicked = b2.button("Auto: departure = arrival + nights",
                                      key=f"auto_{stop['id']}",
-                                     use_container_width=True,
+                                     width="stretch",
                                      help="Needs an arrival date and nights > 0.")
         if apply_clicked:
             errors = []
@@ -372,7 +373,7 @@ def _stop_editor(stop: dict) -> None:
                     stop["id"],
                     arrival_date=arr.isoformat() if arr else None,
                     departure_date=dep.isoformat() if dep else None,
-                    nights=int(nights),
+                    nights=(int(nights) or None),
                     arrival_time=arr_t.strip() or None,
                     departure_time=dep_t.strip() or None,
                     notes=notes.strip(),
@@ -529,7 +530,7 @@ def _render_plan_tab(data: dict, trip: dict | None, variant: dict | None,
         st.markdown(f"#### 🧳 {trip['name']}")
         tc1, tc2, tc3, tc4 = st.columns(4)
         with tc1:
-            with st.popover("New", use_container_width=True):
+            with st.popover("New", width="stretch"):
                 name = st.text_input("Trip name", key="itin_new_trip_name")
                 if st.button("Create", key="itin_new_trip_go", type="primary"):
                     _new_trip(name)
@@ -538,7 +539,7 @@ def _render_plan_tab(data: dict, trip: dict | None, variant: dict | None,
                          help="Duplicate this trip"):
                 _duplicate_trip(trip["id"])
         with tc3:
-            with st.popover("Rename", use_container_width=True):
+            with st.popover("Rename", width="stretch"):
                 rname = st.text_input("Trip name", value=trip["name"],
                                       key=f"itin_rename_trip_{trip['id']}")
                 if st.button("Apply", key="itin_rename_trip_go"):
@@ -578,7 +579,7 @@ def _render_plan_tab(data: dict, trip: dict | None, variant: dict | None,
             _variant_action("activate", target["id"])
         vc1, vc2, vc3, vc4 = st.columns(4)
         with vc1:
-            with st.popover("New", use_container_width=True):
+            with st.popover("New", width="stretch"):
                 vname = st.text_input(
                     "Variant name",
                     value=f"Variant {len(trip['variants']) + 1}",
@@ -591,7 +592,7 @@ def _render_plan_tab(data: dict, trip: dict | None, variant: dict | None,
                          help="Duplicate this variant"):
                 _variant_action("duplicate")
         with vc3:
-            with st.popover("Rename", use_container_width=True):
+            with st.popover("Rename", width="stretch"):
                 vrname = st.text_input(
                     "Variant name",
                     value=variant["name"] if variant else "",
@@ -691,7 +692,7 @@ def _render_plan_tab(data: dict, trip: dict | None, variant: dict | None,
         st.download_button("⬇ Export trip (JSON)", storage.export_trip(trip),
                            file_name=f"{trip['name'].replace(' ', '_').lower()}.json",
                            mime="application/json",
-                           use_container_width=True)
+                           width="stretch")
 
 
 def _render_map_tab(variant: dict | None) -> None:
@@ -733,7 +734,7 @@ def _render_map_tab(variant: dict | None) -> None:
         show_gateways=show_gw,
         fit_points=fit_points or None,
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
     t = ops.totals(variant)
     st.caption(f"{t['stops']} stops · {t['nights']} nights · "
@@ -763,7 +764,7 @@ def _render_compare_tab(trip: dict | None) -> None:
             "Warnings": len(ops.warnings_for(v)),
             "Comment": (v.get("comment") or "")[:60],
         })
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
     names = [v["name"] for v in trip["variants"]]
     active = models.active_variant(trip)
@@ -821,7 +822,7 @@ def render_sidebar_trips(pg, itinerary_page) -> None:
                                 key=f"itin_nav_{trip['id']}",
                                 type="primary" if is_active else "secondary",
                                 help="Open this itinerary",
-                                use_container_width=True)
+                                width="stretch")
             # Clicking any trip opens it in the planner — also the ACTIVE one
             # (true no-op only when already on the itinerary page with it).
             on_itinerary = getattr(pg, "url_path", "") == "itinerary"
@@ -852,7 +853,7 @@ def render_sidebar_trips(pg, itinerary_page) -> None:
             st.caption("  \n".join(bits))
 
     if st.button("➕ New itinerary", key="itin_nav_new", type="tertiary",
-                 use_container_width=True):
+                 width="stretch"):
         fresh = storage.load_trips()
         trip = ops.create_trip(fresh, "New trip")
         storage.save_trips(fresh)
@@ -886,7 +887,7 @@ def _render_backup_restore() -> None:
         chosen = backups[labels.index(pick)] if pick in labels else backups[0]
         if st.session_state.get("itin_restore_pending") != chosen["path"]:
             if st.button("♻️ Restore this backup", key="itin_restore_ask",
-                         use_container_width=True):
+                         width="stretch"):
                 st.session_state["itin_restore_pending"] = chosen["path"]
                 st.rerun()
         else:
@@ -896,7 +897,7 @@ def _render_backup_restore() -> None:
             rc1, rc2 = st.columns(2)
             with rc1:
                 if st.button("♻️ Yes, restore", key="itin_restore_go",
-                             type="primary", use_container_width=True):
+                             type="primary", width="stretch"):
                     storage.restore_backup(chosen["path"])
                     st.session_state.pop("itin_restore_pending", None)
                     _set_active_trip(None)
@@ -904,7 +905,7 @@ def _render_backup_restore() -> None:
                     st.rerun()
             with rc2:
                 if st.button("Cancel", key="itin_restore_no",
-                             use_container_width=True):
+                             width="stretch"):
                     st.session_state.pop("itin_restore_pending", None)
                     st.rerun()
 

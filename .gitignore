@@ -28,6 +28,7 @@ iqair_cache/
 
 # Backup workbooks (never commit)
 Destinations.before-*.xlsx
+archive/
 
 # Environment-specific workbooks (never commit)
 # Local development uses Destinations-local.xlsx (git-ignored)
