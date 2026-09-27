@@ -63,8 +63,8 @@ def _show_add_destination_dialog():
                     success, msg = add_destination_with_deepseek(
                         new_dest, new_country, new_continent
                     )
-        except WorkbookLockedError:
-            st.session_state[retry_key] = True
+        except WorkbookLockedError as exc:
+            st.session_state[retry_key] = str(exc)
             return
         except Exception as exc:
             st.error(f"Could not add the destination: {exc}")
@@ -87,10 +87,7 @@ def _show_add_destination_dialog():
         _attempt_add()
 
     if st.session_state.get(retry_key):
-        st.error(
-            "**Destinations.xlsx is currently open in another program** (e.g. Excel). "
-            "Please close the file and press **Retry**."
-        )
+        st.error(st.session_state[retry_key])
         if st.button("Retry", type="primary", width="stretch"):
             _attempt_add()
 

@@ -317,8 +317,8 @@ def _render_comment_editor(destination_name: str, comment_value: str) -> None:
     def _save(value: str) -> bool:
         try:
             update_comment(destination_name, value)
-        except WorkbookLockedError:
-            st.session_state[lock_key] = True
+        except WorkbookLockedError as exc:
+            st.session_state[lock_key] = str(exc)
             return False
         st.session_state.pop(lock_key, None)
         st.session_state[open_key] = False
@@ -331,10 +331,7 @@ def _render_comment_editor(destination_name: str, comment_value: str) -> None:
             st.rerun()
 
     if st.session_state.get(lock_key):
-        st.error(
-            "**Destinations.xlsx is currently open in another program** (e.g. Excel). "
-            "Please close the file and press **Retry**."
-        )
+        st.error(st.session_state[lock_key])
         if st.button("Retry", key=f"comment_retry_{destination_name}"):
             if _save(st.session_state.get(input_key, "")):
                 st.rerun()
@@ -502,8 +499,8 @@ def render_destination(destination_name: str):
                         success, msg = populate_existing_destination_with_ai(
                             destination_name, country, continent
                         )
-                except WorkbookLockedError:
-                    st.session_state[ai_lock_key] = True
+                except WorkbookLockedError as exc:
+                    st.session_state[ai_lock_key] = str(exc)
                     return
                 except Exception as exc:
                     st.error(f"Could not populate the destination: {exc}")
@@ -527,10 +524,7 @@ def render_destination(destination_name: str):
                 _run_ai_populate()
 
             if st.session_state.get(ai_lock_key):
-                st.error(
-                    "**Destinations.xlsx is currently open in another program** (e.g. Excel). "
-                    "Please close the file and press **Retry**."
-                )
+                st.error(st.session_state[ai_lock_key])
                 if st.button(
                     "Retry", key=f"ai_populate_retry_{destination_name}", type="primary"
                 ):
@@ -649,23 +643,59 @@ def render_destination(destination_name: str):
             def _ctx(i):
                 return columns[i] if i < len(columns) else None
 
+            def _workbook_action(label, key, help_text, write):
+                error_key = f"workbook_action_error_{destination_name}_{key}"
+
+                def _attempt():
+                    try:
+                        write()
+                    except WorkbookLockedError as exc:
+                        st.session_state[error_key] = str(exc)
+                    else:
+                        st.session_state.pop(error_key, None)
+                        st.rerun()
+
+                if st.button(label, key=key, help=help_text):
+                    _attempt()
+                error = st.session_state.get(error_key)
+                if error:
+                    st.error(error)
+                    if st.button("Retry", key=f"{key}_retry"):
+                        _attempt()
+
             with (_ctx(0) or nullcontext()):
                 fav_icon = "❤️" if is_favorite else "🤍"
                 fav_help = "Remove from Favorites" if is_favorite else "Add to Favorites"
-                if st.button(fav_icon, key=f"fav_{destination_name}", help=fav_help):
-                    update_favorite_status(destination_name, add=not is_favorite)
-                    st.rerun()
+                _workbook_action(
+                    fav_icon,
+                    f"fav_{destination_name}",
+                    fav_help,
+                    lambda: update_favorite_status(
+                        destination_name, add=not is_favorite
+                    ),
+                )
             with (_ctx(1) or nullcontext()):
                 research_icon = "❓" if is_to_be_researched else "❔"
                 research_help = "Needs research (click to mark as done)" if is_to_be_researched else "Mark as needs research"
-                if st.button(research_icon, key=f"research_{destination_name}", help=research_help):
-                    update_to_be_researched_status(destination_name, to_be_researched=not is_to_be_researched)
-                    st.rerun()
+                _workbook_action(
+                    research_icon,
+                    f"research_{destination_name}",
+                    research_help,
+                    lambda: update_to_be_researched_status(
+                        destination_name,
+                        to_be_researched=not is_to_be_researched,
+                    ),
+                )
             with (_ctx(2) or nullcontext()):
                 visited_help = "Visited (click to mark as not visited)" if is_visited else "Mark as visited"
-                if st.button("Visited" if is_visited else "Not visited", key=f"visited_{destination_name}", help=visited_help):
-                    update_visited_status(destination_name, visited=not is_visited)
-                    st.rerun()
+                _workbook_action(
+                    "Visited" if is_visited else "Not visited",
+                    f"visited_{destination_name}",
+                    visited_help,
+                    lambda: update_visited_status(
+                        destination_name, visited=not is_visited
+                    ),
+                )
             with (_ctx(3) or nullcontext()):
                 _render_comment_toggle(destination_name, comment_value)
 
@@ -990,29 +1020,43 @@ def render_destination(destination_name: str):
                         key=input_key,
                         help="Enter a priority from 0 to 10, or leave blank and save to clear."
                     )
+                    prio_error_key = f"prio_write_error_{destination_name}"
+
+                    def _save_prio(raw_value: str) -> None:
+                        raw_value = raw_value.strip()
+                        if raw_value == "":
+                            priority = None
+                        else:
+                            try:
+                                priority = int(float(raw_value))
+                            except (ValueError, TypeError):
+                                st.error("Please enter 0–10 or leave blank.")
+                                return
+                            if not 0 <= priority <= 10:
+                                st.error("Enter a number 0–10")
+                                return
+                        try:
+                            update_prio_thorsten(destination_name, priority)
+                        except WorkbookLockedError as exc:
+                            st.session_state[prio_error_key] = str(exc)
+                            return
+                        st.session_state.pop(prio_error_key, None)
+                        st.session_state.pop(edit_state_key, None)
+                        st.rerun()
+
                     btn_c1, btn_c2 = st.columns(2)
                     with btn_c1:
                         if st.button("Save", key=save_key, type="primary", use_container_width=True):
-                            val_to_save = new_value_str.strip()
-                            if val_to_save == "":
-                                update_prio_thorsten(destination_name, None)
-                                st.session_state.pop(edit_state_key, None)
-                                st.rerun()
-                            else:
-                                try:
-                                    num_val = int(float(val_to_save))
-                                    if 0 <= num_val <= 10:
-                                        update_prio_thorsten(destination_name, num_val)
-                                        st.session_state.pop(edit_state_key, None)
-                                        st.rerun()
-                                    else:
-                                        st.error("Enter a number 0–10")
-                                except ValueError:
-                                    st.error("Please enter 0–10 or leave blank.")
+                            _save_prio(new_value_str)
                     with btn_c2:
                         if st.button("Cancel", key=f"cancel_prio_{destination_name}", use_container_width=True):
+                            st.session_state.pop(prio_error_key, None)
                             st.session_state.pop(edit_state_key, None)
                             st.rerun()
+                    if st.session_state.get(prio_error_key):
+                        st.error(st.session_state[prio_error_key])
+                        if st.button("Retry", key=f"retry_prio_{destination_name}"):
+                            _save_prio(st.session_state.get(input_key, ""))
             else:
                 st.markdown(_format_metric_box(column, value, suffix, mode), unsafe_allow_html=True)
 
