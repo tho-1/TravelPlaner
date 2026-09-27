@@ -433,6 +433,176 @@ def test_ui_state_roundtrip():
             storage.UI_STATE_PATH, storage.CACHE_DIR = real_ui, real_dir
 
 
+# ── L5 edge cases ──────────────────────────────────────────────────────────
+
+def test_duplicate_trip_gets_new_ids_and_copy_suffix():
+    data = {"schema_version": 1, "trips": [sample.make_sample_trip()]}
+    src = data["trips"][0]
+    clone = itin.duplicate_trip(data, src["id"])
+    assert clone is not None
+    assert clone["id"] != src["id"]
+    assert clone["name"] == src["name"] + " (copy)"
+    assert len(data["trips"]) == 2
+    old_variants = {v["id"] for v in src["variants"]}
+    new_variants = {v["id"] for v in clone["variants"]}
+    assert not old_variants & new_variants
+    assert clone["active_variant_id"] in new_variants
+    assert itin.duplicate_trip(data, "missing-id") is None
+
+
+def test_rename_trip_blank_keeps_old_name():
+    trip = models.make_trip("Original")
+    itin.rename_trip(trip, "   ")
+    assert trip["name"] == "Original"
+    itin.rename_trip(trip, "  New  ")
+    assert trip["name"] == "New"
+
+
+def test_set_leg_mode_invalid_becomes_other():
+    v = _variant_3_stops()
+    itin.set_leg_mode(v, 0, "hyperloop")
+    assert v["legs"][0]["mode"] == "other"
+    itin.set_leg_mode(v, 99, "flight")  # out of range: no crash
+    itin.set_leg_mode(v, -1, "flight")
+
+
+def test_add_stop_into_empty_and_remove_to_zero():
+    v = models.make_variant("V")
+    assert v["stops"] == [] and v["legs"] == []
+    s = itin.add_stop(v, models.make_ref("custom", "A"), at=0)
+    assert len(v["stops"]) == 1 and len(v["legs"]) == 0
+    itin.add_stop(v, models.make_ref("custom", "B"))
+    assert len(v["stops"]) == 2 and len(v["legs"]) == 1
+    itin.remove_stop(v, 0)
+    itin.remove_stop(v, 0)
+    assert v["stops"] == [] and v["legs"] == []
+    itin.remove_stop(v, 0)  # empty: no crash
+
+
+def test_move_origin_stop_swaps_and_keeps_legs():
+    v = _variant_3_stops()
+    modes_before = [leg["mode"] for leg in v["legs"]]
+    new_index = itin.move_stop(v, 0, 1)
+    assert new_index == 1
+    assert [s["ref"]["name"] for s in v["stops"]] == ["A", "FRA", "B"]
+    assert [leg["mode"] for leg in v["legs"]] == modes_before
+
+
+def test_warnings_garbage_dates_and_negative_nights():
+    v = models.make_variant("V", [
+        models.make_stop(models.make_ref("custom", "X"), arrival_date="not-a-date",
+                         departure_date="also-bad", nights=-2),
+    ], [])
+    warnings = itin.warnings_for(v)
+    assert any("invalid date" in w for w in warnings)
+    assert any("negative nights" in w for w in warnings)
+
+
+def test_totals_single_day_span_is_zero_nights():
+    v = models.make_variant("V", [
+        models.make_stop(models.make_ref("custom", "X"), arrival_date="2027-05-01",
+                         departure_date="2027-05-01"),
+    ], [])
+    t = itin.totals(v)
+    assert t["nights"] == 0
+    assert t["start"] == "2027-05-01" and t["end"] == "2027-05-01"
+
+
+def test_totals_dates_only_on_later_stops():
+    v = models.make_variant("V", [
+        models.make_stop(models.make_ref("gateway", "FRA"), role="origin"),
+        models.make_stop(models.make_ref("custom", "B"), arrival_date="2027-06-03",
+                         departure_date="2027-06-06"),
+    ], [models.make_leg("flight")])
+    t = itin.totals(v)
+    assert t["start"] == "2027-06-03" and t["end"] == "2027-06-06"
+    assert t["nights"] == 3  # date-span fallback for the unset stop
+
+
+def test_suggested_months_none_df_returns_empty():
+    v = _variant_3_stops()
+    assert itin.suggested_months(v, None) == {}
+
+
+def test_map_with_zero_or_one_stop():
+    empty = models.make_variant("V")
+    fig0 = itmap.build_figure(empty)
+    assert fig0 is not None
+    one = models.make_variant("V", [
+        models.make_stop(models.make_ref("gateway", "FRA", "Germany", 50.11, 8.68),
+                         role="origin"),
+    ], [])
+    fig1 = itmap.build_figure(one)
+    assert fig1 is not None
+
+
+def test_map_all_gateway_stops():
+    v = models.make_variant("V", [
+        models.make_stop(models.make_ref("gateway", "FRA", "Germany", 50.11, 8.68),
+                         role="origin"),
+        models.make_stop(models.make_ref("gateway", "PEK", "China", 40.08, 116.58),
+                         role="return"),
+    ], [models.make_leg("flight")])
+    fig = itmap.build_figure(v)
+    assert fig is not None
+
+
+def test_restore_corrupt_backup_keeps_live_file():
+    import json
+    real_path, real_dir = storage.TRIPS_PATH, storage.BACKUP_DIR
+    with tempfile.TemporaryDirectory() as td:
+        storage.TRIPS_PATH = Path(td) / "trips.json"
+        storage.BACKUP_DIR = Path(td) / "trips_backups"
+        try:
+            live = sample.make_sample_trip()
+            storage.save_trips({"schema_version": 1, "trips": [live]})
+            bad = Path(td) / "bad.json"
+            bad.write_text("{corrupt", encoding="utf-8")
+            try:
+                storage.restore_backup(bad)
+            except (json.JSONDecodeError, ValueError):
+                pass
+            else:
+                raise AssertionError("corrupt restore did not raise")
+            assert storage.load_trips()["trips"][0]["id"] == live["id"]
+        finally:
+            storage.TRIPS_PATH, storage.BACKUP_DIR = real_path, real_dir
+
+
+def test_backup_prune_keeps_newest_in_order():
+    real_path, real_dir, real_keep = (storage.TRIPS_PATH, storage.BACKUP_DIR,
+                                      storage.BACKUP_KEEP)
+    with tempfile.TemporaryDirectory() as td:
+        storage.TRIPS_PATH = Path(td) / "trips.json"
+        storage.BACKUP_DIR = Path(td) / "trips_backups"
+        storage.BACKUP_KEEP = 2
+        try:
+            for name in ("One", "Two", "Three"):
+                trip = sample.make_sample_trip()
+                trip["name"] = name
+                storage.save_trips({"schema_version": 1, "trips": [trip]})
+            backups = storage.list_backups()
+            assert len(backups) == 2
+            assert "One" in " ".join(backups[-1]["trips"])  # oldest kept
+            assert "Two" in " ".join(backups[0]["trips"])  # newest first
+        finally:
+            storage.TRIPS_PATH = real_path
+            storage.BACKUP_DIR = real_dir
+            storage.BACKUP_KEEP = real_keep
+
+
+def test_ui_state_with_stale_trip_id_roundtrips():
+    real_ui, real_dir = storage.UI_STATE_PATH, storage.CACHE_DIR
+    with tempfile.TemporaryDirectory() as td:
+        storage.CACHE_DIR = Path(td)
+        storage.UI_STATE_PATH = Path(td) / "ui_state.json"
+        try:
+            storage.save_ui_state({"active_trip_id": "trip-gone"})
+            assert storage.load_ui_state()["active_trip_id"] == "trip-gone"
+        finally:
+            storage.UI_STATE_PATH, storage.CACHE_DIR = real_ui, real_dir
+
+
 # ── __main__ runner (no pytest in this project) ─────────────────────────────
 
 if __name__ == "__main__":

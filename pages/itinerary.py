@@ -153,8 +153,7 @@ def _variant_action(action: str, arg: str | None = None) -> None:
     _save_and_rerun(data)
 
 
-def _add_stop(ref: dict, role: str, nights: int | None = None,
-              arrival: str | None = None) -> None:
+def _add_stop(ref: dict, role: str, nights: int | None = None) -> None:
     data = storage.load_trips()
     trip = _active_trip(data)
     if trip is None:
@@ -162,7 +161,7 @@ def _add_stop(ref: dict, role: str, nights: int | None = None,
     variant = models.active_variant(trip)
     # fill workbook coords at creation time (custom refs keep geocode lat/lon)
     ref = geo.resolve_ref(ref, _coords_index_cached())
-    ops.add_stop(variant, ref, role=role, nights=nights, arrival_date=arrival)
+    ops.add_stop(variant, ref, role=role, nights=nights, arrival_date=None)
     st.session_state["itin_selected_stop_id"] = None
     _save_and_rerun(data)
 

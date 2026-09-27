@@ -206,8 +206,12 @@ def totals(variant: dict) -> dict:
             out["trains"] += 1
         else:
             out["other"] += 1
-    dates = [s.get("arrival_date") or s.get("departure_date")
-             for s in stops if s.get("arrival_date") or s.get("departure_date")]
+    dates = []
+    for s in stops:
+        if s.get("arrival_date"):
+            dates.append(s["arrival_date"])
+        if s.get("departure_date"):
+            dates.append(s["departure_date"])
     dates = sorted(d for d in dates if d)
     if dates:
         out["start"], out["end"] = dates[0], dates[-1]

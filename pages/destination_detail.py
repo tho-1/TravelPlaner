@@ -1569,13 +1569,12 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
         st.info(f"Detailed monthly climate and air quality data is currently being populated for **{destination_name}**.")
         return
 
-    is_f = False
-    temp_suffix = "°F" if is_f else "°C"
+    temp_suffix = "°C"
 
     def _to_unit(c_val):
         if pd.isna(c_val):
             return None
-        return round(float(c_val) * 9 / 5 + 32, 1) if is_f else round(float(c_val), 1)
+        return round(float(c_val), 1)
 
     highs = [_to_unit(v) for v in highs_c]
     lows = [_to_unit(v) for v in lows_c]

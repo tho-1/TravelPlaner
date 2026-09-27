@@ -17,6 +17,9 @@ from . import models, sample
 
 ROOT = Path(__file__).resolve().parent.parent
 TRIPS_PATH = ROOT / "trips.json"
+# Immutable live-file identity: tests reassign TRIPS_PATH above, so journal
+# guards must compare against this constant, never the mutable global.
+_LIVE_TRIPS_PATH = ROOT / "trips.json"
 CACHE_DIR = ROOT / "itinerary_cache"
 UI_STATE_PATH = CACHE_DIR / "ui_state.json"
 BACKUP_DIR = ROOT / "trips_backups"
@@ -53,7 +56,7 @@ def save_to(data: dict, path: Path) -> None:
 def _collect_trips_diffs(path: Path, new_payload: dict) -> list[tuple[str, str, object, str]]:
     """Compare live file vs new payload. Returns [(trip_id, variant_id, value, op)]."""
     try:
-        if Path(path) != TRIPS_PATH:
+        if Path(path) != _LIVE_TRIPS_PATH:
             return []
         old = load_from(path)
     except Exception:
@@ -90,7 +93,7 @@ def _journal_trips_safe(path: Path, diffs: list[tuple[str, str, object, str]]) -
     try:
         if os.environ.get("SYNC_MERGE_APPLY") == "1":
             return
-        if Path(path) != TRIPS_PATH:
+        if Path(path) != _LIVE_TRIPS_PATH:
             return
         from sync import journal as _journal
 

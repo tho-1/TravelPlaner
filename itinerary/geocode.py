@@ -69,8 +69,3 @@ def search(query: str, count: int = 5, use_cache: bool = True) -> list[dict]:
     cache[key] = results
     _save_cache(cache)
     return results
-
-
-def first_match(query: str) -> dict | None:
-    hits = search(query, count=1)
-    return hits[0] if hits else None
