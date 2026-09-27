@@ -180,4 +180,11 @@ with st.sidebar:
     except OSError as exc:
         st.caption(f"Workbook download unavailable: {exc}")
 
+    try:
+        from sync.ui import render_sync_sidebar
+
+        render_sync_sidebar()
+    except Exception as exc:
+        st.caption(f"Sync unavailable: {exc}")
+
 pg.run()
