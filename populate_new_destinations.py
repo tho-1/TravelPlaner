@@ -10,7 +10,7 @@ from __future__ import annotations
 import openpyxl
 import pandas as pd
 from review_analyzer import AspectSentiment, DestinationReviewData, PlatformRating, compute_destination_ratings
-from data_utils import DATA_PATH
+from data_utils import DATA_PATH, load_workbook_for_update, save_workbook_atomic
 
 
 NEW_DESTINATIONS_DATA = [
@@ -591,7 +591,7 @@ DESTINATION_FULL_PROFILES = {
 
 def populate_workbook():
     print(f"Loading workbook: {DATA_PATH}")
-    wb = openpyxl.load_workbook(DATA_PATH)
+    wb = load_workbook_for_update(DATA_PATH)
     ws = wb.active
 
     # Build header map
@@ -680,7 +680,7 @@ def populate_workbook():
                 "Confidence": confidence,
             })
 
-    wb.save(DATA_PATH)
+    save_workbook_atomic(wb, DATA_PATH)
     wb.close()
     print("Successfully saved Destinations.xlsx!")
 

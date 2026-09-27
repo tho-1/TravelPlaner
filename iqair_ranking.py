@@ -57,6 +57,8 @@ from data_utils import (
     WorkbookLockedError,
     _clear_destination_cache,
     _find_destination_sheet,
+    load_workbook_for_update,
+    save_workbook_atomic,
 )
 
 BASE_URL = "https://www.iqair.com/world-most-polluted-cities"
@@ -489,7 +491,7 @@ def write_workbook(snap: dict, path=DATA_PATH) -> dict:
     sheet_name = _find_destination_sheet(path)
     if sheet_name is None:
         raise RuntimeError("could not find destination sheet")
-    wb = openpyxl.load_workbook(path)
+    wb = load_workbook_for_update(path)
     ws = wb[sheet_name]
 
     headers = {}
@@ -554,7 +556,7 @@ def write_workbook(snap: dict, path=DATA_PATH) -> dict:
             stats[key].append(f"{name}: {_fmt_cands(res)}")
 
     try:
-        wb.save(path)
+        save_workbook_atomic(wb, path)
     except PermissionError as exc:
         wb.close()
         raise WorkbookLockedError(

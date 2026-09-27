@@ -29,7 +29,14 @@ from typing import Dict, Optional, Tuple
 
 import openpyxl
 
-from data_utils import DATA_PATH, WorkbookLockedError, _find_destination_sheet, load_destinations
+from data_utils import (
+    DATA_PATH,
+    WorkbookLockedError,
+    _find_destination_sheet,
+    load_destinations,
+    load_workbook_for_update,
+    save_workbook_atomic,
+)
 from deepseek_client import generate_malaria_risk
 
 COLUMN = "Malaria risk?"
@@ -322,7 +329,7 @@ def populate_malaria_risk(
         return 0, ["Could not find destination sheet in workbook."]
 
     try:
-        wb = openpyxl.load_workbook(path)
+        wb = load_workbook_for_update(path)
     except PermissionError as exc:
         raise WorkbookLockedError(
             "Destinations.xlsx is currently open in another program (e.g. Excel). "
@@ -432,7 +439,7 @@ def populate_malaria_risk(
                 _write(row_idx, str(val).strip())
 
     try:
-        wb.save(path)
+        save_workbook_atomic(wb, path)
     except PermissionError as exc:
         wb.close()
         raise WorkbookLockedError(

@@ -9,6 +9,7 @@ Each entry has:
 """
 import openpyxl
 from pathlib import Path
+from data_utils import load_workbook_for_update, save_workbook_atomic
 
 WORKBOOK = Path(__file__).resolve().parent / "Destinations-local.xlsx"
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -626,7 +627,7 @@ ALL_REMAINING_CLIMATE = {
 
 
 def populate_all():
-    wb = openpyxl.load_workbook(WORKBOOK)
+    wb = load_workbook_for_update(WORKBOOK)
     ws = wb.active
 
     headers = {cell.value: cell.column for cell in ws[1] if cell.value is not None}
@@ -671,7 +672,7 @@ def populate_all():
             updated_count += 1
             print(f"Populated Row {r}: {dest_clean}")
 
-    wb.save(WORKBOOK)
+    save_workbook_atomic(wb, WORKBOOK)
     wb.close()
     print(f"\n[SUCCESS] Populated climate data for {updated_count} destination rows.")
 

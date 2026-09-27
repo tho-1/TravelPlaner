@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
+import time
+import uuid
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import openpyxl
 import pandas as pd
@@ -63,8 +67,125 @@ def to_be_researched_mask(frame: pd.DataFrame, column: str) -> pd.Series:
 
 
 class WorkbookLockedError(RuntimeError):
-    """Raised when Destinations.xlsx cannot be written because another program
-    (e.g. Excel, OneDrive) currently holds an exclusive lock on the file."""
+    """Raised when a workbook cannot be safely saved or has changed on disk."""
+
+
+class WorkbookChangedError(WorkbookLockedError):
+    """The source workbook changed after this writer loaded it."""
+
+
+WORKBOOK_BACKUP_KEEP = 12
+
+
+def load_workbook_for_update(path: Path = DATA_PATH, **kwargs):
+    """Load a workbook for mutation and remember its source mtime.
+
+    Call ``save_workbook_atomic`` to reject stale edits and atomically replace
+    the source. Read-only/data-only consumers should continue using openpyxl
+    directly.
+    """
+    source = Path(path)
+    try:
+        before = source.stat().st_mtime_ns
+        workbook = openpyxl.load_workbook(source, **kwargs)
+        after = source.stat().st_mtime_ns
+    except PermissionError as exc:
+        raise WorkbookLockedError(
+            f"{source.name} is locked or cannot be read. Close it in Excel "
+            "and retry."
+        ) from exc
+    if before != after:
+        workbook.close()
+        raise WorkbookChangedError(
+            f"{source.name} changed while it was being read. Reload it and retry."
+        )
+    workbook._travelplanner_source_path = str(source.resolve())
+    workbook._travelplanner_source_mtime_ns = after
+    return workbook
+
+
+def _check_workbook_mtime(path: Path, expected_mtime_ns: int | None) -> None:
+    if expected_mtime_ns is None:
+        return
+    try:
+        current = path.stat().st_mtime_ns
+    except PermissionError as exc:
+        raise WorkbookLockedError(
+            f"{path.name} is locked or cannot be accessed. Close it in Excel "
+            "and retry."
+        ) from exc
+    if current != expected_mtime_ns:
+        raise WorkbookChangedError(
+            f"{path.name} changed since it was opened. Reload the latest data "
+            "before saving to avoid overwriting another edit."
+        )
+
+
+def _snapshot_workbook(path: Path) -> Path | None:
+    """Snapshot the outgoing workbook before replacement; retain newest 12."""
+    if not path.exists():
+        return None
+    backup_dir = path.parent / "workbook_backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    millis = int(time.time() * 1000) % 1000
+    backup = backup_dir / f"{path.stem}-{stamp}-{millis:03d}.xlsx"
+    suffix = 1
+    while backup.exists():
+        backup = backup_dir / f"{path.stem}-{stamp}-{millis:03d}-{suffix}.xlsx"
+        suffix += 1
+    shutil.copy2(path, backup)
+    backups = sorted(
+        backup_dir.glob(f"{path.stem}-*.xlsx"),
+        key=lambda p: (p.stat().st_mtime_ns, p.name),
+    )
+    for stale in backups[:-WORKBOOK_BACKUP_KEEP]:
+        stale.unlink(missing_ok=True)
+    return backup
+
+
+def save_workbook_atomic(workbook, path: Path = DATA_PATH) -> None:
+    """Atomically save a mutated workbook after a stale-write check + backup."""
+    target = Path(path)
+    source_path = getattr(workbook, "_travelplanner_source_path", None)
+    expected_mtime_ns = getattr(workbook, "_travelplanner_source_mtime_ns", None)
+    if source_path is not None and Path(source_path) != target.resolve():
+        workbook.close()
+        raise WorkbookChangedError(
+            f"Workbook was loaded from a different file than {target.name}."
+        )
+
+    temporary = target.with_name(
+        f".{target.stem}.{os.getpid()}.{uuid.uuid4().hex}.tmp.xlsx"
+    )
+    try:
+        _check_workbook_mtime(target, expected_mtime_ns)
+        workbook.save(temporary)
+        # Check again after serialization so an edit made during the save is
+        # not silently replaced with this stale snapshot.
+        _check_workbook_mtime(target, expected_mtime_ns)
+        _snapshot_workbook(target)
+        _check_workbook_mtime(target, expected_mtime_ns)
+        os.replace(temporary, target)
+    except WorkbookLockedError:
+        workbook.close()
+        raise
+    except PermissionError as exc:
+        workbook.close()
+        raise WorkbookLockedError(
+            f"{target.name} is locked or cannot be written. Close it in Excel "
+            "and retry."
+        ) from exc
+    except OSError as exc:
+        workbook.close()
+        raise WorkbookLockedError(
+            f"Could not safely save {target.name}: {exc}"
+        ) from exc
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def normalize_text(value: object) -> str:
@@ -281,7 +402,7 @@ def update_favorite_status(destination_name: str, add: bool, path: Path = DATA_P
     if sheet_name is None:
         return
 
-    wb = openpyxl.load_workbook(path)
+    wb = load_workbook_for_update(path)
     ws = wb[sheet_name]
 
     # Build a header map: column name -> 1-based column index
@@ -319,7 +440,7 @@ def update_favorite_status(destination_name: str, add: bool, path: Path = DATA_P
 
     # Write "x" or clear the cell
     ws.cell(row=target_row, column=nearer_col_idx).value = "x" if add else None
-    wb.save(path)
+    save_workbook_atomic(wb, path)
     wb.close()
 
     # Clear the cached data so the app picks up the change
@@ -333,7 +454,7 @@ def update_visited_status(destination_name: str, visited: bool, path: Path = DAT
         return
 
     try:
-        wb = openpyxl.load_workbook(path)
+        wb = load_workbook_for_update(path)
     except PermissionError as exc:
         raise WorkbookLockedError(
             "Destinations.xlsx is currently open in another program (e.g. Excel). "
@@ -373,7 +494,7 @@ def update_visited_status(destination_name: str, visited: bool, path: Path = DAT
 
     ws.cell(row=target_row, column=visited_col_idx).value = bool(visited)
     try:
-        wb.save(path)
+        save_workbook_atomic(wb, path)
     except PermissionError as exc:
         wb.close()
         raise WorkbookLockedError(
@@ -392,7 +513,7 @@ def update_to_be_researched_status(destination_name: str, to_be_researched: bool
         return
 
     try:
-        wb = openpyxl.load_workbook(path)
+        wb = load_workbook_for_update(path)
     except PermissionError as exc:
         raise WorkbookLockedError(
             "Destinations.xlsx is currently open in another program (e.g. Excel). "
@@ -436,7 +557,7 @@ def update_to_be_researched_status(destination_name: str, to_be_researched: bool
 
     ws.cell(row=target_row, column=research_col_idx).value = bool(to_be_researched)
     try:
-        wb.save(path)
+        save_workbook_atomic(wb, path)
     except PermissionError as exc:
         wb.close()
         raise WorkbookLockedError(
@@ -454,7 +575,7 @@ def update_prio_thorsten(destination_name: str, value: int, path: Path = DATA_PA
     if sheet_name is None:
         return
 
-    wb = openpyxl.load_workbook(path)
+    wb = load_workbook_for_update(path)
     ws = wb[sheet_name]
 
     headers = {}
@@ -495,7 +616,7 @@ def update_prio_thorsten(destination_name: str, value: int, path: Path = DATA_PA
         except (ValueError, TypeError):
             ws.cell(row=target_row, column=prio_col_idx).value = None
 
-    wb.save(path)
+    save_workbook_atomic(wb, path)
     wb.close()
 
     _clear_destination_cache()
@@ -513,7 +634,7 @@ def update_comment(destination_name: str, value: str, path: Path = DATA_PATH) ->
         return
 
     try:
-        wb = openpyxl.load_workbook(path)
+        wb = load_workbook_for_update(path)
     except PermissionError as exc:
         raise WorkbookLockedError(
             "Destinations.xlsx is currently open in another program (e.g. Excel). "
@@ -561,7 +682,7 @@ def update_comment(destination_name: str, value: str, path: Path = DATA_PATH) ->
     ws.cell(row=target_row, column=comment_col_idx).value = new_value if new_value else None
 
     try:
-        wb.save(path)
+        save_workbook_atomic(wb, path)
     except PermissionError as exc:
         wb.close()
         raise WorkbookLockedError(
@@ -586,7 +707,7 @@ def update_reviews(
     if sheet_name is None:
         return
     try:
-        wb = openpyxl.load_workbook(path)
+        wb = load_workbook_for_update(path)
     except PermissionError as exc:
         raise WorkbookLockedError(
             "Destinations.xlsx is currently open in another program (e.g. Excel). "
@@ -623,7 +744,7 @@ def update_reviews(
         if name in headers:
             ws.cell(target_row, headers[name]).value = value
     try:
-        wb.save(path)
+        save_workbook_atomic(wb, path)
     except PermissionError as exc:
         wb.close()
         raise WorkbookLockedError(
@@ -647,7 +768,7 @@ def update_food(
         return
 
     try:
-        wb = openpyxl.load_workbook(path)
+        wb = load_workbook_for_update(path)
     except PermissionError as exc:
         raise WorkbookLockedError(
             "Destinations.xlsx is currently open in another program (e.g. Excel). "
@@ -725,7 +846,7 @@ def update_food(
         ws.cell(row=target_row, column=dishes_col_idx).value = dishes_str
 
     try:
-        wb.save(path)
+        save_workbook_atomic(wb, path)
     except PermissionError as exc:
         wb.close()
         raise WorkbookLockedError(
@@ -768,7 +889,7 @@ def add_new_destination(
         return False, "Could not find destination sheet in workbook."
 
     try:
-        wb = openpyxl.load_workbook(path)
+        wb = load_workbook_for_update(path)
     except PermissionError as exc:
         raise WorkbookLockedError(
             f"Destinations.xlsx is currently open in another program (e.g. Excel). "
@@ -819,7 +940,7 @@ def add_new_destination(
     ws.cell(row=new_row_idx, column=status_col_idx, value="PLACEHOLDER - UPDATE REQUIRED")
 
     try:
-        wb.save(path)
+        save_workbook_atomic(wb, path)
     except PermissionError as exc:
         wb.close()
         raise WorkbookLockedError(
@@ -875,7 +996,7 @@ def sync_airlines_to_excel(airlines: list[str], path: Path = DATA_PATH) -> int:
         return 0
 
     try:
-        wb = openpyxl.load_workbook(path)
+        wb = load_workbook_for_update(path)
     except PermissionError as exc:
         raise WorkbookLockedError(
             f"Destinations.xlsx is currently open in another program. ({exc})"
@@ -931,7 +1052,7 @@ def sync_airlines_to_excel(airlines: list[str], path: Path = DATA_PATH) -> int:
 
     if added_count > 0:
         try:
-            wb.save(path)
+            save_workbook_atomic(wb, path)
         except PermissionError as exc:
             wb.close()
             raise WorkbookLockedError(

@@ -18,7 +18,9 @@ from data_utils import (
     DATA_PATH,
     WorkbookLockedError,
     _find_destination_sheet,
+    load_workbook_for_update,
     load_destinations,
+    save_workbook_atomic,
     update_reviews,
 )
 from deepseek_client import generate_destination_profile, generate_review_profile
@@ -66,7 +68,7 @@ def populate_destination_with_ai(
         return False, "Could not find destination sheet in workbook."
 
     try:
-        wb = openpyxl.load_workbook(path)
+        wb = load_workbook_for_update(path)
     except PermissionError as exc:
         raise WorkbookLockedError(
             "Destinations.xlsx is currently open in another program (e.g. Excel). "
@@ -99,7 +101,7 @@ def populate_destination_with_ai(
     # Data Status intentionally left blank for AI-populated rows (not a placeholder).
 
     try:
-        wb.save(path)
+        save_workbook_atomic(wb, path)
     except PermissionError as exc:
         wb.close()
         raise WorkbookLockedError(
@@ -311,7 +313,7 @@ def populate_existing_destination_with_profile(
         return False, "Could not find destination sheet in workbook."
 
     try:
-        wb = openpyxl.load_workbook(path)
+        wb = load_workbook_for_update(path)
     except PermissionError as exc:
         raise WorkbookLockedError(
             "Destinations.xlsx is currently open in another program (e.g. Excel). "
@@ -351,7 +353,7 @@ def populate_existing_destination_with_profile(
         ws.cell(row=target_row, column=status_col).value = None
 
     try:
-        wb.save(path)
+        save_workbook_atomic(wb, path)
     except PermissionError as exc:
         wb.close()
         raise WorkbookLockedError(

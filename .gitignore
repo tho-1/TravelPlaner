@@ -49,6 +49,7 @@ aqi_cache/
 trips.json
 trips_backups/
 itinerary_cache/
+workbook_backups/
 
 # Runtime state (never commit)
 open_destinations.json

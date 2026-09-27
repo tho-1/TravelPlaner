@@ -60,6 +60,8 @@ from data_utils import (
     WorkbookLockedError,
     _clear_destination_cache,
     _find_destination_sheet,
+    load_workbook_for_update,
+    save_workbook_atomic,
 )
 
 # ── Constants ────────────────────────────────────────────────────────────────
@@ -883,7 +885,7 @@ def update_destination_climate(name: str, model_aqi: dict, climate: dict,
     if sheet_name is None:
         return f"{dest_clean}: could not find destination sheet."
     try:
-        wb = openpyxl.load_workbook(path)
+        wb = load_workbook_for_update(path)
     except PermissionError as exc:
         raise WorkbookLockedError(
             "Destinations workbook is open in another program — close it and retry."
@@ -969,7 +971,7 @@ def update_destination_climate(name: str, model_aqi: dict, climate: dict,
     ws.cell(row, _ensure_header("AQI Source"), value=src)
 
     try:
-        wb.save(path)
+        save_workbook_atomic(wb, path)
     except PermissionError as exc:
         wb.close()
         raise WorkbookLockedError(

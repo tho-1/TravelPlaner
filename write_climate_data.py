@@ -21,8 +21,9 @@ Usage:
 """
 import openpyxl
 from pathlib import Path
+from data_utils import DATA_PATH, load_workbook_for_update, save_workbook_atomic
 
-WORKBOOK = Path(__file__).resolve().parent / "Destinations.xlsx"
+WORKBOOK = DATA_PATH
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -145,7 +146,7 @@ def write_monthly_row(row_idx: int, data: dict, overwrite: bool = False):
     """
     Write monthly (or annual) climate data for a specific 1-based row index.
     """
-    wb = openpyxl.load_workbook(WORKBOOK)
+    wb = load_workbook_for_update(WORKBOOK)
     ws = wb.active
     headers = _get_or_create_headers(ws)
 
@@ -163,7 +164,7 @@ def write_monthly_row(row_idx: int, data: dict, overwrite: bool = False):
         cell.value = value
         written += 1
 
-    wb.save(WORKBOOK)
+    save_workbook_atomic(wb, WORKBOOK)
     wb.close()
     dest = ws.cell(row=row_idx, column=1).value
     print(f"[OK] Row {row_idx} ({dest}): wrote {written} cells" +
@@ -179,7 +180,7 @@ def write_monthly(destination: str, data: dict, overwrite: bool = False):
         data: dict mapping column names (from MONTHLY_COLS or ANNUAL_COLS) to values
         overwrite: if False, skip cells that already have a value
     """
-    wb = openpyxl.load_workbook(WORKBOOK)
+    wb = load_workbook_for_update(WORKBOOK)
     ws = wb.active
     headers = _get_or_create_headers(ws)
 
@@ -216,7 +217,7 @@ def write_monthly(destination: str, data: dict, overwrite: bool = False):
         written_total += written
         skipped_total += skipped
 
-    wb.save(WORKBOOK)
+    save_workbook_atomic(wb, WORKBOOK)
     wb.close()
     print(f"[OK] {destination} ({len(matched_rows)} rows): wrote {written_total} cells" +
           (f", skipped {skipped_total} already filled" if skipped_total else ""))
