@@ -378,6 +378,8 @@ def _clear_destination_cache() -> None:
 def _journal_workbook_safe(destination: str, column: str, value, path: Path = DATA_PATH) -> None:
     """Best-effort journal append. Never breaks a save (Phase 2)."""
     try:
+        if os.environ.get("SYNC_MERGE_APPLY") == "1":
+            return
         if Path(path).resolve() != Path(DATA_PATH).resolve():
             return
         from sync import journal as _journal

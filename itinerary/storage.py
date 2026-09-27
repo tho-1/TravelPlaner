@@ -9,6 +9,7 @@ accidental deletion can be undone (see ``list_backups`` / ``restore_backup``).
 from __future__ import annotations
 
 import json
+import os
 import time
 from pathlib import Path
 
@@ -87,6 +88,8 @@ def _journal_trips_safe(path: Path, diffs: list[tuple[str, str, object, str]]) -
     if not diffs:
         return
     try:
+        if os.environ.get("SYNC_MERGE_APPLY") == "1":
+            return
         if Path(path) != TRIPS_PATH:
             return
         from sync import journal as _journal
