@@ -375,6 +375,19 @@ def _clear_destination_cache() -> None:
     _load_destinations_cached.clear()
 
 
+def _journal_workbook_safe(destination: str, column: str, value, path: Path = DATA_PATH) -> None:
+    """Best-effort journal append. Never breaks a save (Phase 2)."""
+    try:
+        if Path(path).resolve() != Path(DATA_PATH).resolve():
+            return
+        from sync import journal as _journal
+
+        _journal.ensure_baseline()
+        _journal.record_workbook_change(str(destination), str(column), value)
+    except Exception:
+        pass
+
+
 def _find_destination_sheet(path: Path) -> Optional[str]:
     """Return the name of the sheet that contains the destination data."""
     with pd.ExcelFile(path, engine="openpyxl") as excel_file:
@@ -440,8 +453,14 @@ def update_favorite_status(destination_name: str, add: bool, path: Path = DATA_P
 
     # Write "x" or clear the cell
     ws.cell(row=target_row, column=nearer_col_idx).value = "x" if add else None
+    nearer_header = next(
+        (name for name, idx in headers.items() if idx == nearer_col_idx),
+        "nearer",
+    )
+    journal_value = "x" if add else None
     save_workbook_atomic(wb, path)
     wb.close()
+    _journal_workbook_safe(destination_name, nearer_header, journal_value, path)
 
     # Clear the cached data so the app picks up the change
     _clear_destination_cache()
@@ -493,6 +512,10 @@ def update_visited_status(destination_name: str, visited: bool, path: Path = DAT
         return
 
     ws.cell(row=target_row, column=visited_col_idx).value = bool(visited)
+    visited_header = next(
+        (name for name, idx in headers.items() if idx == visited_col_idx),
+        "Visited?",
+    )
     try:
         save_workbook_atomic(wb, path)
     except PermissionError as exc:
@@ -502,6 +525,7 @@ def update_visited_status(destination_name: str, visited: bool, path: Path = DAT
             "Please close the file and press Retry."
         ) from exc
     wb.close()
+    _journal_workbook_safe(destination_name, visited_header, bool(visited), path)
 
     _clear_destination_cache()
 
@@ -556,6 +580,10 @@ def update_to_be_researched_status(destination_name: str, to_be_researched: bool
         return
 
     ws.cell(row=target_row, column=research_col_idx).value = bool(to_be_researched)
+    research_header = next(
+        (name for name, idx in headers.items() if idx == research_col_idx),
+        "To be researched",
+    )
     try:
         save_workbook_atomic(wb, path)
     except PermissionError as exc:
@@ -565,6 +593,7 @@ def update_to_be_researched_status(destination_name: str, to_be_researched: bool
             "Please close the file and press Retry."
         ) from exc
     wb.close()
+    _journal_workbook_safe(destination_name, research_header, bool(to_be_researched), path)
 
     _clear_destination_cache()
 
@@ -610,14 +639,22 @@ def update_prio_thorsten(destination_name: str, value: int, path: Path = DATA_PA
 
     if value is None or str(value).strip() == "" or str(value).strip().lower() in {"none", "nan", "null", "—"}:
         ws.cell(row=target_row, column=prio_col_idx).value = None
+        prio_value = None
     else:
         try:
-            ws.cell(row=target_row, column=prio_col_idx).value = int(float(value))
+            prio_value = int(float(value))
+            ws.cell(row=target_row, column=prio_col_idx).value = prio_value
         except (ValueError, TypeError):
+            prio_value = None
             ws.cell(row=target_row, column=prio_col_idx).value = None
 
+    prio_header = next(
+        (name for name, idx in headers.items() if idx == prio_col_idx),
+        "Prio Thorsten",
+    )
     save_workbook_atomic(wb, path)
     wb.close()
+    _journal_workbook_safe(destination_name, prio_header, prio_value, path)
 
     _clear_destination_cache()
 
@@ -680,6 +717,11 @@ def update_comment(destination_name: str, value: str, path: Path = DATA_PATH) ->
     # NOTE: openpyxl treats cell(..., value=None) as "leave unchanged", so use
     # `.value = None` to clear the cell when the comment is emptied.
     ws.cell(row=target_row, column=comment_col_idx).value = new_value if new_value else None
+    comment_header = next(
+        (name for name, idx in headers.items() if idx == comment_col_idx),
+        "Comment",
+    )
+    journal_comment = new_value if new_value else None
 
     try:
         save_workbook_atomic(wb, path)
@@ -690,6 +732,7 @@ def update_comment(destination_name: str, value: str, path: Path = DATA_PATH) ->
             "Please close the file and press Retry."
         ) from exc
     wb.close()
+    _journal_workbook_safe(destination_name, comment_header, journal_comment, path)
 
     _clear_destination_cache()
 
@@ -752,6 +795,9 @@ def update_reviews(
             "Please close the file and press Retry."
         ) from exc
     wb.close()
+    for name, value in values.items():
+        if name in headers:
+            _journal_workbook_safe(destination_name, name, value, path)
     _clear_destination_cache()
 
 
@@ -844,6 +890,20 @@ def update_food(
         else:
             dishes_str = str(dishes).strip()
         ws.cell(row=target_row, column=dishes_col_idx).value = dishes_str
+    else:
+        dishes_str = None
+    spiciness_header = next(
+        (name for name, idx in headers.items() if idx == spiciness_col_idx),
+        "Food - Spicyness",
+    )
+    description_header = next(
+        (name for name, idx in headers.items() if idx == description_col_idx),
+        "Food - Description",
+    )
+    dishes_header = next(
+        (name for name, idx in headers.items() if idx == dishes_col_idx),
+        "Food - Main Dishes",
+    )
 
     try:
         save_workbook_atomic(wb, path)
@@ -854,6 +914,10 @@ def update_food(
             "Please close the file and press Retry."
         ) from exc
     wb.close()
+    _journal_workbook_safe(destination_name, spiciness_header, float(spiciness), path)
+    _journal_workbook_safe(destination_name, description_header, str(description).strip(), path)
+    if dishes is not None and dishes_col_idx is not None:
+        _journal_workbook_safe(destination_name, dishes_header, dishes_str, path)
     _clear_destination_cache()
 
 
@@ -948,6 +1012,12 @@ def add_new_destination(
             f"Please close the file and press Retry. ({exc})"
         ) from exc
     wb.close()
+    dest_header = next(
+        (h for h, idx in headers.items() if idx == dest_col_idx),
+        "Destination",
+    )
+    _journal_workbook_safe(dest_clean, dest_header, dest_clean, path)
+    _journal_workbook_safe(dest_clean, "Data Status", "PLACEHOLDER - UPDATE REQUIRED", path)
 
     # Clear cached dataframe so it immediately reloads all rows on next run
     _clear_destination_cache()

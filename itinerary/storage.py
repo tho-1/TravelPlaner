@@ -40,11 +40,62 @@ def load_from(path: Path) -> dict:
 
 def save_to(data: dict, path: Path) -> None:
     payload = models.normalize_all(data)
+    diffs = _collect_trips_diffs(path, payload)
     tmp = Path(path).with_suffix(".tmp")
     text = json.dumps(payload, ensure_ascii=False, indent=1)
     tmp.write_text(text, encoding="utf-8")
     _snapshot_before_replace(Path(path), text)
     tmp.replace(path)  # atomic
+    _journal_trips_safe(path, diffs)
+
+
+def _collect_trips_diffs(path: Path, new_payload: dict) -> list[tuple[str, str, object, str]]:
+    """Compare live file vs new payload. Returns [(trip_id, variant_id, value, op)]."""
+    try:
+        if Path(path) != TRIPS_PATH:
+            return []
+        old = load_from(path)
+    except Exception:
+        return []
+    try:
+        old_map = {
+            (t["id"], v["id"]): v
+            for t in old.get("trips", [])
+            for v in t.get("variants", [])
+        }
+        new_map = {
+            (t["id"], v["id"]): v
+            for t in new_payload.get("trips", [])
+            for v in t.get("variants", [])
+        }
+        diffs: list[tuple[str, str, object, str]] = []
+        for key, variant in new_map.items():
+            old_variant = old_map.get(key)
+            if old_variant is None or json.dumps(
+                old_variant, sort_keys=True, ensure_ascii=False
+            ) != json.dumps(variant, sort_keys=True, ensure_ascii=False):
+                diffs.append((key[0], key[1], variant, "upsert"))
+        for key in old_map:
+            if key not in new_map:
+                diffs.append((key[0], key[1], None, "delete"))
+        return diffs
+    except Exception:
+        return []
+
+
+def _journal_trips_safe(path: Path, diffs: list[tuple[str, str, object, str]]) -> None:
+    if not diffs:
+        return
+    try:
+        if Path(path) != TRIPS_PATH:
+            return
+        from sync import journal as _journal
+
+        _journal.ensure_baseline(trips_path=TRIPS_PATH)
+        for trip_id, variant_id, value, op in diffs:
+            _journal.record_trips_change(trip_id, variant_id, value, op=op)
+    except Exception:
+        pass
 
 
 def load_trips(path: Path | None = None) -> dict:

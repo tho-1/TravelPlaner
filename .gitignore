@@ -53,6 +53,7 @@ workbook_backups/
 
 # Runtime state (never commit)
 open_destinations.json
+sync_journals/
 
 # DDG photo cache (large, refetchable)
 Pictures/gallery_ddg/
