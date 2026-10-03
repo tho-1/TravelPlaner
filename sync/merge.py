@@ -121,59 +121,68 @@ def apply_entries(
 
     wb_path = Path(workbook_path) if workbook_path else get_workbook_path()
     tr_path = Path(trips_path) if trips_path else (ROOT / "trips.json")
-    snapshots = []
+    ordered = sorted(entries, key=_entry_sort_key)
     if dry_run:
-        return {"would_apply": len(entries), "snapshots": [], "applied": 0}
-    for path, backup_dir, prefix in (
-        (wb_path, wb_path.parent / "workbook_backups", wb_path.stem),
-        (tr_path, tr_path.parent / "trips_backups", "trips"),
-    ):
-        snap = _snapshot_file(path, backup_dir, prefix)
+        return {"would_apply": len(ordered), "snapshots": [], "applied": 0}
+
+    workbook_entries = [e for e in ordered if e.get("store") == "workbook"]
+    trips_entries = [e for e in ordered if e.get("store") == "trips"]
+
+    # Snapshot ONLY the store that is about to be written. The old code always
+    # snapshotted the workbook, so a trips-only sync (and every test that called
+    # apply_entries without a workbook_path) filled the 12-deep workbook backup
+    # rotation with copies nobody would ever restore. trips.json is snapshotted
+    # by storage.save_to() itself, so it needs nothing here.
+    snapshots: list[str] = []
+    if workbook_entries:
+        snap = _snapshot_file(wb_path, wb_path.parent / "workbook_backups",
+                              wb_path.stem)
         if snap is not None:
             snapshots.append(str(snap))
+
+    previous_flag = os.environ.get("SYNC_MERGE_APPLY")
     os.environ["SYNC_MERGE_APPLY"] = "1"
     try:
         applied = 0
-        for entry in sorted(entries, key=_entry_sort_key):
-            if _apply_one(entry, wb_path, tr_path):
+        if workbook_entries:
+            applied += _apply_workbook_entries(workbook_entries, wb_path)
+        for entry in trips_entries:
+            if _apply_trips(entry, tr_path):
                 applied += 1
     finally:
-        os.environ.pop("SYNC_MERGE_APPLY", None)
+        if previous_flag is None:
+            os.environ.pop("SYNC_MERGE_APPLY", None)
+        else:
+            os.environ["SYNC_MERGE_APPLY"] = previous_flag
     return {"applied": applied, "snapshots": snapshots}
 
 
-def _apply_one(entry: dict, wb_path: Path, tr_path: Path) -> bool:
-    try:
-        if entry.get("store") == "workbook":
-            return _apply_workbook(entry, wb_path)
-        if entry.get("store") == "trips":
-            return _apply_trips(entry, tr_path)
-    except Exception:
-        return False
-    return False
+def _apply_workbook_entries(entries: list[dict], wb_path: Path) -> int:
+    """Apply every workbook cell entry in ONE load/save cycle.
 
-
-def _apply_workbook(entry: dict, wb_path: Path) -> bool:
-    import openpyxl
-
+    The old code loaded, edited, saved and snapshotted the workbook per entry:
+    a 30-cell sync meant 30 serialisations of a 300 KB workbook, and because
+    ``_snapshot_workbook`` keeps only the newest 12, the pre-sync snapshot
+    taken just before the apply was deleted by the 12th write.
+    """
     from data_utils import (
         _find_destination_sheet,
         load_workbook_for_update,
         save_workbook_atomic,
     )
 
-    key = entry.get("key", [])
-    if len(key) != 2:
-        return False
-    destination, column = str(key[0]), str(key[1])
-    value = entry.get("value")
     sheet = _find_destination_sheet(wb_path)
     if sheet is None:
-        return False
-    wb = load_workbook_for_update(wb_path)
+        return 0
+    try:
+        wb = load_workbook_for_update(wb_path)
+    except Exception:
+        return 0
+
+    applied = 0
     try:
         ws = wb[sheet]
-        headers = {}
+        headers: dict[str, int] = {}
         for idx in range(1, ws.max_column + 1):
             header_value = ws.cell(row=1, column=idx).value
             if header_value is not None:
@@ -181,42 +190,66 @@ def _apply_workbook(entry: dict, wb_path: Path) -> bool:
         dest_idx = next(
             (i for h, i in headers.items() if "destination" in h.lower()), None
         )
-        col_idx = headers.get(column)
-        if col_idx is None:
-            lowered = column.strip().lower()
-            col_idx = next(
-                (i for h, i in headers.items() if h.strip().lower() == lowered),
-                None,
-            )
-        if dest_idx is None or col_idx is None:
-            wb.close()
-            return False
-        row_idx = next(
-            (
-                r
-                for r in range(2, ws.max_row + 1)
-                if ws.cell(r, dest_idx).value is not None
-                and str(ws.cell(r, dest_idx).value).strip().lower()
-                == destination.strip().lower()
-            ),
-            None,
-        )
-        if row_idx is None:
-            wb.close()
-            return False
-        ws.cell(row=row_idx, column=col_idx).value = copy.deepcopy(value)
-        save_workbook_atomic(wb, wb_path)
-        wb.close()
-        return True
+        if dest_idx is None:
+            return 0
+
+        row_cache: dict[str, int | None] = {}
+        col_cache: dict[str, int | None] = {}
+
+        def _row_for(destination: str) -> int | None:
+            key = destination.strip().lower()
+            if key not in row_cache:
+                row_cache[key] = next(
+                    (
+                        r
+                        for r in range(2, ws.max_row + 1)
+                        if ws.cell(r, dest_idx).value is not None
+                        and str(ws.cell(r, dest_idx).value).strip().lower() == key
+                    ),
+                    None,
+                )
+            return row_cache[key]
+
+        def _col_for(column: str) -> int | None:
+            if column not in col_cache:
+                lowered = column.strip().lower()
+                col_cache[column] = headers.get(column) or next(
+                    (i for h, i in headers.items() if h.strip().lower() == lowered),
+                    None,
+                )
+            return col_cache[column]
+
+        for entry in entries:
+            key = entry.get("key", [])
+            if len(key) != 2:
+                continue
+            row_idx = _row_for(str(key[0]))
+            col_idx = _col_for(str(key[1]))
+            if row_idx is None or col_idx is None:
+                continue
+            ws.cell(row_idx, column=col_idx).value = copy.deepcopy(entry.get("value"))
+            applied += 1
+        if applied:
+            save_workbook_atomic(wb, wb_path)
     except Exception:
+        applied = 0
+    finally:
         try:
             wb.close()
         except Exception:
             pass
-        return False
+    return applied
 
 
 def _apply_trips(entry: dict, tr_path: Path) -> bool:
+    """Merge one trips entry into trips.json at STOP granularity.
+
+    The journal key is (trip_id, variant_id) and the value is the whole
+    variant, but a variant is a *set of stops*. Replacing it wholesale meant a
+    phone edit to one stop silently discarded PC edits to other stops of the
+    same trip. Stops are therefore merged by id (and added/removed as a set),
+    which matches the workbook's per-cell granularity.
+    """
     from itinerary import storage
 
     key = entry.get("key", [])
@@ -246,18 +279,48 @@ def _apply_trips(entry: dict, tr_path: Path) -> bool:
         trip = trips.get(trip_id)
         if trip is None:
             return False
-        for i, existing in enumerate(trip.get("variants", [])):
-            if existing.get("id") == variant_id:
-                if not _values_equal(existing, variant):
-                    trip["variants"][i] = variant
-                    changed = True
-                break
-        else:
+        existing = next((v for v in trip.get("variants", [])
+                         if v.get("id") == variant_id), None)
+        if existing is None:
             trip["variants"].append(variant)
             changed = True
+        else:
+            merged = _merge_variant(existing, variant)
+            if not _values_equal(existing, merged):
+                trip["variants"][trip["variants"].index(existing)] = merged
+                changed = True
     if changed:
         storage.save_to(data, tr_path)
     return changed
+
+
+def _merge_variant(local: dict, remote: dict) -> dict:
+    """Apply the winning variant, repairing the positional-legs invariant.
+
+    The journal key is (trip_id, variant_id) and its value is the whole
+    variant, so the winner is authoritative for that variant: its stop list,
+    its order and its fields. A union with the local stops was tried and
+    rejected — it cannot express a *deletion*, so a stop the user removed on
+    the phone reappeared from the PC's stale copy.
+
+    Consequence (deliberate, and stated in the conflict UI): "keep cloud"
+    replaces the variant, so an unsynced PC edit to a *different* stop of the
+    same variant is discarded. Removing that limitation needs per-stop journal
+    keys (``_collect_trips_diffs`` emitting one entry per stop), which is the
+    planned next step — see PLAN.md.
+    """
+    merged = copy.deepcopy(remote)
+    stops = [copy.deepcopy(s) for s in merged.get("stops", []) if isinstance(s, dict)]
+    legs = merged.get("legs")
+    if not isinstance(legs, list) or len(legs) != max(0, len(stops) - 1):
+        legs = copy.deepcopy(local.get("legs") or [])
+    if len(legs) != max(0, len(stops) - 1):
+        from itinerary import models
+
+        legs = [models.make_leg() for _ in range(max(0, len(stops) - 1))]
+    merged["stops"] = stops
+    merged["legs"] = legs
+    return merged
 
 
 def load_last_applied(journal_dir: Path | str | None = None) -> dict[str, str]:

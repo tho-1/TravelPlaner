@@ -59,14 +59,17 @@ def sync_now(
     if plan["apply"]:
         summary = _merge.apply_entries(plan["apply"])
         applied_entries = list(plan["apply"])
-        # Record remote-origin winners locally so the next push converges.
-        local_devices = {_journal.get_device_id()}
-        for entry in plan["apply"]:
-            if entry.get("device") not in local_devices:
-                try:
-                    _journal.append_entry(dict(entry), jdir)
-                except Exception:
-                    pass
+        # Record remote-origin winners in THIS device's journal so the next
+        # push converges. They go into our own file (append_entry uses the
+        # local device id) and the remote copy is unioned on upload, so no
+        # device can truncate another device's history.
+        local_device = _journal.get_device_id()
+        foreign = [dict(e) for e in plan["apply"] if e.get("device") != local_device]
+        if foreign:
+            try:
+                _journal.append_entries(foreign, jdir)
+            except Exception:
+                pass
         _merge.save_last_applied(applied_entries, jdir)
     else:
         summary = {"applied": 0, "snapshots": []}

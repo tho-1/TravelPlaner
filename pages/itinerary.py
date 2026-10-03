@@ -18,7 +18,9 @@ import pandas as pd
 import streamlit as st
 
 from data_utils import DATA_PATH, load_destinations
-from itinerary import geo, geocode, itinerary as ops, map as itmap, models, storage
+from itinerary import geo, geocode, models, storage
+from itinerary import itinerary as ops
+from itinerary import map as itmap
 
 MONTHS = ops.MONTHS
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
@@ -31,6 +33,16 @@ _ROLE_BADGE = {"origin": "▶", "stop": "📍", "return": "🏁"}
 @st.cache_data(ttl=600)
 def _coords_index_cached() -> dict:
     return geo.load_coords_index()
+
+
+@st.cache_data(show_spinner=False)
+def _backup_labels_cached(signature) -> list[dict]:
+    """Sidebar backup list, cached on the trips.json mtime/size.
+
+    ``storage.list_backups()`` opens and JSON-parses up to 12 snapshot files;
+    that must not happen on every rerun of every page.
+    """
+    return storage.list_backups()
 
 
 def _clear_trip_widgets() -> None:
@@ -72,9 +84,54 @@ def _set_active_trip(trip_id: str | None) -> None:
     storage.save_ui_state({"active_trip_id": trip_id})
 
 
+def _persist(data: dict, *, rerun: bool = True) -> bool:
+    """Save trips.json, turning storage failures into a visible message.
+
+    ``TripsFileChanged`` (another tab/device saved first) and OS-level
+    failures (locked file, read-only data directory) used to surface as a raw
+    traceback with the edit silently lost. They are reported in the page
+    instead, and the write is skipped so nothing is overwritten.
+    """
+    try:
+        storage.save_trips(data)
+    except storage.TripsFileChanged as exc:
+        st.session_state["itin_save_error"] = str(exc)
+    except OSError as exc:
+        st.session_state["itin_save_error"] = (
+            f"The itinerary file could not be saved: {exc}. "
+            "Your edit was NOT saved — copy it somewhere safe and retry."
+        )
+    else:
+        st.session_state.pop("itin_save_error", None)
+        if rerun:
+            st.rerun()
+        return True
+    if rerun:
+        st.rerun()
+    return False
+
+
+def _render_save_error() -> None:
+    """Show a pending save failure (if any) with a way to recover."""
+    message = st.session_state.get("itin_save_error")
+    if not message:
+        return
+    st.error(message, icon="⚠️")
+    c1, c2, _ = st.columns([1, 1, 3])
+    with c1:
+        if st.button("🔄 Reload latest data", key="itin_reload_data",
+                     type="primary", width="stretch"):
+            st.session_state.pop("itin_save_error", None)
+            _clear_trip_widgets()
+            st.rerun()
+    with c2:
+        if st.button("Dismiss", key="itin_dismiss_save_error", width="stretch"):
+            st.session_state.pop("itin_save_error", None)
+            st.rerun()
+
+
 def _save_and_rerun(data: dict) -> None:
-    storage.save_trips(data)
-    st.rerun()
+    _persist(data)
 
 
 def _switch_trip(trip_id: str) -> None:
@@ -209,7 +266,10 @@ def _update_stop(stop_id: str, **fields) -> None:
         if stop["id"] == stop_id:
             stop.update(fields)
             break
-    storage.save_trips(data)  # no rerun: widget value already on screen
+    # Rerun after a successful save so the Route summary, metrics, warnings
+    # and map all reflect the new dates/nights instead of the stale in-memory
+    # variant (they are rendered later in the same run from the pre-edit dict).
+    _persist(data)
 
 
 def _set_leg_mode(variant_id: str, leg_index: int, mode: str) -> None:
@@ -220,7 +280,7 @@ def _set_leg_mode(variant_id: str, leg_index: int, mode: str) -> None:
     variant = models.find_variant(trip, variant_id)
     if variant:
         ops.set_leg_mode(variant, leg_index, mode)
-        storage.save_trips(data)
+        _persist(data, rerun=False)
 
 
 def _update_variant(variant_id: str, **fields) -> None:
@@ -231,7 +291,7 @@ def _update_variant(variant_id: str, **fields) -> None:
     variant = models.find_variant(trip, variant_id)
     if variant:
         variant.update(fields)
-        storage.save_trips(data)
+        _persist(data, rerun=False)
 
 
 # ── small UI helpers ─────────────────────────────────────────────────────────
@@ -407,7 +467,7 @@ def _leg_row(variant: dict, i: int) -> None:
             st.rerun()
 
 
-def _add_stop_panel(df: pd.DataFrame) -> None:
+def _add_stop_panel(df: pd.DataFrame, metadata: dict) -> None:
     with st.expander("➕ Add a stop", icon=":material/add_location:"):
 
         source = st.radio("Source", ["Workbook destination", "Custom city",
@@ -416,16 +476,28 @@ def _add_stop_panel(df: pd.DataFrame) -> None:
         role = st.radio("Role", ["stop", "origin", "return"], horizontal=True,
                         key="itin_add_role",
                         help="Origin = trip start, Return = way back home.")
-        nights = st.number_input("Nights", min_value=0, max_value=90, value=0,
-                                 key="itin_add_nights")
+        # Origin/return stops are never slept in, so offering a nights field
+        # for them only created invisible data that the editor cannot show.
+        stays_overnight = role == "stop"
+        nights = 0
+        if stays_overnight:
+            nights = st.number_input("Nights", min_value=0, max_value=90, value=0,
+                                     key="itin_add_nights")
+        else:
+            st.caption("No nights for an origin or return stop.")
 
         if source == "Workbook destination":
-            dest = st.selectbox("Destination",
-                                sorted(df["Destination"].astype(str).tolist()),
-                                key="itin_add_dest")
-            if st.button("Add stop", key="itin_add_dest_go", type="primary"):
-                _add_stop({"kind": "destination", "name": dest},
-                          role=role, nights=int(nights) or None)
+            dest_col = metadata.get("destination_col", "Destination")
+            options = sorted(
+                str(v) for v in df[dest_col].dropna().astype(str).unique()
+            ) if dest_col in df.columns else []
+            if not options:
+                st.warning(f"No destinations available (column {dest_col!r} not found).")
+            else:
+                dest = st.selectbox("Destination", options, key="itin_add_dest")
+                if st.button("Add stop", key="itin_add_dest_go", type="primary"):
+                    _add_stop({"kind": "destination", "name": dest},
+                              role=role, nights=int(nights) or None)
 
         elif source == "Custom city":
             query = st.text_input("City name", key="itin_add_custom",
@@ -475,7 +547,8 @@ def _trip_wide_suggestion(suggestions: dict[str, list[str]]) -> list[str]:
     return [m for m in MONTHS if m in common]
 
 
-def _variant_meta_panel(variant: dict, df: pd.DataFrame) -> None:
+def _variant_meta_panel(variant: dict, df: pd.DataFrame,
+                        metadata: dict | None = None) -> None:
     with st.expander("⭐ Rating, months & notes", icon=":material/tune:"):
         rating_raw = st.select_slider(
             "Rating (1-10)",
@@ -487,7 +560,8 @@ def _variant_meta_panel(variant: dict, df: pd.DataFrame) -> None:
             _update_variant(variant["id"], rating=rating)
 
         stored_months = variant.get("months") or []
-        suggestions = ops.suggested_months(variant, df)
+        suggestions = ops.suggested_months(
+            variant, df, (metadata or {}).get("destination_col"))
         # Pre-select the workbook suggestion (months good for the WHOLE route)
         # until the user picks their own; any number of months can be selected.
         sel_months = st.multiselect(
@@ -518,7 +592,7 @@ def _variant_meta_panel(variant: dict, df: pd.DataFrame) -> None:
 # ── tabs ─────────────────────────────────────────────────────────────────────
 
 def _render_plan_tab(data: dict, trip: dict | None, variant: dict | None,
-                     df: pd.DataFrame) -> None:
+                     df: pd.DataFrame, metadata: dict | None = None) -> None:
     if trip is None:
         st.info("No trips yet — create one to start planning.")
         return
@@ -654,7 +728,7 @@ def _render_plan_tab(data: dict, trip: dict | None, variant: dict | None,
                 _stop_editor(stop)
             if i < len(stops) - 1:
                 _leg_row(variant, i)
-        _add_stop_panel(df)
+        _add_stop_panel(df, metadata or {})
 
     with right:
         t = ops.totals(variant)
@@ -677,7 +751,7 @@ def _render_plan_tab(data: dict, trip: dict | None, variant: dict | None,
         if variant.get("comment"):
             st.markdown(f"> {variant['comment']}")
 
-        _variant_meta_panel(variant, df)
+        _variant_meta_panel(variant, df, metadata)
 
         st.markdown("##### ⚠️ Check results")
         warnings = ops.warnings_for(variant)
@@ -855,7 +929,8 @@ def render_sidebar_trips(pg, itinerary_page) -> None:
                  width="stretch"):
         fresh = storage.load_trips()
         trip = ops.create_trip(fresh, "New trip")
-        storage.save_trips(fresh)
+        if not _persist(fresh, rerun=False):
+            return
         _open_trip_from_nav(trip["id"], pg, itinerary_page)
 
     _render_backup_restore()
@@ -867,7 +942,7 @@ def _render_backup_restore() -> None:
     A snapshot is taken automatically before every save, so an accidental
     trip/variant deletion can be undone here.
     """
-    backups = storage.list_backups()
+    backups = _backup_labels_cached(storage.file_signature())
     if not backups:
         return
     with st.expander(f"♻️ Restore backup ({len(backups)})", expanded=False):
@@ -917,14 +992,16 @@ def render_itinerary() -> None:
                "transport legs and a route map. Everything autosaves to "
                "`trips.json`.")
 
+    _render_save_error()
+
     data = storage.ensure_seed()
-    df, _metadata = load_destinations(DATA_PATH)
+    df, metadata = load_destinations(DATA_PATH)
     trip = _active_trip(data)
     variant = models.active_variant(trip) if trip else None
 
     plan_tab, map_tab, compare_tab = st.tabs(["Plan", "Map", "Compare"])
     with plan_tab:
-        _render_plan_tab(data, trip, variant, df)
+        _render_plan_tab(data, trip, variant, df, metadata)
     with map_tab:
         _render_map_tab(variant)
     with compare_tab:

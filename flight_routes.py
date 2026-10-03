@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 import streamlit as st
 
+import runtime_paths
 from data_utils import DATA_PATH, load_airlines_color_map, sync_airlines_to_excel
 from deepseek_client import generate_flight_routes
 
@@ -82,11 +83,14 @@ def _format_score_display(value: object, is_prio: bool = False) -> str:
     return f"<span style='font-weight:600;color:#0f172a;'>{html.escape(num_str)}<span style='font-size:0.75rem;color:#64748b;'>/10</span></span>"
 
 
-def _get_cache_dir() -> Path:
-    """Return the transport routes cache directory, creating it if needed."""
-    cache_dir = DATA_PATH.parent / "flight_routes_cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    return cache_dir
+def _get_cache_dir() -> Path | None:
+    """Return the transport routes cache directory, or None when unusable.
+
+    The cache lives in the writable runtime data directory. A read-only
+    deployment (Streamlit Cloud mounts the repo read-only) must degrade to
+    "no cache", never crash the destination page.
+    """
+    return runtime_paths.writable_dir("flight_routes_cache")
 
 
 def load_cached_flight_routes(destination_name: str) -> Optional[Dict[str, Any]]:
@@ -94,7 +98,11 @@ def load_cached_flight_routes(destination_name: str) -> Optional[Dict[str, Any]]
     key = _normalize_key(destination_name)
     if not key:
         return None
-    file_path = _get_cache_dir() / f"{key}.json"
+    cache_dir = _get_cache_dir()
+    if cache_dir is None:
+        # Fall back to a cache committed next to the sources, if any.
+        cache_dir = DATA_PATH.parent / "flight_routes_cache"
+    file_path = cache_dir / f"{key}.json"
     if not file_path.exists():
         return None
     try:
@@ -104,14 +112,20 @@ def load_cached_flight_routes(destination_name: str) -> Optional[Dict[str, Any]]
         return None
 
 
-def save_cached_flight_routes(destination_name: str, data: Dict[str, Any]) -> None:
-    """Save transport routes data to the local cache."""
+def save_cached_flight_routes(destination_name: str, data: Dict[str, Any]) -> bool:
+    """Save transport routes data to the local cache. Best effort."""
     key = _normalize_key(destination_name)
     if not key:
-        return
-    file_path = _get_cache_dir() / f"{key}.json"
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        return False
+    cache_dir = _get_cache_dir()
+    if cache_dir is None:
+        return False
+    try:
+        with open(cache_dir / f"{key}.json", "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+    except OSError:
+        return False
 
 
 def fetch_and_cache_routes(destination_name: str, country: str) -> Dict[str, Any]:

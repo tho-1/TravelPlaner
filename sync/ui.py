@@ -15,6 +15,8 @@ def _short_ts(ts: str) -> str:
 
 
 def render_sync_sidebar() -> None:
+    import json
+
     import streamlit as st
 
     from sync import journal as _journal
@@ -28,8 +30,6 @@ def render_sync_sidebar() -> None:
     last_path = _journal.DEFAULT_JOURNAL_DIR / "last_sync.json"
     caption = f"{pending} queued change{'s' if pending != 1 else ''}"
     try:
-        import json
-
         last_sync_utc = json.loads(last_path.read_text(encoding="utf-8")).get(
             "last_sync_utc", ""
         )
@@ -40,7 +40,7 @@ def render_sync_sidebar() -> None:
     if conflicts:
         caption += f" · ⚠️ {len(conflicts)} conflict{'s' if len(conflicts) != 1 else ''}"
     st.caption(caption)
-    if st.button("⟳ Sync", key="sync_now", use_container_width=True):
+    if st.button("⟳ Sync", key="sync_now", width="stretch"):
         with st.spinner("Syncing…"):
             result = _sync.sync_now()
         if not result.get("ok"):
@@ -56,15 +56,25 @@ def render_sync_sidebar() -> None:
                 bits.append(f"pushed {result['uploaded']}")
             if result.get("push_error"):
                 bits.append("push failed (queued)")
-            st.success("Sync done: " + ", ".join(bits))
+            st.session_state["sync_result"] = ", ".join(bits)
             conflicts = _merge.load_conflicts()
             st.rerun()
+    if st.session_state.get("sync_result"):
+        st.toast(f"Sync done: {st.session_state.pop('sync_result')}", icon="✅")
     if conflicts:
         with st.expander(f"⚠️ Conflicts ({len(conflicts)})", expanded=False):
-            st.caption("Same entry changed on both devices. Pick a winner per key.")
+            st.caption(
+                "The same trip variant was changed on both devices since the "
+                "last sync. Pick a winner per entry — the winner replaces that "
+                "whole variant, including stops the other device added."
+            )
             for i, conflict in enumerate(conflicts):
                 key = conflict.get("key", [])
                 label = " / ".join(str(k) for k in key)
+                # Keyed by the sync key, never by list index: resolving one
+                # conflict shifts the list and used to hand the next radio a
+                # stale, pre-selected choice.
+                choice_key = "sync_conf_" + "_".join(str(k) for k in key)[:80]
                 st.markdown(f"**{label}**")
                 local = conflict.get("local", {})
                 remote = conflict.get("remote", {})
@@ -79,17 +89,20 @@ def render_sync_sidebar() -> None:
                 choice = st.radio(
                     "Winner",
                     ("local", "cloud"),
-                    key=f"sync_conf_{i}",
+                    key=choice_key,
                     horizontal=True,
                     label_visibility="collapsed",
                 )
-                if st.button("Apply choice", key=f"sync_conf_go_{i}"):
+                if st.button("Apply choice", key=f"{choice_key}_go"):
                     winner = local if choice == "local" else remote
                     summary = _merge.apply_entries([winner])
                     _merge.save_last_applied([winner])
-                    remaining = [c for j, c in enumerate(conflicts) if j != i]
+                    remaining = [c for c in conflicts
+                                 if json.dumps(c.get("key")) != json.dumps(key)]
                     _merge.save_conflicts(remaining)
-                    st.success(f"Applied {choice} ({summary.get('applied', 0)}).")
+                    st.session_state.pop(choice_key, None)
+                    st.toast(f"Applied {choice} ({summary.get('applied', 0)}).",
+                             icon="✅")
                     st.rerun()
             col_a, col_b = st.columns(2)
             with col_a:
@@ -98,7 +111,8 @@ def render_sync_sidebar() -> None:
                     summary = _merge.apply_entries(winners)
                     _merge.save_last_applied(winners)
                     _merge.save_conflicts([])
-                    st.success(f"Applied local ({summary.get('applied', 0)}).")
+                    st.session_state["sync_result"] = (
+                        f"Applied local ({summary.get('applied', 0)}).")
                     st.rerun()
             with col_b:
                 if st.button("Keep all cloud", key="sync_keep_cloud"):
@@ -106,5 +120,6 @@ def render_sync_sidebar() -> None:
                     summary = _merge.apply_entries(winners)
                     _merge.save_last_applied(winners)
                     _merge.save_conflicts([])
-                    st.success(f"Applied cloud ({summary.get('applied', 0)}).")
+                    st.session_state["sync_result"] = (
+                        f"Applied cloud ({summary.get('applied', 0)}).")
                     st.rerun()

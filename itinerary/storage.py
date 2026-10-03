@@ -1,7 +1,9 @@
 """Atomic trips.json persistence + rolling backups + ui state.
 
-The file lives next to app.py. Every save is atomic (tmp file + replace), so
-an interruption or crash can never leave a half-written trips.json behind.
+The file lives next to app.py. Every save is atomic (unique tmp file + retry +
+replace), so an interruption, a crash or two browser tabs saving at the same
+time can never leave a half-written trips.json behind — and can never
+silently overwrite an edit made by another session (see ``TripsFileChanged``).
 Before each save the previous content is kept as a timestamped snapshot so an
 accidental deletion can be undone (see ``list_backups`` / ``restore_backup``).
 """
@@ -11,26 +13,120 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 from pathlib import Path
+
+import runtime_paths
 
 from . import models, sample
 
 ROOT = Path(__file__).resolve().parent.parent
-TRIPS_PATH = ROOT / "trips.json"
+TRIPS_PATH = runtime_paths.state_path("trips.json")
 # Immutable live-file identity: tests reassign TRIPS_PATH above, so journal
 # guards must compare against this constant, never the mutable global.
 _LIVE_TRIPS_PATH = ROOT / "trips.json"
-CACHE_DIR = ROOT / "itinerary_cache"
+CACHE_DIR = runtime_paths.state_path("itinerary_cache")
 UI_STATE_PATH = CACHE_DIR / "ui_state.json"
-BACKUP_DIR = ROOT / "trips_backups"
+BACKUP_DIR = runtime_paths.state_path("trips_backups")
 BACKUP_KEEP = 12
+
+# Number of attempts (and delay) when Windows refuses the atomic replace
+# because another process briefly holds a handle on the file.
+REPLACE_ATTEMPTS = 4
+REPLACE_RETRY_SECONDS = 0.25
+
+# Key used to carry "what the file looked like when this payload was loaded"
+# through the load -> mutate -> save round trip.
+_SIGNATURE_KEY = "_loaded_signature"
+
+_last_write_error: str | None = None
+
+
+class TripsFileChanged(RuntimeError):
+    """The live trips.json changed after this session loaded it.
+
+    Saving now would silently discard the other session's edit (two browser
+    tabs, or the phone and the PC), so the write is refused instead.
+    """
+
+
+def last_write_error() -> str | None:
+    """Message of the most recent failed runtime-state write, if any."""
+    return _last_write_error
+
+
+def _note_write_error(message: str | None) -> None:
+    global _last_write_error
+    _last_write_error = message
+
+
+def _file_signature(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = Path(path).stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+def file_signature(path: Path | None = None) -> tuple[int, int] | None:
+    """(mtime_ns, size) of the live trips file — use as a cache key."""
+    return _file_signature(path or TRIPS_PATH)
+
+
+def _assert_not_stale(path: Path, data: dict) -> None:
+    """Refuse a save whose in-memory base is older than the file on disk."""
+    if Path(path) != _LIVE_TRIPS_PATH:
+        return  # only the live file is shared between sessions
+    loaded = data.get(_SIGNATURE_KEY) if isinstance(data, dict) else None
+    if not loaded:
+        return  # freshly built payload (seed / restore / import) — nothing to compare
+    current = _file_signature(path)
+    if current is None or current == tuple(loaded):
+        return
+    raise TripsFileChanged(
+        "trips.json was modified by another window or device after this page "
+        "was loaded. Saving now would silently discard that change. Reload the "
+        "itinerary page and re-apply your edit (the other change stays intact)."
+    )
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` atomically, retrying transient Windows locks.
+
+    The temp file name is unique per process/write, so two concurrent sessions
+    can never interleave writes into the same scratch file and then replace
+    the live file with a mixture of both payloads.
+    """
+    target = Path(path)
+    tmp = target.with_name(f".{target.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
+    last_error: OSError | None = None
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        for attempt in range(REPLACE_ATTEMPTS):
+            try:
+                os.replace(tmp, target)
+                return
+            except PermissionError as exc:  # file momentarily locked (Excel, AV, sync)
+                last_error = exc
+                if attempt < REPLACE_ATTEMPTS - 1:
+                    time.sleep(REPLACE_RETRY_SECONDS)
+        raise OSError(
+            f"{target.name} could not be replaced after {REPLACE_ATTEMPTS} "
+            f"attempts: {last_error}"
+        )
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def load_from(path: Path) -> dict:
     try:
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return {"schema_version": models.SCHEMA_VERSION, "trips": []}
+        return {"schema_version": models.SCHEMA_VERSION, "trips": [],
+                _SIGNATURE_KEY: None}
     except Exception:
         # Corrupt file: keep a backup so nothing is silently lost, then start
         # from an empty structure.
@@ -38,19 +134,27 @@ def load_from(path: Path) -> dict:
             Path(path).replace(Path(path).with_suffix(".corrupt.bak"))
         except OSError:
             pass
-        return {"schema_version": models.SCHEMA_VERSION, "trips": []}
-    return models.normalize_all(raw)
+        return {"schema_version": models.SCHEMA_VERSION, "trips": [],
+                _SIGNATURE_KEY: None}
+    data = models.normalize_all(raw)
+    data[_SIGNATURE_KEY] = _file_signature(path)
+    return data
 
 
 def save_to(data: dict, path: Path) -> None:
     payload = models.normalize_all(data)
+    _assert_not_stale(Path(path), data)
     diffs = _collect_trips_diffs(path, payload)
-    tmp = Path(path).with_suffix(".tmp")
     text = json.dumps(payload, ensure_ascii=False, indent=1)
-    tmp.write_text(text, encoding="utf-8")
     _snapshot_before_replace(Path(path), text)
-    tmp.replace(path)  # atomic
+    _atomic_write_text(Path(path), text)
     _journal_trips_safe(path, diffs)
+    _note_write_error(None)
+    # Refresh the caller's base signature: saving the same in-memory payload
+    # twice in a row (e.g. two edits in one interaction) must stay possible,
+    # while a *different* session's save still trips the guard.
+    if isinstance(data, dict):
+        data[_SIGNATURE_KEY] = _file_signature(Path(path))
 
 
 def _collect_trips_diffs(path: Path, new_payload: dict) -> list[tuple[str, str, object, str]]:
@@ -61,6 +165,7 @@ def _collect_trips_diffs(path: Path, new_payload: dict) -> list[tuple[str, str, 
         old = load_from(path)
     except Exception:
         return []
+    old.pop(_SIGNATURE_KEY, None)
     try:
         old_map = {
             (t["id"], v["id"]): v
@@ -221,15 +326,20 @@ def load_ui_state() -> dict:
     return raw if isinstance(raw, dict) else {}
 
 
-def save_ui_state(state: dict) -> None:
+def save_ui_state(state: dict) -> bool:
+    """Persist the convenience UI state. Returns False when it could not be
+    written (e.g. a read-only data directory) so the app can say so instead
+    of silently forgetting the setting."""
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        tmp = UI_STATE_PATH.with_suffix(".tmp")
-        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=1),
-                       encoding="utf-8")
-        tmp.replace(UI_STATE_PATH)
-    except OSError:
-        pass  # pure convenience state — never break the app over it
+        _atomic_write_text(
+            UI_STATE_PATH,
+            json.dumps(state, ensure_ascii=False, indent=1),
+        )
+    except OSError as exc:
+        _note_write_error(str(exc))
+        return False
+    return True
 
 
 def ensure_seed(path: Path | None = None) -> dict:

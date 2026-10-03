@@ -8,6 +8,7 @@ This module provides:
 """
 
 import os
+import shutil
 from pathlib import Path
 
 
@@ -45,18 +46,40 @@ def detect_environment() -> str:
 def get_workbook_path() -> Path:
     """
     Get the appropriate workbook path based on the current environment.
-    
+
     Returns:
-        Path to Destinations-local.xlsx for local development
-        Path to Destinations-cloud.xlsx for Streamlit Cloud
+        Local development: ``<repo>/Destinations-local.xlsx`` (unchanged).
+        Streamlit Cloud: an editable copy in the writable runtime data
+        directory, seeded once from the committed
+        ``<repo>/Destinations-cloud.xlsx``. Cloud mounts the repository
+        read-only, so editing the committed file in place cannot work; the
+        copy is what the app edits and what the sidebar download serves.
     """
     repo_root = Path(__file__).resolve().parent
     environment = detect_environment()
-    
-    if environment == "cloud":
-        return repo_root / "Destinations-cloud.xlsx"
-    else:
+
+    if environment != "cloud":
         return repo_root / "Destinations-local.xlsx"
+
+    repo_file = repo_root / "Destinations-cloud.xlsx"
+    try:
+        import runtime_paths
+    except Exception:
+        return repo_file
+
+    editable = runtime_paths.state_path(repo_file.name)
+    if runtime_paths.USES_REPO_ROOT:
+        return repo_file
+    if editable.exists():
+        return editable
+    try:
+        if repo_file.exists():
+            runtime_paths.DATA_ROOT.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(repo_file, editable)
+            return editable
+    except OSError:
+        pass
+    return repo_file
 
 
 def is_cloud_mode() -> bool:

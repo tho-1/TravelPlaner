@@ -19,8 +19,10 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+import runtime_paths
+
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_JOURNAL_DIR = ROOT / "sync_journals"
+DEFAULT_JOURNAL_DIR = runtime_paths.state_path("sync_journals")
 BASELINE_FILENAME = "baseline.json"
 
 
@@ -117,16 +119,35 @@ def _make_entry(
 def append_entry(
     entry: dict, journal_dir: Path | str | None = None
 ) -> Path:
-    """Append one entry to the per-device/day JSONL file. Returns the file."""
+    """Append one entry to a JSONL file and return it.
+
+    The FILE is always owned by the device that performs the write
+    (``get_device_id()``), never by ``entry["device"]``. The entry keeps its
+    original ``device`` field, which is what the merge uses.
+
+    Why this matters: when a device applied another device's winning entry it
+    used to append into that device's file name and then upload it, replacing
+    the other device's journal on the shared ``data-sync`` branch with a
+    partial copy. Journal files are per-writer; merges happen at read time.
+    """
     jdir = _journal_dir(journal_dir)
     jdir.mkdir(parents=True, exist_ok=True)
     for field in ("ts", "device", "store", "op", "key"):
         if field not in entry:
             raise ValueError(f"journal entry missing {field!r}")
-    target = _journal_file(str(entry["device"]), jdir, str(entry["ts"]))
+    target = _journal_file(get_device_id(), jdir, str(entry["ts"]))
     with target.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
     return target
+
+
+def append_entries(entries: list[dict],
+                   journal_dir: Path | str | None = None) -> Path | None:
+    """Append several entries to this device's journal file(s)."""
+    written: Path | None = None
+    for entry in entries:
+        written = append_entry(entry, journal_dir)
+    return written
 
 
 def record_workbook_change(

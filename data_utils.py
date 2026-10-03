@@ -13,12 +13,12 @@ import openpyxl
 import pandas as pd
 import streamlit as st
 
+import runtime_paths
 from environment import WORKBOOK_PATH
-
 
 DATA_PATH = WORKBOOK_PATH
 
-OPEN_TABS_PATH = Path(__file__).resolve().parent / "open_destinations.json"
+OPEN_TABS_PATH = runtime_paths.state_path("open_destinations.json")
 
 
 def load_open_destinations() -> list:
@@ -33,13 +33,30 @@ def load_open_destinations() -> list:
     return []
 
 
-def save_open_destinations(destinations) -> None:
-    """Persist the list of open destination tabs to a JSON file (best effort)."""
+def save_open_destinations(destinations) -> bool:
+    """Persist the list of open destination tabs (JSON file).
+
+    Returns False (instead of failing silently) when the data directory is not
+    writable, so the app can tell the user that their tab layout is not being
+    remembered instead of quietly forgetting it.
+    """
     try:
+        OPEN_TABS_PATH.parent.mkdir(parents=True, exist_ok=True)
         OPEN_TABS_PATH.write_text(
             json.dumps([str(d) for d in destinations], ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        return True
+    except Exception as exc:
+        _note_state_write_error(f"open destination tabs: {exc}")
+        return False
+
+
+def _note_state_write_error(message: str) -> None:
+    try:
+        from itinerary import storage
+
+        storage._note_write_error(message)
     except Exception:
         pass
 
@@ -206,6 +223,34 @@ def find_column(columns, aliases) -> Optional[str]:
         for alias in normalized_aliases:
             if alias in normalized or normalized in alias:
                 return column
+    return None
+
+
+# Alias sets shared by the readers (`_load_destinations_cached`) and the
+# writers, so a column the UI can read is always a column the UI can write.
+NEARER_ALIASES = ["näherer", "auswahl", "nahe", "nearer", "selection"]
+VISITED_ALIASES = ["visited", "visited?"]
+RESEARCH_ALIASES = ["to be researched", "toberesearched", "research needed",
+                    "researched?"]
+PRIO_ALIASES = ["prio thorsten", "prio", "thorsten"]
+DESTINATION_ALIASES = ["destination", "destinations", "city", "place", "name"]
+
+
+def match_header_index(headers: dict, aliases: list) -> Optional[int]:
+    """Resolve a 1-based column index from a ``{header: index}`` mapping.
+
+    Matches the *same* alias sets the readers use (exact normalised match
+    first, then substring), so a workbook column the app can display is also
+    the column it writes to. Never auto-creates or guesses a different column.
+    """
+    normalized = {normalize_text(name): index for name, index in headers.items()}
+    wanted = [normalize_text(alias) for alias in aliases]
+    for alias in wanted:
+        if alias in normalized:
+            return normalized[alias]
+    for name, index in normalized.items():
+        if any(alias and alias in name for alias in wanted):
+            return index
     return None
 
 
@@ -407,15 +452,19 @@ def _find_destination_sheet(path: Path) -> Optional[str]:
     return None
 
 
-def update_favorite_status(destination_name: str, add: bool, path: Path = DATA_PATH) -> None:
+def update_favorite_status(destination_name: str, add: bool, path: Path = DATA_PATH) -> bool:
     """Set or clear the 'In nähererer Auswahl 2025?' cell for a destination.
 
     Uses openpyxl to modify the cell in-place so that formatting,
     formulas, and other sheets in the workbook are preserved.
+
+    Returns True when a cell was written, False when the row or the target
+    column could not be found (nothing was changed). Raises
+    ``WorkbookLockedError`` when the file is locked or changed on disk.
     """
     sheet_name = _find_destination_sheet(path)
     if sheet_name is None:
-        return
+        return False
 
     wb = load_workbook_for_update(path)
     ws = wb[sheet_name]
@@ -428,18 +477,12 @@ def update_favorite_status(destination_name: str, add: bool, path: Path = DATA_P
             headers[str(cell_value)] = col_idx
 
     # Find the destination column and nearer column by fuzzy matching
-    dest_col_idx = None
-    nearer_col_idx = None
-    for header_name, col_idx in headers.items():
-        lower = header_name.lower()
-        if dest_col_idx is None and "destination" in lower:
-            dest_col_idx = col_idx
-        if nearer_col_idx is None and "auswahl" in lower:
-            nearer_col_idx = col_idx
+    dest_col_idx = match_header_index(headers, DESTINATION_ALIASES)
+    nearer_col_idx = match_header_index(headers, NEARER_ALIASES)
 
     if dest_col_idx is None or nearer_col_idx is None:
         wb.close()
-        return
+        return False
 
     # Find the row for this destination
     target_row = None
@@ -451,7 +494,7 @@ def update_favorite_status(destination_name: str, add: bool, path: Path = DATA_P
 
     if target_row is None:
         wb.close()
-        return
+        return False
 
     # Write "x" or clear the cell
     ws.cell(row=target_row, column=nearer_col_idx).value = "x" if add else None
@@ -466,13 +509,17 @@ def update_favorite_status(destination_name: str, add: bool, path: Path = DATA_P
 
     # Clear the cached data so the app picks up the change
     _clear_destination_cache()
+    return True
 
 
-def update_visited_status(destination_name: str, visited: bool, path: Path = DATA_PATH) -> None:
-    """Set the ``Visited?`` value for a destination in the workbook."""
+def update_visited_status(destination_name: str, visited: bool, path: Path = DATA_PATH) -> bool:
+    """Set the ``Visited?`` value for a destination in the workbook.
+
+    Returns True when a cell was written, False when nothing was found.
+    """
     sheet_name = _find_destination_sheet(path)
     if sheet_name is None:
-        return
+        return False
 
     try:
         wb = load_workbook_for_update(path)
@@ -489,18 +536,12 @@ def update_visited_status(destination_name: str, visited: bool, path: Path = DAT
         if cell_value is not None:
             headers[str(cell_value).strip()] = col_idx
 
-    dest_col_idx = None
-    visited_col_idx = None
-    for header_name, col_idx in headers.items():
-        lower = header_name.lower()
-        if dest_col_idx is None and "destination" in lower:
-            dest_col_idx = col_idx
-        if visited_col_idx is None and lower in {"visited", "visited?"}:
-            visited_col_idx = col_idx
+    dest_col_idx = match_header_index(headers, DESTINATION_ALIASES)
+    visited_col_idx = match_header_index(headers, VISITED_ALIASES)
 
     if dest_col_idx is None or visited_col_idx is None:
         wb.close()
-        return
+        return False
 
     target_row = None
     for row_idx in range(2, ws.max_row + 1):
@@ -511,7 +552,7 @@ def update_visited_status(destination_name: str, visited: bool, path: Path = DAT
 
     if target_row is None:
         wb.close()
-        return
+        return False
 
     ws.cell(row=target_row, column=visited_col_idx).value = bool(visited)
     visited_header = next(
@@ -530,13 +571,17 @@ def update_visited_status(destination_name: str, visited: bool, path: Path = DAT
     _journal_workbook_safe(destination_name, visited_header, bool(visited), path)
 
     _clear_destination_cache()
+    return True
 
 
-def update_to_be_researched_status(destination_name: str, to_be_researched: bool, path: Path = DATA_PATH) -> None:
-    """Set the ``To be researched`` value for a destination in the workbook."""
+def update_to_be_researched_status(destination_name: str, to_be_researched: bool, path: Path = DATA_PATH) -> bool:
+    """Set the ``To be researched`` value for a destination in the workbook.
+
+    Returns True when a cell was written, False when nothing was found.
+    """
     sheet_name = _find_destination_sheet(path)
     if sheet_name is None:
-        return
+        return False
 
     try:
         wb = load_workbook_for_update(path)
@@ -553,18 +598,12 @@ def update_to_be_researched_status(destination_name: str, to_be_researched: bool
         if cell_value is not None:
             headers[str(cell_value).strip()] = col_idx
 
-    dest_col_idx = None
-    research_col_idx = None
-    for header_name, col_idx in headers.items():
-        lower = header_name.lower()
-        if dest_col_idx is None and "destination" in lower:
-            dest_col_idx = col_idx
-        if research_col_idx is None and ("researched" in lower or "research" in lower):
-            research_col_idx = col_idx
+    dest_col_idx = match_header_index(headers, DESTINATION_ALIASES)
+    research_col_idx = match_header_index(headers, RESEARCH_ALIASES)
 
     if dest_col_idx is None:
         wb.close()
-        return
+        return False
 
     if research_col_idx is None:
         research_col_idx = ws.max_column + 1
@@ -579,7 +618,7 @@ def update_to_be_researched_status(destination_name: str, to_be_researched: bool
 
     if target_row is None:
         wb.close()
-        return
+        return False
 
     ws.cell(row=target_row, column=research_col_idx).value = bool(to_be_researched)
     research_header = next(
@@ -598,13 +637,17 @@ def update_to_be_researched_status(destination_name: str, to_be_researched: bool
     _journal_workbook_safe(destination_name, research_header, bool(to_be_researched), path)
 
     _clear_destination_cache()
+    return True
 
 
-def update_prio_thorsten(destination_name: str, value: int, path: Path = DATA_PATH) -> None:
-    """Update the Prio Thorsten value for a destination in the workbook."""
+def update_prio_thorsten(destination_name: str, value: int, path: Path = DATA_PATH) -> bool:
+    """Update the Prio Thorsten value for a destination in the workbook.
+
+    Returns True when a cell was written, False when nothing was found.
+    """
     sheet_name = _find_destination_sheet(path)
     if sheet_name is None:
-        return
+        return False
 
     wb = load_workbook_for_update(path)
     ws = wb[sheet_name]
@@ -615,18 +658,12 @@ def update_prio_thorsten(destination_name: str, value: int, path: Path = DATA_PA
         if cell_value is not None:
             headers[str(cell_value)] = col_idx
 
-    dest_col_idx = None
-    prio_col_idx = None
-    for header_name, col_idx in headers.items():
-        lower = header_name.strip().lower()
-        if dest_col_idx is None and "destination" in lower:
-            dest_col_idx = col_idx
-        if prio_col_idx is None and ("prio" in lower and "thorsten" in lower or lower == "prio thorsten" or "thorsten" in lower):
-            prio_col_idx = col_idx
+    dest_col_idx = match_header_index(headers, DESTINATION_ALIASES)
+    prio_col_idx = match_header_index(headers, PRIO_ALIASES)
 
     if dest_col_idx is None or prio_col_idx is None:
         wb.close()
-        return
+        return False
 
     target_row = None
     for row_idx in range(2, ws.max_row + 1):
@@ -637,7 +674,7 @@ def update_prio_thorsten(destination_name: str, value: int, path: Path = DATA_PA
 
     if target_row is None:
         wb.close()
-        return
+        return False
 
     if value is None or str(value).strip() == "" or str(value).strip().lower() in {"none", "nan", "null", "—"}:
         ws.cell(row=target_row, column=prio_col_idx).value = None
@@ -659,18 +696,22 @@ def update_prio_thorsten(destination_name: str, value: int, path: Path = DATA_PA
     _journal_workbook_safe(destination_name, prio_header, prio_value, path)
 
     _clear_destination_cache()
+    return True
 
 
-def update_comment(destination_name: str, value: str, path: Path = DATA_PATH) -> None:
+def update_comment(destination_name: str, value: str, path: Path = DATA_PATH) -> bool:
     """Update the Comment value for a destination in the workbook.
 
     Creates a "Comment" column if the workbook does not have one yet (the
     header is appended at the end of the sheet). Raises ``WorkbookLockedError``
     if the file is currently locked by another program (e.g. Excel).
+
+    Returns True when a cell was written, False when the row or the
+    destination column could not be found.
     """
     sheet_name = _find_destination_sheet(path)
     if sheet_name is None:
-        return
+        return False
 
     try:
         wb = load_workbook_for_update(path)
@@ -687,18 +728,12 @@ def update_comment(destination_name: str, value: str, path: Path = DATA_PATH) ->
         if cell_value is not None:
             headers[str(cell_value).strip()] = col_idx
 
-    dest_col_idx = None
-    comment_col_idx = None
-    for header_name, col_idx in headers.items():
-        lower = header_name.strip().lower()
-        if dest_col_idx is None and "destination" in lower:
-            dest_col_idx = col_idx
-        if comment_col_idx is None and lower in {"comment", "kommentar", "anmerkung"}:
-            comment_col_idx = col_idx
+    dest_col_idx = match_header_index(headers, DESTINATION_ALIASES)
+    comment_col_idx = match_header_index(headers, ["comment", "kommentar", "anmerkung"])
 
     if dest_col_idx is None:
         wb.close()
-        return
+        return False
 
     if comment_col_idx is None:
         comment_col_idx = ws.max_column + 1
@@ -713,7 +748,7 @@ def update_comment(destination_name: str, value: str, path: Path = DATA_PATH) ->
 
     if target_row is None:
         wb.close()
-        return
+        return False
 
     new_value = "" if value is None else str(value).strip()
     # NOTE: openpyxl treats cell(..., value=None) as "leave unchanged", so use
@@ -737,6 +772,7 @@ def update_comment(destination_name: str, value: str, path: Path = DATA_PATH) ->
     _journal_workbook_safe(destination_name, comment_header, journal_comment, path)
 
     _clear_destination_cache()
+    return True
 
 
 def update_reviews(
@@ -746,11 +782,15 @@ def update_reviews(
     praise: str,
     dislikes: str,
     path: Path = DATA_PATH,
-) -> None:
-    """Write only the review-related fields for an existing destination."""
+) -> bool:
+    """Write only the review-related fields for an existing destination.
+
+    Returns True when at least one cell was written, False when nothing was
+    found.
+    """
     sheet_name = _find_destination_sheet(path)
     if sheet_name is None:
-        return
+        return False
     try:
         wb = load_workbook_for_update(path)
     except PermissionError as exc:
@@ -767,7 +807,7 @@ def update_reviews(
     dest_col = next((col for name, col in headers.items() if "destination" in name.lower()), None)
     if dest_col is None:
         wb.close()
-        return
+        return False
     target_row = next(
         (
             row for row in range(2, ws.max_row + 1)
@@ -778,16 +818,21 @@ def update_reviews(
     )
     if target_row is None:
         wb.close()
-        return
+        return False
     values = {
         "Reviews": float(review_score),
         "Tourist Reviews": str(tourist_reviews).strip(),
         "What do the reviews praise?": str(praise).strip(),
         "What do they dislike?": str(dislikes).strip(),
     }
+    written = False
     for name, value in values.items():
         if name in headers:
             ws.cell(target_row, headers[name]).value = value
+            written = True
+    if not written:
+        wb.close()
+        return False
     try:
         save_workbook_atomic(wb, path)
     except PermissionError as exc:
@@ -801,6 +846,7 @@ def update_reviews(
         if name in headers:
             _journal_workbook_safe(destination_name, name, value, path)
     _clear_destination_cache()
+    return True
 
 
 def update_food(
@@ -809,11 +855,14 @@ def update_food(
     description: str,
     dishes: Optional[Union[str, list[str]]] = None,
     path: Path = DATA_PATH,
-) -> None:
-    """Write the Food rating, description, and main dishes for a destination."""
+) -> bool:
+    """Write the Food rating, description, and main dishes for a destination.
+
+    Returns True when a cell was written, False when nothing was found.
+    """
     sheet_name = _find_destination_sheet(path)
     if sheet_name is None:
-        return
+        return False
 
     try:
         wb = load_workbook_for_update(path)
@@ -859,7 +908,7 @@ def update_food(
 
     if dest_col_idx is None:
         wb.close()
-        return
+        return False
     if spiciness_col_idx is None:
         spiciness_col_idx = ws.max_column + 1
         ws.cell(row=1, column=spiciness_col_idx, value="Food - Spicyness")
@@ -882,7 +931,7 @@ def update_food(
     )
     if target_row is None:
         wb.close()
-        return
+        return False
 
     ws.cell(row=target_row, column=spiciness_col_idx).value = float(spiciness)
     ws.cell(row=target_row, column=description_col_idx).value = str(description).strip()
@@ -921,6 +970,7 @@ def update_food(
     if dishes is not None and dishes_col_idx is not None:
         _journal_workbook_safe(destination_name, dishes_header, dishes_str, path)
     _clear_destination_cache()
+    return True
 
 
 def get_selected_destination(df: pd.DataFrame, metadata: dict, fallback: Optional[str] = None) -> Optional[pd.Series]:

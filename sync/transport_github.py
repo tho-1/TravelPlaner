@@ -165,12 +165,65 @@ def upload_file(
     )
 
 
+def _entry_identity(line: str) -> str:
+    """Stable identity of one JSONL line, for lossless unioning."""
+    try:
+        entry = json.loads(line)
+    except Exception:
+        return line.strip()
+    return json.dumps(
+        {
+            "ts": entry.get("ts"),
+            "device": entry.get("device"),
+            "store": entry.get("store"),
+            "op": entry.get("op"),
+            "key": entry.get("key"),
+            "value": entry.get("value"),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+
+
+def merge_jsonl(local_text: str, remote_text: str) -> str:
+    """Union two JSONL journals, dropping duplicates, ordered by timestamp.
+
+    Uploading with a blind PUT replaced the shared journal on ``data-sync``
+    with whatever the uploading device happened to have, which silently dropped
+    entries written by the other device between two syncs. Merging keeps both
+    histories, keeps the file chronologically ordered, and makes repeated
+    pushes idempotent.
+    """
+    merged: dict[str, tuple[str, str]] = {}
+    for text in (remote_text, local_text):
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            identity = _entry_identity(stripped)
+            if identity in merged:
+                continue
+            try:
+                sort_key = (str(json.loads(stripped).get("ts", "")),
+                            str(json.loads(stripped).get("device", "")))
+            except Exception:
+                sort_key = ("", "")
+            merged[identity] = (sort_key, stripped)
+    ordered = [line for _key, line in sorted(merged.values(), key=lambda kv: kv[0])]
+    return "\n".join(ordered) + ("\n" if ordered else "")
+
+
 def push_journals(
     journal_dir: Path | str | None = None,
     token: str | None = None,
     dry_run: bool = False,
 ) -> list[str]:
-    """Upload local *.jsonl journals to data-sync. Returns uploaded names."""
+    """Upload local *.jsonl journals to data-sync. Returns uploaded names.
+
+    Each device only ever writes its own journal files (see
+    ``journal.append_entry``), and the remote copy is unioned rather than
+    replaced, so no device can truncate another device's history.
+    """
     from sync import journal as _journal
 
     jdir = Path(journal_dir) if journal_dir else _journal.DEFAULT_JOURNAL_DIR
@@ -189,9 +242,10 @@ def push_journals(
         sha = None
         if name in remote:
             try:
-                _, sha = download_file(name, token)
+                remote_text, sha = download_file(name, token)
             except TransportError:
-                sha = None
+                remote_text, sha = "", None
+            text = merge_jsonl(text, remote_text)
         upload_file(name, text, f"sync journals: {name}", token, sha)
         uploaded.append(name)
     return uploaded

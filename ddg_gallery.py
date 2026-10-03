@@ -29,8 +29,9 @@ THUMBNAIL_HEIGHT = 400
 def _crop_and_save_thumbnail(image_data: bytes | Path, target_path: Path) -> bool:
     """Crop image to uniform 3:2 landscape thumbnail (600x400) and save as JPEG."""
     try:
-        from PIL import Image, ImageOps
         import io
+
+        from PIL import Image, ImageOps
         if isinstance(image_data, bytes):
             im = Image.open(io.BytesIO(image_data))
         else:
@@ -70,8 +71,14 @@ def load_cached_ddg_gallery(
     destination_name: str,
     pictures_dir: Path,
     min_count: int = DDG_GALLERY_COUNT,
+    truncate: bool = True,
 ) -> Optional[list[dict]]:
-    """Return cached DuckDuckGo gallery entries, or ``None`` if incomplete."""
+    """Return cached DuckDuckGo gallery entries, or ``None`` if incomplete.
+
+    ``truncate=False`` returns every valid cached entry (used when a caller
+    needs to address photo N of a partially cached gallery). ``min_count``
+    stays the "is the cache complete enough?" threshold.
+    """
     folder = ddg_gallery_dir(destination_name, pictures_dir)
     meta_path = folder / "metadata.json"
     if not meta_path.exists():
@@ -107,9 +114,13 @@ def load_cached_ddg_gallery(
             copy["image_path"] = p
             valid.append(copy)
 
-    if len(valid) >= min_count:
-        return valid[:min_count]
-    return None
+    if not valid:
+        return None
+    if truncate and len(valid) < min_count:
+        # A partially filled gallery is still worth showing; the page adds
+        # the missing photos once instead of re-downloading on every rerun.
+        return None
+    return valid[:min_count] if truncate else valid
 
 
 def _search_query(destination_name: str, country: Optional[str]) -> str:
@@ -127,13 +138,31 @@ def build_ddg_gallery(
     force_refresh: bool = False,
 ) -> list[dict]:
     """Fetch and cache DuckDuckGo images for a destination (cache-first)."""
+    # A partially filled gallery must be *served*, not re-downloaded on every
+    # rerun: the page renders on each widget interaction, so re-fetching here
+    # meant a live search plus dozens of downloads per keystroke.
+    existing: list[dict] = []
     if not force_refresh:
         cached = load_cached_ddg_gallery(destination_name, pictures_dir, min_count=count)
         if cached is not None:
             return cached
+        existing = load_cached_ddg_gallery(destination_name, pictures_dir,
+                                           min_count=1, truncate=False) or []
+        if len(existing) >= count:
+            return existing[:count]
 
     folder = ddg_gallery_dir(destination_name, pictures_dir)
-    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        # Read-only deployment: serve what is cached rather than crashing.
+        print(f"DuckDuckGo gallery cache unavailable for "
+              f"'{destination_name}': {exc}", flush=True)
+        return existing
+
+    missing = count - len(existing)
+    if missing <= 0:
+        return existing[:count]
 
     query = _search_query(destination_name, country)
 
@@ -143,14 +172,14 @@ def build_ddg_gallery(
         try:
             from duckduckgo_search import DDGS
         except ImportError:
-            return []
+            return existing
 
     try:
         with DDGS() as ddgs:
-            raw_results = list(ddgs.images(query, max_results=count * 3))
+            raw_results = list(ddgs.images(query, max_results=missing * 3))
     except Exception as exc:
         print(f"DuckDuckGo image search failed for '{query}': {exc}", flush=True)
-        return []
+        return existing
 
     headers = {
         "User-Agent": (
@@ -159,13 +188,14 @@ def build_ddg_gallery(
         )
     }
 
-    entries: list[dict] = []
-    saved = 0
+    entries: list[dict] = list(existing)
+    saved = len(existing)
+    known_urls = {e.get("image_url") for e in entries}
     for r in raw_results:
         if saved >= count:
             break
         img_url = r.get("image")
-        if not img_url:
+        if not img_url or img_url in known_urls:
             continue
         try:
             resp = requests.get(img_url, headers=headers, timeout=REQUEST_TIMEOUT)
@@ -173,6 +203,7 @@ def build_ddg_gallery(
                 img_path = folder / f"{saved + 1}.jpg"
                 if _crop_and_save_thumbnail(resp.content, img_path):
                     saved += 1
+                    known_urls.add(img_url)
                     entries.append({
                         "image_path": str(img_path),
                         "title": r.get("title", ""),
@@ -185,9 +216,13 @@ def build_ddg_gallery(
 
     if entries:
         meta_path = folder / "metadata.json"
-        meta_path.write_text(
-            json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8"
-        )
+        try:
+            meta_path.write_text(
+                json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+        except OSError as exc:
+            print(f"Could not write DDG gallery metadata for "
+                  f"'{destination_name}': {exc}", flush=True)
 
     return entries
 
@@ -199,11 +234,19 @@ def refresh_single_ddg_image(
     index: int,
 ) -> Optional[dict]:
     """Replace a single DuckDuckGo gallery image at index with a fresh one."""
-    cached = load_cached_ddg_gallery(destination_name, pictures_dir, min_count=1)
+    # NOTE: the cached list must NOT be truncated to one entry — the caller
+    # passes the absolute photo index, so loading with min_count=1 made every
+    # photo except the first un-replaceable (index >= len(cached)).
+    cached = load_cached_ddg_gallery(destination_name, pictures_dir,
+                                     min_count=DDG_GALLERY_COUNT, truncate=False)
     if not cached or index >= len(cached):
         return None
 
     folder = ddg_gallery_dir(destination_name, pictures_dir)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
     query = _search_query(destination_name, country)
     existing_urls = {e.get("image_url") for e in cached}
 

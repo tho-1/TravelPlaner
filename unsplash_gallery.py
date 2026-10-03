@@ -255,7 +255,14 @@ def build_destination_gallery(
     per_page = min(max(GALLERY_IMAGE_COUNT * 2, 10), UNSPLASH_MAX_PER_PAGE)
     paths = gallery_cache_paths(destination_name, pictures_dir)
     folder: Path = paths["folder"]
-    folder.mkdir(parents=True, exist_ok=True)
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        # Read-only deployment (Streamlit Cloud): serve nothing new instead of
+        # crashing the whole destination page.
+        print(f"Unsplash gallery cache unavailable for "
+              f"'{destination_name}': {exc}", flush=True)
+        return []
 
     entries: list[dict] = []
     saved_count = 0
