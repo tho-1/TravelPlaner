@@ -1,5 +1,4 @@
 import datetime
-import html
 import json
 import re
 from pathlib import Path
@@ -10,6 +9,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+import filters
 from data_utils import (
     DATA_PATH,
     WorkbookLockedError,
@@ -17,7 +17,6 @@ from data_utils import (
     load_destinations,
     normalize_text,
     save_open_destinations,
-    to_be_researched_mask,
 )
 from deepseek_populator import add_destination_with_deepseek
 
@@ -79,14 +78,14 @@ def _show_add_destination_dialog():
 
         st.session_state.pop(retry_key, None)
         if success:
-            st.success(msg)
-            # Add to open destinations so user can view it immediately
-            open_destinations = st.session_state.get("open_destinations", [])
-            if new_dest.strip() not in open_destinations:
-                open_destinations.append(new_dest.strip())
+            new_name = new_dest.strip()
+            open_destinations = list(st.session_state.get("open_destinations", []))
+            if new_name not in open_destinations:
+                open_destinations.append(new_name)
                 st.session_state["open_destinations"] = open_destinations
                 save_open_destinations(open_destinations)
-            st.rerun()
+            st.toast(msg, icon="✅")
+            _navigate_to_destination(new_name)
         else:
             st.error(msg)
 
@@ -406,28 +405,24 @@ def render_world_map():
             )
 
         with f_col5:
-            if safety_col and safety_col in df_valid.columns and pd.notna(df_valid[safety_col]).any():
-                s_min = float(df_valid[safety_col].dropna().min())
-                s_max = float(df_valid[safety_col].dropna().max())
-                map_min_safety = st.slider(
-                    "Minimum safety rating",
-                    min_value=s_min, max_value=s_max, value=s_min,
-                    key="map_filter_min_safety"
-                )
-            else:
-                map_min_safety = 0.0
+            s_min, s_max = filters.numeric_bounds(
+                df_valid[safety_col] if safety_col in df_valid.columns else [],
+                default=(0.0, 5.0), top=10.0)
+            map_min_safety = st.slider(
+                "Minimum safety rating",
+                min_value=s_min, max_value=s_max, value=s_min,
+                key="map_filter_min_safety",
+            )
 
         with f_col6:
-            if reviews_col and reviews_col in df_valid.columns and pd.notna(df_valid[reviews_col]).any():
-                r_min = float(df_valid[reviews_col].dropna().min())
-                r_max = float(df_valid[reviews_col].dropna().max())
-                map_min_review = st.slider(
-                    "Minimum review score",
-                    min_value=r_min, max_value=r_max, value=r_min,
-                    key="map_filter_min_review"
-                )
-            else:
-                map_min_review = 0.0
+            r_min, r_max = filters.numeric_bounds(
+                df_valid[reviews_col] if reviews_col in df_valid.columns else [],
+                default=(0.0, 10.0), top=10.0)
+            map_min_review = st.slider(
+                "Minimum review score",
+                min_value=r_min, max_value=r_max, value=r_min,
+                key="map_filter_min_review",
+            )
 
         cb_col1, cb_col2 = st.columns(2)
         with cb_col1:
@@ -454,28 +449,25 @@ def render_world_map():
                 help="Show only destinations that still require research (or exclude them).",
             )
 
-    # Apply filters to df_valid
-    if map_continent != "All" and continent_col and continent_col in df_valid.columns:
-        df_valid = df_valid[df_valid[continent_col].astype(str).str.lower() == map_continent.lower()]
-    if map_country != "All" and country_col and country_col in df_valid.columns:
-        df_valid = df_valid[df_valid[country_col].astype(str).str.lower() == map_country.lower()]
-    if eu_col and eu_col in df_valid.columns and map_eu != "All":
-        eu_vals = df_valid[eu_col].astype(str).str.strip().str.lower()
-        is_eu = eu_vals.isin(["true", "yes", "ja", "y", "1", "eu", "european union"])
-        df_valid = df_valid[is_eu] if map_eu == "Yes" else df_valid[~is_eu]
-    if map_weather_month and map_weather_month != "None" and map_weather_month in df_valid.columns:
-        wv = df_valid[map_weather_month].astype(str).str.strip().str.lower()
-        df_valid = df_valid[wv.isin(["ok", "okay", "good", "great", "ideal", "best", "green"])]
-    if safety_col and safety_col in df_valid.columns:
-        df_valid = df_valid[df_valid[safety_col] >= map_min_safety]
-    if reviews_col and reviews_col in df_valid.columns:
-        df_valid = df_valid[df_valid[reviews_col] >= map_min_review]
-    if only_unvisited and visited_col and visited_col in df_valid.columns:
-        is_visited = df_valid[visited_col].eq(True).fillna(False)
-        df_valid = df_valid[~is_visited]
-    if to_be_researched_col and to_be_researched_col in df_valid.columns and map_research != "All":
-        research_mask = to_be_researched_mask(df_valid, to_be_researched_col)
-        df_valid = df_valid[research_mask] if map_research == "Yes" else df_valid[~research_mask]
+    # Apply filters to df_valid. Every filter keeps rows whose field is blank —
+    # a filter may only remove a destination whose value is actually populated.
+    if map_continent != "All":
+        df_valid = filters.apply_text_equals(df_valid, continent_col, map_continent)
+    if map_country != "All":
+        df_valid = filters.apply_text_equals(df_valid, country_col, map_country)
+    if map_eu != "All":
+        df_valid = filters.apply_eu(df_valid, eu_col, map_eu)
+    if map_weather_month and map_weather_month != "None":
+        df_valid = filters.apply_month_quality(df_valid, map_weather_month)
+    df_valid = filters.apply_numeric_minimum(df_valid, safety_col, map_min_safety)
+    df_valid = filters.apply_numeric_minimum(df_valid, reviews_col, map_min_review)
+    df_valid = filters.apply_unvisited(df_valid, visited_col, only_unvisited)
+    if map_research != "All":
+        df_valid = filters.apply_category(
+            df_valid, to_be_researched_col, map_research,
+            positives=frozenset({"true", "yes", "ja", "j", "y", "x", "1", "1.0"}),
+            negatives=frozenset({"false", "no", "nein", "n", "0", "0.0"}),
+        )
     # ────────────────────────────────────────────────────────────────────────
 
     matched_month_col = next(
@@ -572,7 +564,6 @@ def render_world_map():
             })
 
     df_map = pd.DataFrame(map_rows)
-    df_dest_breakdown = pd.DataFrame(destination_breakdown_rows)
 
     # Condition counts
     ideal_dest_count = sum(1 for r in destination_breakdown_rows if r["Travel Condition"] == "Ideal")
@@ -763,12 +754,11 @@ def render_world_map():
             key=lambda item: item["Destination"].casefold(),
         )
         if country_dests:
-            detail_pages = st.session_state.get("_detail_pages", {})
             card_cols = st.columns(min(3, max(1, len(country_dests))))
             for idx, dest_info in enumerate(country_dests):
                 city_name = dest_info["Destination"]
                 city_cond = dest_info["Travel Condition"]
-                badge = "🟢" if city_cond == "Ideal" else ("🟡" if city_cond == "Ok" else "🔴")
+                badge = {"Ideal": "🟢", "Ok": "🟡"}.get(city_cond, "⚪")
                 to_be_researched = dest_info.get("To be researched")
                 is_research = pd.notna(to_be_researched) and bool(to_be_researched) is True
                 q_mark = " ❓" if is_research else ""
@@ -800,4 +790,30 @@ def render_world_map():
                             info_items.append(f"👥 Population: **{pop_val:,}**" if isinstance(pop_val, (int, float)) else f"👥 Population: **{pop_val}**")
                         if info_items:
                             st.caption(" • ".join(info_items))
+        else:
+            # Filters excluded every city of the selected country: say so and
+            # offer a way out instead of rendering an empty panel.
+            total_here = len(country_to_destinations.get(current_active_country, []))
+            st.info(
+                f"No cities in **{current_active_country}** match the current "
+                f"filters ({total_here} hidden). Cities without a value for a "
+                "filter are never hidden."
+            )
+            if st.button("🔄 Clear filters", key="map_clear_filters",
+                         type="primary"):
+                for widget_key, default in (
+                    ("map_filter_continent", "All"),
+                    ("map_filter_country", "All"),
+                    ("map_filter_eu", "All"),
+                    ("map_filter_weather_month", "None"),
+                    ("map_filter_min_safety", None),
+                    ("map_filter_min_review", None),
+                    ("map_filter_research", "All"),
+                    ("map_filter_only_unvisited", True),
+                    ("map_show_city_labels", False),
+                ):
+                    if default is not None:
+                        st.session_state[widget_key] = default
+                st.session_state["active_country"] = None
+                st.rerun()
         st.markdown("---")

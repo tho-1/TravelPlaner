@@ -7,11 +7,11 @@ import urllib.parse
 from contextlib import nullcontext
 from pathlib import Path
 
-from PIL import Image
-
 import pandas as pd
 import streamlit as st
+from PIL import Image
 
+import filters
 from data_utils import (
     DATA_PATH,
     WorkbookLockedError,
@@ -19,23 +19,23 @@ from data_utils import (
     save_open_destinations,
     update_comment,
     update_favorite_status,
-    update_prio_thorsten,
     update_food,
-    update_visited_status,
+    update_prio_thorsten,
     update_to_be_researched_status,
-)
-from deepseek_client import generate_food_profile
-from deepseek_populator import populate_existing_destination_with_ai
-from unsplash_gallery import (
-    build_destination_gallery,
-    get_access_key,
-    refresh_single_gallery_image,
+    update_visited_status,
 )
 from ddg_gallery import (
     build_ddg_gallery,
     refresh_single_ddg_image,
 )
+from deepseek_client import generate_food_profile
+from deepseek_populator import populate_existing_destination_with_ai
 from flight_routes import render_flight_routes_section
+from unsplash_gallery import (
+    build_destination_gallery,
+    get_access_key,
+    refresh_single_gallery_image,
+)
 
 
 def _normalize_picture_key(value: object) -> str:
@@ -155,10 +155,9 @@ def _metric_color(value: object, mode: str, label: str = "") -> str:
             return "#d64545"
         return "#f1c40f"
 
-    try:
-        numeric_value = float(value)
-    except (TypeError, ValueError):
-        return "#2ecc71"
+    numeric_value = filters.coerce_number(value)
+    if numeric_value is None:
+        return "#95a5a6"
 
     if mode == "population":
         if numeric_value >= 3.0:
@@ -227,18 +226,18 @@ def _format_metric_box(label: str, value: object, suffix: str, mode: str, edit_b
             color = "#16a34a"
         display = html.escape(str(value).strip())
     else:
-        try:
-            numeric_value = float(value)
-        except (TypeError, ValueError):
-            numeric_value = None
-
-        if numeric_value is not None:
+        # Tolerate text cells such as "8/10", "7,5" or "n/a": a rating that
+        # cannot be read must never be rendered as "8/10/10" nor coloured
+        # green (which asserts "great" for a value nobody entered).
+        numeric_value = filters.coerce_number(value)
+        if numeric_value is None:
+            color = "#95a5a6"
+            text = html.escape(str(value).strip())
+            display = text if not suffix else f"{text}"
+        else:
             color = _metric_color(numeric_value, mode, label)
             text = f"{numeric_value:.1f}" if numeric_value % 1 else f"{numeric_value:.0f}"
             display = f"{text}{suffix}"
-        else:
-            color = "#2ecc71"
-            display = f"{value}{suffix}"
 
     edit_icon_html = (
         " <span style='font-size:0.9rem; opacity:0.55; vertical-align:middle;' "
@@ -348,7 +347,7 @@ def _render_comment_editor(destination_name: str, comment_value: str) -> None:
 
     if submitted:
         if _save(st.session_state.get(input_key, "")):
-            st.success("Comment saved.")
+            st.toast("Comment saved", icon="✅")
             st.rerun()
 
     if st.session_state.get(lock_key):
@@ -431,7 +430,7 @@ def _render_food_section(
                 food_profile["description"],
                 dishes=food_profile.get("dishes"),
             )
-            st.success("Food information saved.")
+            st.toast("Food information saved", icon="✅")
             st.rerun()
         except (RuntimeError, WorkbookLockedError) as exc:
             st.error(str(exc))
@@ -445,13 +444,11 @@ def render_destination(destination_name: str):
         return
 
     destination_col = metadata["destination_col"]
-    eu_col = metadata["eu_col"]
     nearer_col = metadata["nearer_col"]
     visited_col = metadata.get("visited_col")
     to_be_researched_col = metadata.get("to_be_researched_col")
     safety_col = metadata["safety_col"]
     cost_col = metadata["cost_col"]
-    flight_col = metadata["flight_col"]
     population_col = metadata["population_col"]
     reviews_col = metadata.get("reviews_col")
     prio_col = metadata.get("prio_col")
@@ -489,6 +486,46 @@ def render_destination(destination_name: str):
         comment_raw = selected_row[comment_col]
         if pd.notna(comment_raw) and str(comment_raw).strip():
             comment_value = str(comment_raw).strip()
+
+    # ── Header state flags ────────────────────────────────────────────────────
+    # These are computed HERE, before any banner photo is looked up, because the
+    # header action buttons and their CSS overlays are rendered for every
+    # destination — including the ~78 % that have no photo at all. Defining them
+    # inside the `if image_path:` block used to raise NameError further down and
+    # blank the entire page for every destination without a banner image.
+    is_favorite = False
+    if nearer_col and nearer_col in selected_row.index:
+        val = selected_row[nearer_col]
+        if pd.notna(val):
+            val_str = str(val).strip().lower()
+            if val is True or "x" in val_str or val_str in {"yes", "y", "true", "1", "ja", "j"}:
+                is_favorite = True
+
+    is_to_be_researched = False
+    if to_be_researched_col and to_be_researched_col in selected_row.index:
+        val = selected_row[to_be_researched_col]
+        if pd.notna(val):
+            if isinstance(val, bool):
+                is_to_be_researched = val
+            elif isinstance(val, (int, float)):
+                is_to_be_researched = (val == 1)
+            else:
+                val_str = str(val).strip().lower()
+                is_to_be_researched = val_str in {"yes", "y", "true", "1", "1.0", "ja", "j", "x"} or "x" in val_str
+
+    q_mark = " ❓" if is_to_be_researched else ""
+
+    is_visited = False
+    if visited_col and visited_col in selected_row.index:
+        visited_value = selected_row.get(visited_col)
+        if pd.notna(visited_value):
+            if isinstance(visited_value, bool):
+                is_visited = visited_value
+            elif isinstance(visited_value, (int, float)):
+                is_visited = (visited_value == 1)
+            else:
+                v_str = str(visited_value).strip().lower()
+                is_visited = v_str in {"true", "yes", "y", "1", "1.0", "ja", "j", "x"} or "x" in v_str
 
     if status_col and status_col in selected_row.index:
         raw_status = selected_row[status_col]
@@ -529,7 +566,7 @@ def render_destination(destination_name: str):
                     return
                 st.session_state.pop(ai_lock_key, None)
                 if success:
-                    st.success(msg)
+                    st.toast(msg, icon="✨")
                     st.rerun()
                 else:
                     st.error(msg)
@@ -599,9 +636,11 @@ def render_destination(destination_name: str):
             if first_path and Path(first_path).exists():
                 image_path = Path(first_path)
 
+    # Banner image is optional: most destinations have no photo, so this stays
+    # empty and the header falls back to a plain title (see below).
+    img_base64 = ""
     if image_path:
         # Load and encode image as base64 for full-width CSS banner container
-        img_base64 = ""
         try:
             with Image.open(image_path) as pil_img:
                 w, h = pil_img.size
@@ -617,152 +656,128 @@ def render_destination(destination_name: str):
         except Exception:
             img_base64 = ""
 
-        # Header action-button state: Favorite (heart), Research (question mark)
-        # and Visited (footsteps). The old "✖ Close tab" button was removed —
-        # closing a tab now happens directly on the sidebar tab list.
-        is_favorite = False
-        if nearer_col and nearer_col in selected_row:
-            val = selected_row[nearer_col]
-            if pd.notna(val):
-                val_str = str(val).strip().lower()
-                if val is True or "x" in val_str or val_str in {"yes", "y", "true", "1", "ja", "j"}:
-                    is_favorite = True
+    # Header action buttons (Favorite heart / Research ❔ / Visited footsteps /
+    # Add comment). The old "✖ Close tab" button was removed — closing a tab now
+    # happens directly on the sidebar tab list.
+    def _render_header_buttons(*columns):
+        """Render the header action buttons (fav / research / visited /
+        add-comment).
 
-        is_to_be_researched = False
-        if to_be_researched_col and to_be_researched_col in selected_row:
-            val = selected_row[to_be_researched_col]
-            if pd.notna(val):
-                if isinstance(val, bool):
-                    is_to_be_researched = val
-                elif isinstance(val, (int, float)):
-                    is_to_be_researched = (val == 1)
-                else:
-                    val_str = str(val).strip().lower()
-                    is_to_be_researched = val_str in {"yes", "y", "true", "1", "1.0", "ja", "j", "x"} or "x" in val_str
+        When `columns` is provided (banner-less layout) each button is placed
+        in the matching column; otherwise they're plain widgets (no wrapping
+        container) so the CSS below can overlay them directly on the banner.
+        """
+        def _ctx(i):
+            return columns[i] if i < len(columns) else None
 
-        q_mark = " ❓" if is_to_be_researched else ""
+        def _workbook_action(label, key, help_text, write):
+            error_key = f"workbook_action_error_{destination_name}_{key}"
 
-        is_visited = False
-        if visited_col:
-            visited_value = selected_row.get(visited_col)
-            if pd.notna(visited_value):
-                if isinstance(visited_value, bool):
-                    is_visited = visited_value
-                elif isinstance(visited_value, (int, float)):
-                    is_visited = (visited_value == 1)
-                else:
-                    v_str = str(visited_value).strip().lower()
-                    is_visited = v_str in {"true", "yes", "y", "1", "1.0", "ja", "j", "x"} or "x" in v_str
+            def _attempt():
+                try:
+                    wrote = write()
+                except WorkbookLockedError as exc:
+                    st.session_state[error_key] = str(exc)
+                    return
+                if wrote is False:
+                    # The writer found neither the row nor the column, so
+                    # nothing was written. Never report that as a success.
+                    st.session_state[error_key] = (
+                        f"Could not write to {DATA_PATH.name}: no row for "
+                        f"'{destination_name}' or the target column is missing. "
+                        "Nothing was changed."
+                    )
+                    return
+                st.session_state.pop(error_key, None)
+                st.toast("Saved", icon="✅")
+                st.rerun()
 
-        def _render_header_buttons(*columns):
-            """Render the header action buttons (fav / research / visited /
-            add-comment).
-
-            When `columns` is provided (banner-less layout) each button is placed
-            in the matching column; otherwise they're plain widgets (no wrapping
-            container) so the CSS below can overlay them directly on the banner.
-            """
-            def _ctx(i):
-                return columns[i] if i < len(columns) else None
-
-            def _workbook_action(label, key, help_text, write):
-                error_key = f"workbook_action_error_{destination_name}_{key}"
-
-                def _attempt():
-                    try:
-                        write()
-                    except WorkbookLockedError as exc:
-                        st.session_state[error_key] = str(exc)
-                    else:
-                        st.session_state.pop(error_key, None)
-                        st.rerun()
-
-                if st.button(label, key=key, help=help_text):
+            if st.button(label, key=key, help=help_text):
+                _attempt()
+            error = st.session_state.get(error_key)
+            if error:
+                st.error(error)
+                if st.button("Retry", key=f"{key}_retry"):
                     _attempt()
-                error = st.session_state.get(error_key)
-                if error:
-                    st.error(error)
-                    if st.button("Retry", key=f"{key}_retry"):
-                        _attempt()
 
-            with (_ctx(0) or nullcontext()):
-                fav_icon = "❤️" if is_favorite else "🤍"
-                fav_help = "Remove from Favorites" if is_favorite else "Add to Favorites"
-                _workbook_action(
-                    fav_icon,
-                    f"fav_{destination_name}",
-                    fav_help,
-                    lambda: update_favorite_status(
-                        destination_name, add=not is_favorite
-                    ),
-                )
-            with (_ctx(1) or nullcontext()):
-                research_icon = "❓" if is_to_be_researched else "❔"
-                research_help = "Needs research (click to mark as done)" if is_to_be_researched else "Mark as needs research"
-                _workbook_action(
-                    research_icon,
-                    f"research_{destination_name}",
-                    research_help,
-                    lambda: update_to_be_researched_status(
-                        destination_name,
-                        to_be_researched=not is_to_be_researched,
-                    ),
-                )
-            with (_ctx(2) or nullcontext()):
-                visited_help = "Visited (click to mark as not visited)" if is_visited else "Mark as visited"
-                _workbook_action(
-                    "Visited" if is_visited else "Not visited",
-                    f"visited_{destination_name}",
-                    visited_help,
-                    lambda: update_visited_status(
-                        destination_name, visited=not is_visited
-                    ),
-                )
-            with (_ctx(3) or nullcontext()):
-                _render_comment_toggle(destination_name, comment_value)
+        with (_ctx(0) or nullcontext()):
+            fav_icon = "❤️" if is_favorite else "🤍"
+            fav_help = "Remove from Favorites" if is_favorite else "Add to Favorites"
+            _workbook_action(
+                fav_icon,
+                f"fav_{destination_name}",
+                fav_help,
+                lambda: update_favorite_status(
+                    destination_name, add=not is_favorite
+                ),
+            )
+        with (_ctx(1) or nullcontext()):
+            research_icon = "❓" if is_to_be_researched else "❔"
+            research_help = "Needs research (click to mark as done)" if is_to_be_researched else "Mark as needs research"
+            _workbook_action(
+                research_icon,
+                f"research_{destination_name}",
+                research_help,
+                lambda: update_to_be_researched_status(
+                    destination_name,
+                    to_be_researched=not is_to_be_researched,
+                ),
+            )
+        with (_ctx(2) or nullcontext()):
+            visited_help = "Visited (click to mark as not visited)" if is_visited else "Mark as visited"
+            _workbook_action(
+                "Visited" if is_visited else "Not visited",
+                f"visited_{destination_name}",
+                visited_help,
+                lambda: update_visited_status(
+                    destination_name, visited=not is_visited
+                ),
+            )
+        with (_ctx(3) or nullcontext()):
+            _render_comment_toggle(destination_name, comment_value)
 
-        with st.container(key=f"dest_header_{destination_name}"):
-            if img_base64:
-                st.markdown(
-                    f"""
+    with st.container(key=f"dest_header_{destination_name}"):
+        if img_base64:
+            st.markdown(
+                f"""
+                <div style="
+                    position: relative;
+                    width: 100%;
+                    height: 220px;
+                    border-radius: 14px;
+                    overflow: hidden;
+                    background-image: url('data:image/jpeg;base64,{img_base64}');
+                    background-size: cover;
+                    background-position: center;
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+                    display: flex;
+                    align-items: flex-end;
+                    padding: 20px;
+                ">
                     <div style="
-                        position: relative;
-                        width: 100%;
-                        height: 220px;
-                        border-radius: 14px;
-                        overflow: hidden;
-                        background-image: url('data:image/jpeg;base64,{img_base64}');
-                        background-size: cover;
-                        background-position: center;
-                        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-                        display: flex;
-                        align-items: flex-end;
-                        padding: 20px;
+                        background: rgba(255, 255, 255, 0.94);
+                        backdrop-filter: blur(8px);
+                        padding: 10px 22px;
+                        border-radius: 10px;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
                     ">
-                        <div style="
-                            background: rgba(255, 255, 255, 0.94);
-                            backdrop-filter: blur(8px);
-                            padding: 10px 22px;
-                            border-radius: 10px;
-                            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-                        ">
-                            <h1 style="
-                                margin: 0;
-                                padding: 0;
-                                font-size: 2.2rem;
-                                font-weight: 800;
-                                color: #111827;
-                                line-height: 1.1;
-                            ">{html.escape(dest_title)}{q_mark}</h1>
-                        </div>
+                        <h1 style="
+                            margin: 0;
+                            padding: 0;
+                            font-size: 2.2rem;
+                            font-weight: 800;
+                            color: #111827;
+                            line-height: 1.1;
+                        ">{html.escape(dest_title)}{q_mark}</h1>
                     </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-                _render_header_buttons()
-            else:
-                st.title(f"{dest_title}{q_mark}")
-                _render_header_buttons(*st.columns([0.55, 0.55, 0.55, 1.4, 4.3]))
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            _render_header_buttons()
+        else:
+            st.title(f"{dest_title}{q_mark}")
+            _render_header_buttons(*st.columns([0.55, 0.55, 0.55, 1.4, 4.3]))
 
     # Styling for the header icon buttons (Favorite Heart, Research Question
     # Mark, Visited Footsteps). Pure CSS targeted via the widget key class
@@ -1000,7 +1015,8 @@ def render_destination(destination_name: str):
         metrics.append(("Recommended Stay", str(stay_raw).strip(), "", "stay"))
     if population_col:
         pop_raw = selected_row.get(population_col)
-        population_millions = float(pop_raw) / 1_000_000 if pd.notna(pop_raw) else None
+        pop_num = filters.coerce_number(pop_raw)
+        population_millions = pop_num / 1_000_000 if pop_num is not None else None
         metrics.append(("Population", population_millions, "M", "population"))
 
     metrics_col = st.columns(6)
@@ -1028,11 +1044,18 @@ def render_destination(destination_name: str):
                         st.rerun()
 
                 if st.session_state.get(edit_state_key):
+                    # Drop any stale widget value first: while the key exists in
+                    # session_state Streamlit ignores `value=`, so a cancelled
+                    # edit used to reappear forever.
+                    st.session_state.pop(input_key, None)
                     current_str = ""
-                    if pd.notna(value) and str(value).strip() != "" and str(value).strip().lower() not in {"nan", "none", "null", "—"}:
-                        try:
-                            current_str = f"{int(float(value))}"
-                        except (ValueError, TypeError):
+                    if not filters.is_blank(value):
+                        prio_number = filters.coerce_number(value)
+                        if prio_number is not None:
+                            current_str = f"{int(prio_number)}"
+                        else:
+                            # e.g. "3 (Medellin seems better)" — keep the text
+                            # visible so nothing is silently overwritten.
                             current_str = str(value).strip()
 
                     new_value_str = st.text_input(
@@ -1044,26 +1067,38 @@ def render_destination(destination_name: str):
                     )
                     prio_error_key = f"prio_write_error_{destination_name}"
 
-                    def _save_prio(raw_value: str) -> None:
+                    def _save_prio(raw_value: str,
+                                     _error_key: str = prio_error_key,
+                                     _edit_key: str = edit_state_key,
+                                     _input_key: str = input_key) -> None:
+                        # The keys are bound as defaults on purpose: this
+                        # closure is defined inside the metrics loop, so relying
+                        # on late binding would be fragile.
                         raw_value = raw_value.strip()
                         if raw_value == "":
                             priority = None
                         else:
-                            try:
-                                priority = int(float(raw_value))
-                            except (ValueError, TypeError):
+                            number = filters.coerce_number(raw_value)
+                            if number is None:
                                 st.error("Please enter 0–10 or leave blank.")
                                 return
+                            priority = int(number)
                             if not 0 <= priority <= 10:
                                 st.error("Enter a number 0–10")
                                 return
                         try:
-                            update_prio_thorsten(destination_name, priority)
+                            wrote = update_prio_thorsten(destination_name, priority)
                         except WorkbookLockedError as exc:
-                            st.session_state[prio_error_key] = str(exc)
+                            st.session_state[_error_key] = str(exc)
                             return
-                        st.session_state.pop(prio_error_key, None)
-                        st.session_state.pop(edit_state_key, None)
+                        if wrote is False:
+                            st.error("Nothing was written: no row or column "
+                                     "matched this destination.")
+                            return
+                        st.session_state.pop(_error_key, None)
+                        st.session_state.pop(_edit_key, None)
+                        st.session_state.pop(_input_key, None)
+                        st.toast("Prio saved", icon="✅")
                         st.rerun()
 
                     btn_c1, btn_c2 = st.columns(2)
@@ -1074,6 +1109,9 @@ def render_destination(destination_name: str):
                         if st.button("Cancel", key=f"cancel_prio_{destination_name}", width="stretch"):
                             st.session_state.pop(prio_error_key, None)
                             st.session_state.pop(edit_state_key, None)
+                            # Drop the input too, otherwise the abandoned text
+                            # stays in session_state and reappears next time.
+                            st.session_state.pop(input_key, None)
                             st.rerun()
                     if st.session_state.get(prio_error_key):
                         st.error(st.session_state[prio_error_key])
@@ -1157,11 +1195,9 @@ def render_destination(destination_name: str):
             st.markdown("**Malaria risk?**<br>—", unsafe_allow_html=True)
     with logistics_col3:
         cost_raw = selected_row.get(cost_col) if cost_col else None
-        if pd.notna(cost_raw):
-            try:
-                cost_display = f"{int(float(cost_raw))} €/day"
-            except (ValueError, TypeError):
-                cost_display = str(cost_raw).strip()
+        cost_number = filters.coerce_number(cost_raw)
+        if cost_number is not None:
+            cost_display = f"{int(cost_number)} €/day"
         else:
             cost_display = "—"
         st.markdown(f"**Avg. Cost/Day**<br>{cost_display}", unsafe_allow_html=True)
@@ -1559,8 +1595,30 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
     typical_vals = [selected_row.get(f"{m} AQI (Typical)") for m in months]
     ground_typical_vals = [selected_row.get(f"{m} AQI (Ground Typical)") for m in months]
 
+    # Climate columns are NOT pre-parsed by data_utils (only cost/flight/
+    # safety/population are), so every value is coerced here. A hand-typed
+    # "22 °C" or "n/a" used to raise ValueError/TypeError and blank the whole
+    # destination page.
+    def _to_num(c_val):
+        return filters.coerce_number(c_val)
+
+    def _to_unit(c_val):
+        number = filters.coerce_number(c_val)
+        return None if number is None else round(number, 1)
+
+    highs = [_to_unit(v) for v in highs_c]
+    lows = [_to_unit(v) for v in lows_c]
+    rainy_days = [_to_num(v) for v in rainy_days]
+    rain_mm = [_to_num(v) for v in rain_mm]
+    aqi_vals = [_to_num(v) for v in aqi_vals]
+    ground_aqi_vals = [_to_num(v) for v in ground_aqi_vals]
+    typical_vals = [_to_num(v) for v in typical_vals]
+    ground_typical_vals = [_to_num(v) for v in ground_typical_vals]
+
     # Check if this destination has monthly climate data populated
-    has_data = any(pd.notna(v) for v in highs_c + rain_mm + aqi_vals)
+    has_data = any(v is not None for v in (highs + lows + rain_mm + aqi_vals
+                                            + ground_aqi_vals + typical_vals
+                                            + ground_typical_vals))
 
     st.divider()
     st.subheader("🌍 Destination climate dashboard ☁️")
@@ -1570,14 +1628,6 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
         return
 
     temp_suffix = "°C"
-
-    def _to_unit(c_val):
-        if pd.isna(c_val):
-            return None
-        return round(float(c_val), 1)
-
-    highs = [_to_unit(v) for v in highs_c]
-    lows = [_to_unit(v) for v in lows_c]
 
     # Calculate KPI summary metrics
     # 1. Peak High
@@ -1589,7 +1639,7 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
         peak_high_str = "—"
 
     # 2. Wettest Month
-    valid_rain = [(r, m) for r, m in zip(rain_mm, months) if pd.notna(r)]
+    valid_rain = [(r, m) for r, m in zip(rain_mm, months) if r is not None]
     if valid_rain:
         max_r, max_r_m = max(valid_rain, key=lambda x: x[0])
         wettest_str = f"{max_r:.0f}mm ({max_r_m})"
@@ -1597,7 +1647,7 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
         wettest_str = "—"
 
     # 3. Average AQI
-    valid_aqi = [float(a) for a in aqi_vals if pd.notna(a)]
+    valid_aqi = [a for a in aqi_vals if a is not None]
     if valid_aqi:
         avg_aqi = sum(valid_aqi) / len(valid_aqi)
         if avg_aqi <= 50:
@@ -1639,13 +1689,19 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
     # Check spreadsheet rating columns first
     for full_m, short_m in zip(full_months, months):
         val = selected_row.get(full_m)
-        if pd.notna(val) and str(val).strip().lower() in {"ideal", "good", "great", "best", "green"}:
+        if not filters.is_blank(val) and str(val).strip().lower() in filters.WEATHER_GOOD_ONLY:
             ideal_candidates.append(short_m)
 
     if not ideal_candidates and valid_rain:
-        # Fallback algorithm: lowest rainfall months with moderate AQI
-        sorted_by_rain = sorted(zip(months, rain_mm, aqi_vals), key=lambda x: (x[1] if pd.notna(x[1]) else 9999))
-        ideal_candidates = [m for m, r, a in sorted_by_rain[:3] if pd.notna(r)]
+        # Fallback: the driest months, preferring ones with acceptable air
+        # quality. (The old code unpacked the AQI and ignored it, so a
+        # high-AQI dry month was presented as an ideal travel month.)
+        ranked = sorted(
+            (item for item in zip(months, rain_mm, aqi_vals) if item[1] is not None),
+            key=lambda x: (x[1], 9999 if x[2] is None else max(x[2], 0)),
+        )
+        ideal_candidates = [m for m, _r, a in ranked[:3]
+                            if a is None or a <= 100]
 
     best_months_str = ", ".join(ideal_candidates[:4]) if ideal_candidates else "Varies"
 
@@ -1708,7 +1764,7 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
     fig_temp_rain = make_subplots(specs=[[{"secondary_y": True}]])
 
     # 1. Rainfall Bars on Secondary Axis
-    rain_labels = [f"{int(d)}d" if (pd.notna(d) and d > 0) else "" for d in rainy_days]
+    rain_labels = [f"{int(d)}d" if (d is not None and d > 0) else "" for d in rainy_days]
     fig_temp_rain.add_trace(
         go.Bar(
             x=months,
@@ -1762,7 +1818,7 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
     max_temp = max(all_temps) if all_temps else 35
     temp_padding = max(4, (max_temp - min_temp) * 0.18)
 
-    max_rain = max([r for r in rain_mm if pd.notna(r)] or [100])
+    max_rain = max([r for r in rain_mm if r is not None] or [100]) or 1
     rain_limit = max_rain * 1.28
 
     fig_temp_rain.update_layout(
@@ -1815,9 +1871,9 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
     # slot is exactly one unit wide — the edge months do not look stretched.
     # Without the wrap, a month whose neighbours are empty (e.g. a lone
     # December dot between two missing months) floats unconnected.
-    has_ground = any(pd.notna(v) for v in ground_aqi_vals)
-    has_typ = any(pd.notna(v) for v in typical_vals)
-    has_ground_typ = any(pd.notna(v) for v in ground_typical_vals)
+    has_ground = any(v is not None for v in ground_aqi_vals)
+    has_typ = any(v is not None for v in typical_vals)
+    has_ground_typ = any(v is not None for v in ground_typical_vals)
 
     x_main = list(range(12))
 
@@ -1884,9 +1940,10 @@ def render_climate_dashboard(destination_name: str, selected_row: pd.Series, df:
                            "Open-Meteo (multi-year average)")
 
     # Calculate AQI Y-axis bounds across all series
-    valid_aqi_nums = [float(v) for v in aqi_vals if pd.notna(v)]
+    valid_aqi_nums = [v for v in aqi_vals if v is not None]
     for series in (ground_aqi_vals, typical_vals, ground_typical_vals):
-        valid_aqi_nums += [float(v) for v in series if pd.notna(v)]
+        valid_aqi_nums += [n for n in (filters.coerce_number(v) for v in series)
+                          if n is not None]
     top_aqi = max(valid_aqi_nums) if valid_aqi_nums else 100
     aqi_y_max = max(130, int(top_aqi * 1.25))
 

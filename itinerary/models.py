@@ -126,7 +126,7 @@ def normalize_leg(leg: dict | None) -> dict:
 def normalize_variant(variant: dict | None) -> dict:
     variant = variant if isinstance(variant, dict) else {}
     stops = [normalize_stop(s) for s in (variant.get("stops") or [])]
-    legs = [normalize_leg(l) for l in (variant.get("legs") or [])]
+    legs = [normalize_leg(leg) for leg in (variant.get("legs") or [])]
     # enforce the positional-legs invariant
     want = max(0, len(stops) - 1)
     if len(legs) > want:

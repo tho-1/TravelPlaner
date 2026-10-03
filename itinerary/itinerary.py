@@ -14,7 +14,7 @@ from __future__ import annotations
 import copy
 import re
 import unicodedata
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from . import models
 
@@ -278,17 +278,18 @@ def _norm_dest_key(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", s.casefold())
 
 
-def suggested_months(variant: dict, df) -> dict[str, list[str]]:
+def suggested_months(variant: dict, df, dest_col: str | None = None) -> dict[str, list[str]]:
     """For each 'destination'-kind stop: months where the workbook says the
     destination's climate is good. ``df`` is the destinations DataFrame with
-    'Destination' + month-name columns. Workbook rows often carry province
+    the destination column plus month-name columns. ``dest_col`` overrides the
+    (case-insensitive) 'Destination' lookup. Workbook rows often carry province
     suffixes ("Xi'an (Shaanxi)"), so an exact match is tried first, then a
     normalised one. Core stays Streamlit-free."""
     out: dict[str, list[str]] = {}
     if df is None:
         return out
-    dest_col = next((c for c in df.columns if c.casefold() == "destination"),
-                    None)
+    dest_col = dest_col or next((c for c in df.columns if c.casefold() == "destination"),
+                                None)
     if dest_col is None:
         return out
     month_cols = [c for c in df.columns if str(c).strip() in MONTHS]

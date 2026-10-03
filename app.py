@@ -37,7 +37,9 @@ all_destinations = [str(v) for v in df[destination_col].dropna().astype(str).uni
 favorite_destinations = set()
 if nearer_col and nearer_col in df.columns:
     nearer_series = df[nearer_col]
-    is_fav = (nearer_series == True) | nearer_series.astype(str).str.lower().str.contains("x", na=False)
+    # .eq(True) rather than `== True`: the column is object dtype (True/"x"),
+    # and a bare truthiness test on a Series raises.
+    is_fav = nearer_series.eq(True).fillna(False) | nearer_series.astype(str).str.lower().str.contains("x", na=False)
     favorite_destinations = set(df.loc[is_fav, destination_col].dropna().astype(str).unique())
 
 if "open_destinations" not in st.session_state:

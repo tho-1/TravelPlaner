@@ -1,18 +1,17 @@
 import html
 
-import streamlit as st
 import pandas as pd
+import streamlit as st
 
+import filters
 from data_utils import (
     DATA_PATH,
     WorkbookLockedError,
     add_new_destination,
     load_destinations,
     save_open_destinations,
-    to_be_researched_mask,
 )
 from deepseek_populator import add_destination_with_deepseek
-from pages.world_map import COUNTRY_ISO3_MAP
 
 
 @st.dialog("➕ Add New Destination")
@@ -72,13 +71,18 @@ def _show_add_destination_dialog():
 
         st.session_state.pop(retry_key, None)
         if success:
-            st.success(msg)
-            # Add to open destinations so user can view it immediately
-            open_destinations = st.session_state.get("open_destinations", [])
-            if new_dest.strip() not in open_destinations:
-                open_destinations.append(new_dest.strip())
+            new_name = new_dest.strip()
+            # Open the destination that was just created — previously the
+            # dialog simply closed and the user was left where they were.
+            open_destinations = list(st.session_state.get("open_destinations", []))
+            if new_name not in open_destinations:
+                open_destinations.append(new_name)
                 st.session_state["open_destinations"] = open_destinations
                 save_open_destinations(open_destinations)
+            st.toast(msg, icon="✅")
+            target = st.session_state.get("_detail_pages", {}).get(new_name)
+            if target is not None:
+                st.switch_page(target)
             st.rerun()
         else:
             st.error(msg)
@@ -107,7 +111,6 @@ def render_overview():
     visited_col = metadata.get("visited_col")
     to_be_researched_col = metadata.get("to_be_researched_col")
     safety_col = metadata["safety_col"]
-    cost_col = metadata["cost_col"]
     reviews_col = metadata.get("reviews_col")
     month_columns = metadata.get("month_columns", [])
 
@@ -120,7 +123,7 @@ def render_overview():
         if st.button("⭐ Show favorites", help="Opens a detail tab for every destination marked with an 'x' in 'In näherer Auswahl 2025?'.", width="stretch"):
             if nearer_col:
                 nearer_series = df[nearer_col]
-                is_fav = (nearer_series == True) | nearer_series.astype(str).str.lower().str.contains("x", na=False)
+                is_fav = nearer_series.eq(True).fillna(False) | nearer_series.astype(str).str.lower().str.contains("x", na=False)
                 favorites = df.loc[is_fav, destination_col].astype(str).tolist()
             else:
                 favorites = []
@@ -190,20 +193,18 @@ def render_overview():
             selected_weather_month = st.selectbox("Weather at least ok in", month_options)
 
         with f_col5:
-            safety_min = 0.0
-            safety_max = 5.0
-            if safety_col and pd.notna(df[safety_col]).any():
-                safety_min = float(df[safety_col].dropna().min())
-                safety_max = float(df[safety_col].dropna().max())
-            min_safety = st.slider("Minimum safety rating", min_value=float(safety_min), max_value=float(safety_max), value=float(safety_min))
+            safety_min, safety_max = filters.numeric_bounds(
+                df[safety_col] if safety_col in df.columns else [],
+                default=(0.0, 5.0), top=10.0)
+            min_safety = st.slider("Minimum safety rating", min_value=safety_min,
+                                  max_value=safety_max, value=safety_min)
 
         with f_col6:
-            review_min = 0.0
-            review_max = 10.0
-            if reviews_col and reviews_col in df.columns and pd.notna(df[reviews_col]).any():
-                review_min = float(df[reviews_col].dropna().min())
-                review_max = float(df[reviews_col].dropna().max())
-            min_review = st.slider("Minimum review score", min_value=float(review_min), max_value=float(review_max), value=float(review_min))
+            review_min, review_max = filters.numeric_bounds(
+                df[reviews_col] if reviews_col in df.columns else [],
+                default=(0.0, 10.0), top=10.0)
+            min_review = st.slider("Minimum review score", min_value=review_min,
+                                   max_value=review_max, value=review_min)
 
         f_col7, f_col8 = st.columns(2)
         with f_col7:
@@ -215,39 +216,33 @@ def render_overview():
                 only_unvisited = False
 
     filtered = df.copy()
-    if selected_continent != "All":
-        filtered = filtered[filtered[continent_col].astype(str).str.lower() == selected_continent.lower()]
-    if country_col and country_col in df.columns and selected_country != "All":
-        filtered = filtered[filtered[country_col].astype(str).str.lower() == selected_country.lower()]
-    if eu_col:
-        eu_values = filtered[eu_col].astype(str).str.strip().str.lower()
-        is_eu = eu_values.isin(["true", "yes", "ja", "y", "1", "eu", "european union"])
-        if eu_filter == "Yes":
-            filtered = filtered[is_eu]
-        elif eu_filter == "No":
-            filtered = filtered[~is_eu]
-
+    filtered = filters.apply_text_equals(filtered, continent_col, selected_continent)
+    filtered = filters.apply_text_equals(filtered, country_col, selected_country)
+    filtered = filters.apply_eu(filtered, eu_col, eu_filter)
     if selected_weather_month and selected_weather_month != "None":
-        weather_values = filtered[selected_weather_month].astype(str).str.strip().str.lower()
-        keep = weather_values.isin(["ok", "okay", "good", "great", "ideal", "best", "green"])
-        filtered = filtered[keep]
+        filtered = filters.apply_month_quality(filtered, selected_weather_month)
+    filtered = filters.apply_numeric_minimum(filtered, safety_col, min_safety)
+    filtered = filters.apply_numeric_minimum(filtered, reviews_col, min_review)
+    filtered = filters.apply_unvisited(filtered, visited_col, only_unvisited)
+    filtered = filters.apply_category(
+        filtered, to_be_researched_col, research_filter,
+        positives=frozenset({"true", "yes", "ja", "j", "y", "x", "1", "1.0"}),
+        negatives=frozenset({"false", "no", "nein", "n", "0", "0.0"}),
+    )
 
+    # Filters only ever remove rows whose field is actually populated, so tell
+    # the user how many rows are shown *despite* having no value — otherwise
+    # "why is Mumbai not here?" is unanswerable.
+    gaps = []
     if safety_col:
-        filtered = filtered[filtered[safety_col] >= min_safety]
-
-    if reviews_col and reviews_col in filtered.columns:
-        filtered = filtered[filtered[reviews_col] >= min_review]
-
-    if only_unvisited and visited_col and visited_col in filtered.columns:
-        is_visited = filtered[visited_col].eq(True).fillna(False)
-        filtered = filtered[~is_visited]
-
-    if to_be_researched_col and to_be_researched_col in filtered.columns and research_filter != "All":
-        research_mask = to_be_researched_mask(filtered, to_be_researched_col)
-        if research_filter == "Yes":
-            filtered = filtered[research_mask]
-        else:
-            filtered = filtered[~research_mask]
+        gaps.append(f"safety ({filters.missing_value_count(df, safety_col)})")
+    if reviews_col:
+        gaps.append(f"reviews ({filters.missing_value_count(df, reviews_col)})")
+    if gaps:
+        st.caption(
+            "Rows without a value are never hidden by a filter — currently "
+            "missing: " + ", ".join(gaps) + "."
+        )
 
     if filtered.empty:
         st.info("No destinations match the current filters.")
