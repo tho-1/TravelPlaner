@@ -7,8 +7,8 @@ Each entry has:
 - 12 Rain (mm)
 - 12 AQI (US AQI benchmark)
 """
-import openpyxl
 from pathlib import Path
+
 from data_utils import load_workbook_for_update, save_workbook_atomic
 
 WORKBOOK = Path(__file__).resolve().parent / "Destinations-local.xlsx"

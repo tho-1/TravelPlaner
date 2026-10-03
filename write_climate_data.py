@@ -19,8 +19,9 @@ Usage:
         "Jan AQI": 55, ...
     })
 """
+
 import openpyxl
-from pathlib import Path
+
 from data_utils import DATA_PATH, load_workbook_for_update, save_workbook_atomic
 
 WORKBOOK = DATA_PATH

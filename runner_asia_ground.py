@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
-import sys
 import time
-from pathlib import Path
 
 from aqi_api import (
-    load_coordinates,
-    load_cached,
-    _slugify,
-    refresh_ground_full,
-    update_destination_climate,
-    print_report,
-    MONTHS_SHORT,
     DIVERGENCE_ABS,
     DIVERGENCE_REL,
+    MONTHS_SHORT,
+    _slugify,
+    load_cached,
+    load_coordinates,
+    refresh_ground_full,
+    update_destination_climate,
 )
 
 # List of Asian destinations with ground stations

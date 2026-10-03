@@ -2,22 +2,21 @@
 
 from __future__ import annotations
 
-import sys
 import time
-from pathlib import Path
+
 import openpyxl
 
 from aqi_api import (
-    load_coordinates,
-    load_cached,
-    save_cached,
-    _slugify,
-    fetch_openmeteo_aqi,
-    fetch_openaq_ground,
-    update_destination_climate,
-    MONTHS_SHORT,
     DIVERGENCE_ABS,
     DIVERGENCE_REL,
+    MONTHS_SHORT,
+    _slugify,
+    fetch_openaq_ground,
+    fetch_openmeteo_aqi,
+    load_cached,
+    load_coordinates,
+    save_cached,
+    update_destination_climate,
 )
 from data_utils import DATA_PATH, _find_destination_sheet
 
@@ -154,7 +153,7 @@ def main():
                 print(md_table, flush=True)
                 completed_ground.append(name)
             else:
-                print(f"  (No PM2.5 ground sensors within 10 km; model multi-year typical written)", flush=True)
+                print("  (No PM2.5 ground sensors within 10 km; model multi-year typical written)", flush=True)
                 completed_model_only.append(name)
             print("\n" + "=" * 60 + "\n", flush=True)
         except Exception as exc:

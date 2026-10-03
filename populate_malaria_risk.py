@@ -27,13 +27,10 @@ import unicodedata
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-import openpyxl
-
 from data_utils import (
     DATA_PATH,
     WorkbookLockedError,
     _find_destination_sheet,
-    load_destinations,
     load_workbook_for_update,
     save_workbook_atomic,
 )

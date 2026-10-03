@@ -12,14 +12,11 @@ from __future__ import annotations
 
 from typing import Tuple
 
-import openpyxl
-
 from data_utils import (
     DATA_PATH,
     WorkbookLockedError,
     _find_destination_sheet,
     load_workbook_for_update,
-    load_destinations,
     save_workbook_atomic,
     update_reviews,
 )

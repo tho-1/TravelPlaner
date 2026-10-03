@@ -7,11 +7,15 @@ in Destinations.xlsx, destination_review_analysis.csv, and ratings.csv.
 
 from __future__ import annotations
 
-import openpyxl
 import pandas as pd
-from review_analyzer import AspectSentiment, DestinationReviewData, PlatformRating, compute_destination_ratings
-from data_utils import DATA_PATH, load_workbook_for_update, save_workbook_atomic
 
+from data_utils import DATA_PATH, load_workbook_for_update, save_workbook_atomic
+from review_analyzer import (
+    AspectSentiment,
+    DestinationReviewData,
+    PlatformRating,
+    compute_destination_ratings,
+)
 
 NEW_DESTINATIONS_DATA = [
     # 1. Chennai

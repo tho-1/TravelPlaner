@@ -637,11 +637,12 @@ def fetch_openaq_ground(lat: float, lon: float,
                     chain.append(sensor_id)
                     break
 
-        def _bucket_for_month(yy: int, mm: int) -> dict[datetime, list[float]]:
+        def _bucket_for_month(yy: int, mm: int,
+                             _chain: list = chain) -> dict[datetime, list[float]]:
             """First chain id with a real month of data; else the fullest
             partial bucket (the coverage gate decides its fate later)."""
             best: dict[datetime, list[float]] | None = None
-            for sid in chain:
+            for sid in _chain:
                 b = _get_month_bucket(sid, yy, mm)
                 if len(b) >= 24:
                     return b

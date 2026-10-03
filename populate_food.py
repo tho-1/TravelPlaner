@@ -12,7 +12,12 @@ from typing import Optional
 
 import openpyxl
 
-from data_utils import DATA_PATH, WorkbookLockedError, _find_destination_sheet, load_destinations, update_food
+from data_utils import (
+    DATA_PATH,
+    WorkbookLockedError,
+    _find_destination_sheet,
+    update_food,
+)
 from deepseek_client import generate_food_profile
 
 

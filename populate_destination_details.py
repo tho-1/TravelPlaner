@@ -2,7 +2,6 @@ from pathlib import Path
 
 import openpyxl
 
-
 WORKBOOK = Path(__file__).resolve().parent / "Destinations-local.xlsx"
 
 DESTINATION_DETAILS = {
@@ -196,11 +195,6 @@ def populate_details() -> None:
         "rainy_days": "Avg Rainy Days/Month",
         "rain": "Avg Rain (mm/Month)",
         "aqi": "Avg AQI",
-    }
-    profile_fields = {
-        "Why to Go There", "What to Expect", "Recommended Stay",
-        "Avg. Cost/Day (3* Hotel & Food)", "Rent a Car?", "Highlights",
-        "Introduction Sentence",
     }
     month_names = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
     month_ratings = {

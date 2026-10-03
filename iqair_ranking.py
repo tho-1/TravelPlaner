@@ -49,7 +49,6 @@ from datetime import datetime, timezone
 from html import unescape as _unescape
 from pathlib import Path
 
-import openpyxl
 import requests
 
 from data_utils import (
