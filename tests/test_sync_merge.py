@@ -125,13 +125,16 @@ def test_offline_accumulation_queues_all_keys():
 def test_trips_delete_applies():
     with tempfile.TemporaryDirectory() as td:
         trips = Path(td) / "trips.json"
-        data = _make_trips(trips)
+        wb = Path(td) / "wb.xlsx"
+        _make_workbook(wb)                 # never touch the live workbook
+        _make_trips(trips)
+        data = storage.load_from(trips)
         assert len(data["trips"][0]["variants"]) == 1
         delete = _entry(
             "trips", ["trip-1", "variant-1"], None,
             "2026-09-27T12:00:00+00:00", "cloud", op="delete",
         )
-        summary = merge.apply_entries([delete], trips_path=trips)
+        summary = merge.apply_entries([delete], workbook_path=wb, trips_path=trips)
         assert summary["applied"] == 1
         assert storage.load_from(trips)["trips"] == []
 

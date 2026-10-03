@@ -15,8 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from itinerary import geo, itinerary as itin, map as itmap, models, sample, storage  # noqa: E402
-
+from itinerary import geo, models, sample, storage  # noqa: E402
+from itinerary import itinerary as itin
+from itinerary import map as itmap
 
 # ── models ───────────────────────────────────────────────────────────────────
 
@@ -90,11 +91,11 @@ def test_remove_stop_middle_deletes_incoming_leg():
 
 def test_move_stop_swap_keeps_gap_transport():
     v = _variant_3_stops()
-    modes_before = [l["mode"] for l in v["legs"]]  # flight, train
+    modes_before = [leg["mode"] for leg in v["legs"]]  # flight, train
     new_idx = itin.move_stop(v, 1, +1)  # A <-> B
     assert new_idx == 2
     assert [s["ref"]["name"] for s in v["stops"]] == ["FRA", "B", "A"]
-    assert [l["mode"] for l in v["legs"]] == modes_before
+    assert [leg["mode"] for leg in v["legs"]] == modes_before
     assert len(v["legs"]) == len(v["stops"]) - 1
 
 
@@ -183,8 +184,8 @@ def test_warnings_cover_common_problems():
 
 def test_route_summary_smoke():
     v = sample.make_sample_trip()["variants"][0]
-    s = itin.route_summary(v)
-    assert "5 stops" in s and "3 flights" in s and "1 trains" in s
+    summary = itin.route_summary(v)
+    assert "5 stops" in summary and "3 flights" in summary and "1 trains" in summary
 
 
 # ── geo ──────────────────────────────────────────────────────────────────────
@@ -469,7 +470,7 @@ def test_set_leg_mode_invalid_becomes_other():
 def test_add_stop_into_empty_and_remove_to_zero():
     v = models.make_variant("V")
     assert v["stops"] == [] and v["legs"] == []
-    s = itin.add_stop(v, models.make_ref("custom", "A"), at=0)
+    itin.add_stop(v, models.make_ref("custom", "A"), at=0)
     assert len(v["stops"]) == 1 and len(v["legs"]) == 0
     itin.add_stop(v, models.make_ref("custom", "B"))
     assert len(v["stops"]) == 2 and len(v["legs"]) == 1

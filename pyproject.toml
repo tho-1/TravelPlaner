@@ -1,0 +1,67 @@
+[project]
+name = "travel-planner"
+version = "1.0.0"
+description = "Streamlit travel planner: destinations catalogue + itinerary planner + local/cloud sync"
+requires-python = ">=3.11"
+
+# Runtime floors that actually match the code. The previous requirements.txt
+# allowed streamlit 1.37, but the app uses st.button(width=...),
+# st.container(key=...), type="tertiary" and vertical_alignment, which need
+# >=1.45 — installing the declared minimum crashed every page with
+# "TypeError: button() got an unexpected keyword argument 'width'".
+dependencies = [
+    "streamlit>=1.62,<2",
+    "pandas>=2.2",
+    "openpyxl>=3.1",
+    "plotly>=5.20",
+    "requests>=2.31",
+    "Pillow>=10.0",
+    "ddgs>=9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-timeout>=2.3",
+    "ruff>=0.6",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+# Kept free of plugin-only flags so the suite also runs on a bare pytest
+# install: `python -m pytest` works without pytest-timeout/ruff installed.
+addopts = "-q --strict-markers"
+filterwarnings = [
+    # Streamlit's cache manager complains when there is no running script; that
+    # is expected in unit tests and says nothing about the code.
+    "ignore:No runtime found:UserWarning",
+    "ignore::DeprecationWarning",
+]
+markers = [
+    "slow: tests that hit the network or the real workbook",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+exclude = [".venv", "archive", "Pictures", "itinerary_cache", "sync_journals"]
+
+[tool.ruff.lint]
+# F: pyflakes (unused imports/vars, undefined names) — catches real dead code.
+# B023: closures over loop variables — a real bug class.
+# I: import order. E4/E7/E9: the pycodestyle errors that matter.
+# Deliberately *not* selected: B905 (zip strict=), B007, E741, E501 — these
+# fire on correct, intentional code throughout this codebase.
+select = ["E4", "E7", "E9", "F", "B023", "I"]
+ignore = [
+    "E501",   # long lines: the UI code has long HTML/CSS strings
+    "B008",   # function call in default argument (st.* idiom)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests may import without ordering, and the __main__ runner is intentional.
+"tests/*" = ["E402", "F401"]
+"check_rows.py" = ["F401", "F841"]
+"inspect_workbook.py" = ["F401", "F841"]

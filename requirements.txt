@@ -1,7 +1,14 @@
-streamlit>=1.37.0
-pandas>=2.2.0
-openpyxl>=3.1.0
-plotly>=5.20.0
-requests>=2.31.0
-Pillow>=10.0.0
-ddgs>=9.0.0
+# Runtime dependencies — Streamlit Cloud reads this file on deploy.
+# Floors must match the APIs the code actually uses:
+#   * st.button/st.image/st.plotly_chart width=..., st.container(key=...),
+#     type="tertiary" and vertical_alignment all need Streamlit >= 1.45;
+#     the app is developed and tested against 1.62.
+#   * pandas 3.x is installed locally; the floor stays at 2.2 because the code
+#     only relies on APIs stable across both.
+streamlit>=1.62,<2
+pandas>=2.2
+openpyxl>=3.1
+plotly>=5.20
+requests>=2.31
+Pillow>=10.0
+ddgs>=9.0

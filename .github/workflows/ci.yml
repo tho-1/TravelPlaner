@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Byte-compile every module (the project's "build")
+        run: python -m compileall -q . -x '(^|/)(\.venv|archive|Pictures|__pycache__)(/|$)'
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Test suite
+        # The suite never touches the live workbook/trips.json: tests/conftest.py
+        # redirects all runtime state into a temporary directory.
+        run: python -m pytest -p no:cacheprovider --timeout=600
+
+      - name: Tests also run without pytest (dependency-free path)
+        run: python tests/run_all.py --no-pytest
+
+  # A Windows job because the app is used on Windows and two of the fixed bugs
+  # (atomic replace, file locking) are platform specific.
+  windows-checks:
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Test suite (Windows file locking / atomic replace)
+        run: python -m pytest -p no:cacheprovider --timeout=600
