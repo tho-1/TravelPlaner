@@ -37,6 +37,32 @@ def workbook_source() -> Path | None:
     return _source_workbook()
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _redirect_default_workbook(tmp_path_factory, workbook_source):
+    """Point every *default* workbook argument at a disposable copy.
+
+    ``data_utils.DATA_PATH`` is the default of most writers, and ``app.py``
+    imports it by value, so a test that renders or edits through the default
+    would otherwise touch the real file. This also makes the suite work in CI,
+    where ``Destinations-local.xlsx`` is absent (it is git-ignored) and
+    ``workbook_source`` falls back to the committed cloud seed.
+    """
+    import data_utils
+    import environment
+
+    target = tmp_path_factory.mktemp("workbook") / "Destinations.xlsx"
+    shutil.copy2(workbook_source, target)
+    original_data_path = data_utils.DATA_PATH
+    original_workbook_path = environment.WORKBOOK_PATH
+    data_utils.DATA_PATH = target
+    environment.WORKBOOK_PATH = target
+    try:
+        yield target
+    finally:
+        data_utils.DATA_PATH = original_data_path
+        environment.WORKBOOK_PATH = original_workbook_path
+
+
 @pytest.fixture()
 def sandbox(tmp_path, monkeypatch, workbook_source):
     """Isolated runtime state: trips, journals, backups, tabs, caches.

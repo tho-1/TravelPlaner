@@ -48,7 +48,12 @@ def get_workbook_path() -> Path:
     Get the appropriate workbook path based on the current environment.
 
     Returns:
-        Local development: ``<repo>/Destinations-local.xlsx`` (unchanged).
+        Local development: ``<repo>/Destinations-local.xlsx``. If that file does
+        not exist — a fresh clone, or a machine where only the committed seed was
+        fetched — the committed ``Destinations-cloud.xlsx`` is used instead of
+        crashing later with ``FileNotFoundError`` at import time. The local file
+        is git-ignored (it holds machine-local edits), so this is the normal
+        state on a new checkout.
         Streamlit Cloud: an editable copy in the writable runtime data
         directory, seeded once from the committed
         ``<repo>/Destinations-cloud.xlsx``. Cloud mounts the repository
@@ -59,7 +64,11 @@ def get_workbook_path() -> Path:
     environment = detect_environment()
 
     if environment != "cloud":
-        return repo_root / "Destinations-local.xlsx"
+        local_workbook = repo_root / "Destinations-local.xlsx"
+        if local_workbook.exists():
+            return local_workbook
+        committed = repo_root / "Destinations-cloud.xlsx"
+        return committed if committed.exists() else local_workbook
 
     repo_file = repo_root / "Destinations-cloud.xlsx"
     try:
