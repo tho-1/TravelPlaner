@@ -72,7 +72,7 @@ def sync_now(
                 pass
         _merge.save_last_applied(applied_entries, jdir)
     else:
-        summary = {"applied": 0, "snapshots": []}
+        summary = {"applied": 0, "snapshots": [], "skipped": []}
         if not plan["conflicts"]:
             _merge.save_last_applied([], jdir)
     try:
@@ -81,6 +81,7 @@ def sync_now(
         return {
             "ok": True,
             "applied": summary.get("applied", 0),
+            "skipped": summary.get("skipped", []),
             "conflicts": len(plan["conflicts"]),
             "snapshots": summary.get("snapshots", []),
             "push_error": str(exc)[:200],
@@ -88,6 +89,7 @@ def sync_now(
     return {
         "ok": True,
         "applied": summary.get("applied", 0),
+        "skipped": summary.get("skipped", []),
         "conflicts": len(plan["conflicts"]),
         "snapshots": summary.get("snapshots", []),
         "uploaded": len(uploaded),

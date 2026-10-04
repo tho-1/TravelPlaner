@@ -45,6 +45,16 @@ def _geo_theme() -> dict:
     )
 
 
+def _align_lon(lon: float, center_lon: float) -> float:
+    """Shift ``lon`` by whole turns so it sits closest to the view centre.
+
+    The view frame may be unwrapped (e.g. 140..242° for a Tokyo -> Los Angeles
+    route); markers must be shifted into that same frame or they end up a full
+    turn away from the line they belong to.
+    """
+    return lon + 360.0 * round((center_lon - lon) / 360.0)
+
+
 def build_figure(variant: dict, selected_stop_id: str | None = None,
                  visible_modes: set[str] | None = None,
                  show_gateways: bool = True,
@@ -65,6 +75,24 @@ def build_figure(variant: dict, selected_stop_id: str | None = None,
     stops = variant.get("stops", [])
     legs = variant.get("legs", [])
 
+    # ── view first: everything is drawn in this (possibly unwrapped) frame ──
+    if fit_points is None:
+        framed = ([s for s in stops
+                   if s["ref"].get("kind") != "gateway"] or stops)
+        pts = []
+        for stop in framed:
+            ref = stop["ref"]
+            if None not in (ref.get("lat"), ref.get("lon")):
+                pts.append((ref["lat"], ref["lon"]))
+    else:
+        pts = fit_points
+    view = geo.fit_view(pts)
+    center_lon = view["center"]["lon"]
+
+    def _in_frame(lon: float) -> float:
+        """Shift one longitude into the view frame (constant per point)."""
+        return _align_lon(lon, center_lon)
+
     # ── group legs by mode so each mode becomes one legend entry ────────────
     by_mode: dict[str, list] = {}
     mode_leg_count: dict[str, int] = {}
@@ -73,16 +101,26 @@ def build_figure(variant: dict, selected_stop_id: str | None = None,
             break
         a = stops[i]["ref"]
         b = stops[i + 1]["ref"]
-        if None in (a.get("lat"), a.get("lon"), b.get("lat"), b.get("lon")):
+        if None in (a.get("lat"), a.get("lon"), b.get("lon"), b.get("lon")):
             continue
         mode = leg.get("mode", "other")
         mode_leg_count[mode] = mode_leg_count.get(mode, 0) + 1
         segs = by_mode.setdefault(mode, [])
+        # One constant shift per leg keeps the polyline continuous: a
+        # transpacific hop keeps running past 180° instead of snapping back to
+        # -180° and drawing a line across the whole map.
+        shift = _in_frame(a["lon"]) - a["lon"]
         pts = geo.great_circle_points(a["lat"], a["lon"], b["lat"], b["lon"])
+        pts = geo.unwrap_longitudes([(lat, lon + shift) for lat, lon in pts])
         segs.append(pts)
         wings = geo.arrow_wings(pts)
         if wings:
-            segs.extend([wings[:3], None, [wings[2], wings[3]]])
+            # arrow_wings() returns normalised longitudes; re-anchor them to
+            # the (possibly unwrapped) tip so the head does not jump a turn.
+            wings = geo.unwrap_longitudes(wings)
+            # A gap before the head as well: the tip sits mid-path, so without
+            # it Plotly draws a stray line from the leg's end back to the tip.
+            segs.extend([None, wings[:3], None, [wings[2], wings[3]]])
         segs.append(None)
 
     for mode, segs in by_mode.items():
@@ -115,7 +153,7 @@ def build_figure(variant: dict, selected_stop_id: str | None = None,
         ref = stop["ref"]
         if ref.get("kind") == "gateway" and None not in (ref.get("lat"),
                                                          ref.get("lon")):
-            gx.append(ref["lon"])
+            gx.append(_in_frame(ref["lon"]))
             gy.append(ref["lat"])
             gtext.append(ref["name"])
     if gx and show_gateways:
@@ -128,11 +166,13 @@ def build_figure(variant: dict, selected_stop_id: str | None = None,
             name="Gateway", hoverinfo="text", meta=["gateway"],
         ))
 
-    # ── stops (visible ones: kind != gateway) ───────────────────────────────
-    visible = [s for s in stops if s["ref"].get("kind") != "gateway"]
+    # ── stops (only those with coordinates, kind != gateway) ─────────────────
+    visible = [s for s in stops
+               if s["ref"].get("kind") != "gateway"
+               and None not in (s["ref"].get("lat"), s["ref"].get("lon"))]
     if visible:
         lats = [s["ref"]["lat"] for s in visible]
-        lons = [s["ref"]["lon"] for s in visible]
+        lons = [_in_frame(s["ref"]["lon"]) for s in visible]
         nums = [str(i + 1) for i in range(len(visible))]
         names = [s["ref"].get("name", "?") for s in visible]
         outline_colors = [STOP_FINAL_OUTLINE if s is visible[-1] else "#ffffff"
@@ -157,19 +197,6 @@ def build_figure(variant: dict, selected_stop_id: str | None = None,
                         hoverinfo="skip", showlegend=False,
                     ))
                     break
-
-    # ── view fitting: frame the DESTINATIONS, not the home gateway ─────────
-    if fit_points is None:
-        framed = ([s for s in stops
-                   if s["ref"].get("kind") != "gateway"] or stops)
-        pts = []
-        for stop in framed:
-            ref = stop["ref"]
-            if None not in (ref.get("lat"), ref.get("lon")):
-                pts.append((ref["lat"], ref["lon"]))
-    else:
-        pts = fit_points
-    view = geo.fit_view(pts)
 
     fig.update_layout(
         height=560,

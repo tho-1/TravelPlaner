@@ -11,64 +11,54 @@ and the verified commands for testing. It is the authoritative handoff for the n
 
 ---
 
-## 0. Status after the review + fix batch (2026-10-03) — supersedes §1–§4 below
+## 0. Status after the review + fix batches — supersedes §1–§4 below
 
-A full review found 38 issues (5 Critical, 10 High, 14 Medium, 9 Low). The first
-batch is implemented and verified by **152 automated tests**.
+A full review found 38 issues (5 Critical, 10 High, 14 Medium, 9 Low). Two
+implementation batches are done and verified by **188 automated tests**:
+
+* **2026-10-03 batch 1** (commits `0b2c332`, `2010541`, `d95a073`, `9dc90a4`)
+* **2026-10-04 batch 2** (this section)
 
 | Area | Fixed |
 |---|---|
 | Detail page crash | `img_base64`/`is_visited` were defined inside `if image_path:` but used unconditionally — **112 of 144 destination pages** raised `NameError`. Flags hoisted, header block de-indented, banner-less layout now reachable |
-| Silent itinerary data loss | two tabs saving `trips.json` → last writer wins. Added a signature-based stale guard (`storage.TripsFileChanged` + *Reload latest data*), unique temp names, retry on Windows locks, no silent `OSError` |
-| Cloud writability | all runtime paths moved behind `runtime_paths.py` (env var → repo → per-user dir); Cloud edits a writable copy of the workbook; cache/`mkdir` calls degrade instead of crashing; the sidebar shows where data goes |
-| Filters hiding rows | new tested `filters.py`: a filter may only remove rows whose field is populated. Mumbai/Delhi safety filled with **7.0** (matches Kerala/Chennai/Bangalore) — overwrite if you disagree |
-| Writers doing nothing | every writer returns `True`/`False`; the UI reports "nothing was written" instead of pretending; writer and reader share one alias vocabulary |
-| Numeric crashes | one `filters.coerce_number` for climate, AQI, ratings, population, cost — a cell reading `22 °C` or `8/10` no longer blanks the page |
-| Feedback | `st.success` + `st.rerun()` pairs replaced by `st.toast` (comment, food, AI populate, add destination, sync) |
-| Sync integrity | journal files belong to the writing device; the transport unions the remote journal instead of overwriting it; one workbook write per sync (the pre-sync snapshot is no longer pruned); conflict radio keys keyed by sync key |
-| Stale UI | route summary refreshes after *Save stop*; Prio *Cancel* clears its input; "Cities in X" explains an empty panel and offers *Clear filters*; unknown months show ⚪ instead of 🔴 |
-| Gallery | *🔄* now replaces any photo (it could only ever replace #1); a partially cached gallery is served instead of re-downloading on every rerun |
-| Tooling | `pyproject.toml` (deps + pytest + ruff), `tests/conftest.py` sandbox, 92 new tests, `tests/run_all.py`, `.github/workflows/ci.yml` (Linux + Windows), `requirements.txt` floors corrected (it allowed a Streamlit that cannot run the app) |
+| Silent itinerary data loss | two tabs saving `trips.json` → last writer wins. Signature-based stale guard (`storage.TripsFileChanged` + *Reload latest data*), unique temp names, retry on Windows locks, no silent `OSError` |
+| Cloud writability | runtime paths moved behind `runtime_paths.py` (env var → repo → per-user dir); Cloud edits a writable copy of the workbook; cache `mkdir`s degrade instead of crashing |
+| Filters hiding rows | `filters.py` (new, tested): a filter may only remove rows whose field is populated. Mumbai/Delhi safety filled with **7.0** (matches Kerala/Chennai/Bangalore) |
+| Writers doing nothing | every writer returns `True`/`False`; the UI reports "nothing was written"; writers and readers share one alias vocabulary |
+| Numeric crashes | one `filters.coerce_number` for climate, AQI, ratings, population, cost — `22 °C` or `8/10` no longer blanks a page |
+| Feedback | `st.success` + `st.rerun()` pairs replaced by `st.toast`; deleting a comment now asks first |
+| Sync integrity | journal files belong to the writing device; the transport unions the remote journal; one workbook write per sync; conflict radios keyed by sync key |
+| **Bulk data now syncs** | the `populate_*` scripts and the AI populate journal every cell they write (`data_utils.journal_cell_changes`), so climate/AQI/cost/food reach the other device. A destination that does not exist locally is reported as *skipped* instead of vanishing |
+| **Broken scripts repaired** | `populate_new_destinations.py` and `write_climate_data.py` wrote to `wb.active`, which is the **Airlines** sheet — they now target the destinations sheet explicitly and raise a clear error instead of crashing. `ratings.csv` is merged, not overwritten |
+| **No more fake success** | a failed Open-Meteo fetch no longer overwrites the `AQI Source` provenance; the runners no longer print ✓ for a write that never happened. A malformed provenance string (`…))`) is fixed |
+| Sample trip | arrived in Beijing on the day it left Frankfurt and typed Shanghai→Frankfurt as a *train*; both variants are now physically plausible, and a new warning flags any leg that arrives before it departs |
+| Transpacific map | longitudes are unwrapped, so Tokyo→Los Angeles renders on a 114° axis instead of a 398° one; the arrowhead no longer drags a stray line back to the path end |
+| Caches | geocode no longer caches empty results (and treats HTTP 200 + `{"error": true}` as a failure); the AQI cache is invalidated when a coordinate changes and a failed ground retry no longer resets its age; a truncated IQAir scrape is no longer stored as `complete` |
+| Matching | IQAir country matching requires equal token sets (Guinea ≠ Equatorial Guinea); `find_column` no longer binds a short column name inside a longer alias; flight-route cache keys keep the province qualifier so two same-named cities stop sharing data |
+| Tooling | `pyproject.toml` (deps + pytest + ruff), `tests/conftest.py` sandbox, 128 new tests, `tests/run_all.py`, `.github/workflows/ci.yml` (Linux + Windows), `requirements.txt` floors corrected |
+| Dead code | deleted `populate_destination_details.py` (writes removed columns, non-atomic save), `check_rows.py` and `inspect_workbook.py` (scratch scripts with paths from another machine) |
 
-**Still open** (deliberately not in this batch):
+**Still open:**
 
-1. **F13** Sync does not transport the bulk data. `populate_all_climate.py`,
-   `write_climate_data.py`, `populate_malaria_risk.py`,
-   `populate_new_destinations.py` and `deepseek_populator.py` write through
-   `save_workbook_atomic` but journal nothing, so the phone never sees climate,
-   AQI, cost, safety or food columns. Needs a "whole sheet" journal entry.
-2. **F14 (partly)** Trip conflicts are resolved per variant: "keep cloud"
+1. **F14 (partly)** Trip conflicts are resolved per variant: "keep cloud"
    replaces the whole variant, including stops the other device added. A
    per-stop union was implemented and **reverted** — it cannot express a
-   deletion, so removed stops came back. The real fix is per-stop journal keys
-   in `storage._collect_trips_diffs`; the conflict panel now states the
-   consequence.
-3. **F15** `populate_new_destinations.py` targets `wb.active`, which is the
-   **Airlines** sheet in both workbooks → it crashes with `TypeError` and cannot
-   write anything; it also rewrites `ratings.csv` without merging.
-   `populate_destination_details.py` is obsolete (writes removed columns, uses a
-   non-atomic save).
-4. **F29/F30** cache correctness: geocode caches empty results forever; the AQI
-   cache key ignores coordinates; a truncated IQAir snapshot is marked
-   `complete`; country-token matching can pair Guinea with Equatorial Guinea.
-5. **F31** the bundled sample trip is physically impossible (a *train* from
-   Shanghai to Frankfurt; arrival before departure) and is what a new user sees.
-6. **F17** transpacific itineraries render on a 398°-wide map
-   (`itinerary/geo.py` has no antimeridian handling).
-7. **F24** parenthetical-stripped keys still collide for pictures, the flight
-   cache and the planner lookup.
-8. **F33** `open_destinations.json` is per device; Cloud loses the tab layout on
+   deletion, so removed stops came back. The fix is per-stop journal keys in
+   `storage._collect_trips_diffs`; the conflict panel states the consequence.
+2. **F18 (partly)** The sidebar still re-reads `trips.json` on every rerun of
+   every page (the backup-snapshot part is cached now).
+3. **F37** Two writers still define a "rainy day" differently (0.1 mm in
+   `write_climate_data.py`, WMO ≥1 mm in `aqi_api.py`), so the same column can
+   mix both definitions. Pick one and regenerate the affected rows.
+4. **F33** `open_destinations.json` is per device; Cloud loses the tab layout on
    redeploy. Documented instead of synced.
-9. **Q5 (source of truth)** — still undecided: `Destinations-local.xlsx` is the
-   working copy, `Destinations-cloud.xlsx` is the committed Cloud seed, and they
-   now differ only by the Mumbai/Delhi safety values added locally on 2026-10-03.
+5. **Q1 (open)** Whether the Cloud deployment can persist anything is still
+   unverified by the user. The code no longer depends on the answer, and the
+   sidebar names the directory in use.
 
-Validation for this batch: `ruff check .` clean, `compileall` clean, **152 pytest
-tests pass** (~31 s), and the dependency-free script runners
-(`python tests/run_all.py --no-pytest`) pass.
-
-Suggested commits: (1) runtime paths + filters + writers, (2) trips.json safety +
-sync integrity, (3) UX batch, (4) tests/CI/docs.
+Validation: `ruff check .` clean, `compileall` clean, **188 pytest tests pass**
+(~30 s), and `python tests/run_all.py --no-pytest` passes.
 
 ### Decisions added on 2026-10-03
 

@@ -163,6 +163,32 @@ def arrow_wings(pts: list[tuple[float, float]]
     return [tip, left, tip, right]
 
 
+def unwrap_longitudes(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Shift each longitude by multiples of 360 so the path stays continuous.
+
+    Great-circle interpolation runs off the end of the longitude scale (Tokyo
+    139.7°E -> Los Angeles -118.2°W passes through 180, 200, 220...). Feeding
+    those raw values to :func:`fit_view` produced a 398°-wide axis centred
+    nowhere, which is what a transpacific itinerary used to render as.
+    """
+    if not points:
+        return []
+    out: list[tuple[float, float]] = [(points[0][0], points[0][1])]
+    offset = 0.0
+    previous = points[0][1]
+    for lat, lon in points[1:]:
+        candidate = lon + offset
+        while candidate - previous > 180:
+            offset -= 360.0
+            candidate -= 360.0
+        while previous - candidate > 180:
+            offset += 360.0
+            candidate += 360.0
+        out.append((lat, candidate))
+        previous = candidate
+    return out
+
+
 def fit_view(points: list[tuple[float, float]], pad_frac: float = 0.06
              ) -> dict:
     """Plotly geo layout dict (center + lon/lat ranges) framing the points."""
@@ -170,6 +196,7 @@ def fit_view(points: list[tuple[float, float]], pad_frac: float = 0.06
         return {"center": {"lat": 20, "lon": 10},
                 "lonaxis": {"range": [-140, 140]},
                 "lataxis": {"range": [-60, 75]}}
+    points = unwrap_longitudes(points)
     lats = [p[0] for p in points]
     lons = [p[1] for p in points]
     lat_min, lat_max = min(lats), max(lats)

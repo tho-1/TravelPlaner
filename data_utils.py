@@ -210,19 +210,22 @@ def normalize_text(value: object) -> str:
 
 
 def find_column(columns, aliases) -> Optional[str]:
+    """Resolve a column by alias.
+
+    Two passes only: an exact normalised match, then "the alias appears in the
+    column name". The reverse direction (a *short* column name inside a longer
+    alias) used to bind metrics to nonsense — a column named ``No`` matched the
+    alias ``notes``, ``Y`` matched ``yes`` — and silently rendered the wrong
+    data in a metric box.
+    """
     normalized_aliases = [normalize_text(alias) for alias in aliases]
     for column in columns:
         if normalize_text(column) in normalized_aliases:
             return column
     for column in columns:
         normalized = normalize_text(column)
-        if any(alias in normalized for alias in normalized_aliases):
+        if any(alias and alias in normalized for alias in normalized_aliases):
             return column
-    for column in columns:
-        normalized = normalize_text(column)
-        for alias in normalized_aliases:
-            if alias in normalized or normalized in alias:
-                return column
     return None
 
 
@@ -433,6 +436,44 @@ def _journal_workbook_safe(destination: str, column: str, value, path: Path = DA
         _journal.record_workbook_change(str(destination), str(column), value)
     except Exception:
         pass
+
+
+def journal_cell_changes(destination: str, values: dict,
+                         path: Path = DATA_PATH) -> int:
+    """Record a batch of ``{column: value}`` writes for one destination.
+
+    The bulk data producers (``aqi_api.update_destination_climate``, the
+    ``populate_*`` scripts, ``deepseek_populator``) write straight through
+    ``load_workbook_for_update`` / ``save_workbook_atomic`` and therefore used
+    to write **nothing** into the sync journal — which is why climate, AQI,
+    cost, safety and food columns never reached the phone. Calling this after
+    such a save makes those cells travel like any other edit.
+
+    Returns the number of cells journaled (0 when the change was not recorded,
+    e.g. during a sync apply or for a non-live workbook). Never raises.
+    """
+    if not values:
+        return 0
+    try:
+        if os.environ.get("SYNC_MERGE_APPLY") == "1":
+            return 0
+        if Path(path).resolve() != Path(DATA_PATH).resolve():
+            return 0
+        from sync import journal as _journal
+
+        _journal.ensure_baseline()
+        count = 0
+        for column, value in values.items():
+            if column is None:
+                continue
+            try:
+                _journal.record_workbook_change(str(destination), str(column), value)
+                count += 1
+            except Exception:
+                continue
+        return count
+    except Exception:
+        return 0
 
 
 def _find_destination_sheet(path: Path) -> Optional[str]:

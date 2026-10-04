@@ -261,6 +261,7 @@ def ensure_snapshot(refresh: bool = False) -> dict:
 
     page = 1
     total_pages = None
+    reached_end = False
     while page <= (total_pages or 400):  # 400 = runaway safety cap
         if page in pages_done:
             page += 1
@@ -268,6 +269,7 @@ def ensure_snapshot(refresh: bool = False) -> dict:
         html = fetch_page(page)
         rows = _parse_rows(html)
         if not rows:
+            reached_end = True
             break  # past the end of the table
         if total_pages is None:
             total_pages = _parse_total_pages(html)
@@ -277,6 +279,7 @@ def ensure_snapshot(refresh: bool = False) -> dict:
             # returning an empty table — never wrap data into the snapshot.
             print(f"page {page}: rank {rows[0]['rank']} < expected "
                   f"{expected} — end of table reached.", flush=True)
+            reached_end = True
             break
         for row in rows:
             cities_by_rank[row["rank"]] = row
@@ -294,10 +297,19 @@ def ensure_snapshot(refresh: bool = False) -> dict:
         time.sleep(PACE_S)
 
     snap = _pack(pages_done, cities_by_rank, total_pages)
-    snap["complete"] = True
+    # A snapshot is only "complete" when the whole table was walked. Marking a
+    # truncated scrape complete made `snapshot_is_fresh` skip re-scraping for
+    # STALE_DAYS, so thousands of cities silently never got a rank.
+    covered_all = bool(reached_end or (total_pages and len(pages_done) >= total_pages))
+    snap["complete"] = covered_all
     _save_snapshot(snap)
-    print(f"Scrape complete: {len(cities_by_rank)} cities, "
-          f"{len(pages_done)} pages.", flush=True)
+    if not covered_all:
+        print(f"Scrape INCOMPLETE: {len(cities_by_rank)} cities, "
+              f"{len(pages_done)}/{total_pages or '?'} pages — the snapshot is "
+              "marked incomplete so the next run continues.", flush=True)
+    else:
+        print(f"Scrape complete: {len(cities_by_rank)} cities, "
+              f"{len(pages_done)} pages.", flush=True)
     return snap
 
 
@@ -356,10 +368,14 @@ def build_matcher(snap: dict) -> dict[str, list[dict]]:
 
 def _country_filter(hits: list[dict], country: str | None) -> list[dict]:
     """Keep hits whose IQAir country matches the workbook's Country cell.
-    Token-set containment ignores connector words and abbreviations
-    ('Bosnia and Herzegovina' == 'Bosnia Herzegovina', 'UAE' ==
-    'United Arab Emirates'). Empty result = candidate exists but in OTHER
-    countries (a miss, not a guess source)."""
+
+    Connector words and abbreviations are ignored ('Bosnia and Herzegovina' ==
+    'Bosnia Herzegovina', 'UAE' == 'United Arab Emirates'), but the remaining
+    token sets must be **equal**: subset matching paired 'Guinea' with
+    'Equatorial Guinea' and 'Sudan' with 'South Sudan', and the wrong country's
+    PM2.5 was written into the workbook. Empty result = candidate exists but
+    in OTHER countries (a miss, not a guess source).
+    """
     if not country:
         return hits
     ct = _country_tokens(country)
@@ -368,7 +384,7 @@ def _country_filter(hits: list[dict], country: str | None) -> list[dict]:
     out = []
     for h in hits:
         ht = _country_tokens(h["country"])
-        if ht and (ct <= ht or ht <= ct):
+        if ht and ct == ht:
             out.append(h)
     return out
 

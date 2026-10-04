@@ -57,10 +57,26 @@ def render_sync_sidebar() -> None:
             if result.get("push_error"):
                 bits.append("push failed (queued)")
             st.session_state["sync_result"] = ", ".join(bits)
+            if result.get("skipped"):
+                st.session_state["sync_skipped"] = result["skipped"]
             conflicts = _merge.load_conflicts()
             st.rerun()
     if st.session_state.get("sync_result"):
         st.toast(f"Sync done: {st.session_state.pop('sync_result')}", icon="✅")
+    if st.session_state.get("sync_skipped"):
+        skipped = st.session_state.pop("sync_skipped")
+        with st.expander(f"⚠️ {len(skipped)} change(s) could not be applied",
+                         expanded=True):
+            st.caption(
+                "These journal entries had no target on this device — most "
+                "often a destination that was added on the other device (or "
+                "renamed here). Refresh the workbook from the other device, or "
+                "add the destination here, then sync again."
+            )
+            for line in skipped[:25]:
+                st.markdown(f"- {line}")
+            if len(skipped) > 25:
+                st.caption(f"… and {len(skipped) - 25} more")
     if conflicts:
         with st.expander(f"⚠️ Conflicts ({len(conflicts)})", expanded=False):
             st.caption(

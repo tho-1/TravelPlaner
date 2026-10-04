@@ -145,12 +145,41 @@ def test_delete_variant_keeps_one_and_fixes_active():
 def test_totals_counts_modes_and_dates():
     v = sample.make_sample_trip()["variants"][0]
     t = itin.totals(v)
-    assert t["stops"] == 5
-    assert t["flights"] == 3
+    assert t["stops"] == 6
+    assert t["flights"] == 4
     assert t["trains"] == 1
-    assert t["nights"] == 10
+    assert t["nights"] == 11
     assert t["start"] == "2027-04-01"
-    assert t["end"] == "2027-04-11"
+    assert t["end"] == "2027-04-14"
+
+
+def test_sample_trip_is_physically_possible():
+    """The bundled sample is what every new user sees: it must add up.
+
+    The previous version arrived in Beijing on the day it left Frankfurt
+    (an ~11 h flight with a +8 h offset) and typed the Shanghai -> Frankfurt
+    leg as a *train*.
+    """
+    for variant in sample.make_sample_trip()["variants"]:
+        assert itin.warnings_for(variant) == [], itin.warnings_for(variant)
+        modes = [leg["mode"] for leg in variant["legs"]]
+        assert "boat" not in modes
+        stops = variant["stops"]
+        for i in range(len(stops) - 1):
+            dep, arr = stops[i].get("departure_date"), stops[i + 1].get("arrival_date")
+            if dep and arr:
+                assert arr >= dep, f"{stops[i + 1]['ref']['name']} arrives before it left"
+
+
+def test_warnings_flag_a_leg_that_arrives_before_it_departs():
+    v = models.make_variant("V", [
+        models.make_stop(models.make_ref("custom", "A", "X", 1, 1),
+                         role="origin", departure_date="2027-05-10"),
+        models.make_stop(models.make_ref("custom", "B", "X", 2, 2),
+                         arrival_date="2027-05-09", departure_date="2027-05-11"),
+    ], [models.make_leg()])
+    warnings = itin.warnings_for(v)
+    assert any("arrives 2027-05-09" in w and "A" in w for w in warnings)
 
 
 def test_totals_nights_from_date_span_when_unset():
@@ -185,7 +214,7 @@ def test_warnings_cover_common_problems():
 def test_route_summary_smoke():
     v = sample.make_sample_trip()["variants"][0]
     summary = itin.route_summary(v)
-    assert "5 stops" in summary and "3 flights" in summary and "1 trains" in summary
+    assert "6 stops" in summary and "4 flights" in summary and "1 trains" in summary
 
 
 # ── geo ──────────────────────────────────────────────────────────────────────
@@ -314,11 +343,63 @@ def test_suggested_months_matches_normalised_names():
 
 # ── map ──────────────────────────────────────────────────────────────────────
 
+def test_transpacific_route_is_framed_and_continuous():
+    """A Tokyo -> Los Angeles trip used to render on a 398°-wide axis."""
+    tokyo = (35.6762, 139.6503)
+    los_angeles = (34.0522, -118.2437)
+    v = models.make_variant("Pacific", [
+        models.make_stop(models.make_ref("custom", "Tokyo", "JP", *tokyo),
+                         role="origin"),
+        models.make_stop(models.make_ref("custom", "Los Angeles", "US",
+                                         *los_angeles)),
+    ], [models.make_leg("flight")])
+    fig = itmap.build_figure(v)
+
+    lo, hi = fig.layout.geo.lonaxis.range
+    assert hi - lo < 180, f"axis must not span the globe: {lo}..{hi}"
+    assert lo > 100 and hi < 260
+
+    # No polyline may jump a full turn (that draws a line across the map).
+    for trace in fig.data:
+        if trace.mode != "lines":
+            continue
+        current: list = []
+        for value in list(trace.lon or []) + [None]:
+            if value is None:
+                for a, b in zip(current, current[1:]):
+                    assert abs(b - a) < 180, "polyline jumps a turn"
+                current = []
+            else:
+                current.append(value)
+
+
+def test_short_route_coordinates_are_not_shifted():
+    v = models.make_variant("EU", [
+        models.make_stop(models.make_ref("custom", "A", "X", 50.11, 8.68)),
+        models.make_stop(models.make_ref("custom", "B", "X", 52.37, 4.90)),
+    ], [models.make_leg("flight")])
+    fig = itmap.build_figure(v)
+    stops = [t for t in fig.data if list(t.meta or []) == ["stop"]][0]
+    assert [round(v, 2) for v in stops.lon] == [8.68, 4.90]
+
+
+def test_map_skips_stops_without_coordinates():
+    """An unresolvable city must not shift the numbering of the others."""
+    v = models.make_variant("V", [
+        models.make_stop(models.make_ref("custom", "Known", "X", 50.11, 8.68)),
+        models.make_stop(models.make_ref("custom", "Unknown", "X")),
+    ], [models.make_leg("flight")])
+    fig = itmap.build_figure(v)
+    stops = [t for t in fig.data if list(t.meta or []) == ["stop"]][0]
+    assert len(stops.lon) == 1
+    assert list(stops.text) == ["1"]
+
+
 def test_map_builds_traces_and_theme():
     v = sample.make_sample_trip()["variants"][0]
     fig = itmap.build_figure(v)
     names = [t.name for t in fig.data if t.showlegend]
-    assert any("Flight" in n and "(3)" in n for n in names)
+    assert any("Flight" in n and "(4)" in n for n in names)
     assert any("Train" in n and "(1)" in n for n in names)
     geo_cfg = fig.layout.geo
     assert geo_cfg.projection.type == "natural earth"

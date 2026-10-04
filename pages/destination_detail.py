@@ -315,6 +315,7 @@ def _render_comment_editor(destination_name: str, comment_value: str) -> None:
 
     cancel_key = f"comment_cancel_{destination_name}"
     lock_key = f"comment_locked_{destination_name}"
+    clear_key = f"comment_confirm_clear_{destination_name}"
 
     if input_key not in st.session_state:
         st.session_state[input_key] = comment_value
@@ -332,13 +333,20 @@ def _render_comment_editor(destination_name: str, comment_value: str) -> None:
     if st.button("Cancel", key=cancel_key):
         st.session_state[open_key] = False
         st.session_state.pop(input_key, None)
+        st.session_state.pop(clear_key, None)
         st.rerun()
 
     def _save(value: str) -> bool:
         try:
-            update_comment(destination_name, value)
+            wrote = update_comment(destination_name, value)
         except WorkbookLockedError as exc:
             st.session_state[lock_key] = str(exc)
+            return False
+        if wrote is False:
+            st.session_state[lock_key] = (
+                f"Nothing was written: no row or column matched "
+                f"'{destination_name}' in the workbook."
+            )
             return False
         st.session_state.pop(lock_key, None)
         st.session_state[open_key] = False
@@ -346,9 +354,31 @@ def _render_comment_editor(destination_name: str, comment_value: str) -> None:
         return True
 
     if submitted:
-        if _save(st.session_state.get(input_key, "")):
+        typed = st.session_state.get(input_key, "") or ""
+        # Saving an empty box used to delete the comment outright — one stray
+        # select-all + Save and the text was gone (only a backup could recover
+        # it). Require an explicit confirmation.
+        if not typed.strip() and str(comment_value).strip():
+            st.session_state[clear_key] = True
+        elif _save(typed):
             st.toast("Comment saved", icon="✅")
             st.rerun()
+
+    if st.session_state.get(clear_key):
+        st.warning("This will **delete** the saved comment. Continue?")
+        cc1, cc2, _cc3 = st.columns([1, 1, 3])
+        with cc1:
+            if st.button("🗑 Yes, delete it", key=f"{clear_key}_yes",
+                         type="primary"):
+                st.session_state.pop(clear_key, None)
+                if _save(""):
+                    st.toast("Comment deleted", icon="🗑")
+                    st.rerun()
+        with cc2:
+            if st.button("Keep it", key=f"{clear_key}_no"):
+                st.session_state.pop(clear_key, None)
+                st.session_state[input_key] = comment_value
+                st.rerun()
 
     if st.session_state.get(lock_key):
         st.error(st.session_state[lock_key])

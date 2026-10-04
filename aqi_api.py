@@ -60,6 +60,7 @@ from data_utils import (
     WorkbookLockedError,
     _clear_destination_cache,
     _find_destination_sheet,
+    journal_cell_changes,
     load_workbook_for_update,
     save_workbook_atomic,
 )
@@ -766,20 +767,30 @@ def fetch_all_providers(lat: float, lon: float, slug: str,
                         want_ground: bool = True, max_age_days: int = 30) -> dict:
     """Fetch/caches model AQI + climate (+ ground AQI) for one location.
 
-    Fresh cached entries are reused as-is. If a fresh entry has NO ground
-    data because the ground provider failed earlier (e.g. a transient
-    OpenAQ 429), the cached model/climate is kept and ONLY the ground
-    provider is retried — so Open-Meteo quota is never burned twice.
+    Fresh cached entries are reused as-is — but only when they were fetched for
+    **these** coordinates. The cache key is the slug alone, so a corrected
+    coordinate in ``city_coordinates.json`` used to keep serving the payload of
+    the old location for up to 30 days.
+
+    If a fresh entry has NO ground data because the ground provider failed
+    earlier (e.g. a transient OpenAQ 429), the cached model/climate is kept and
+    ONLY the ground provider is retried — so Open-Meteo quota is never burned
+    twice.
     """
     cached = load_cached(slug)
     if cached:
+        same_place = (
+            cached.get("lat") is not None
+            and abs(float(cached["lat"]) - float(lat)) < 1e-6
+            and abs(float(cached["lon"]) - float(lon)) < 1e-6
+        )
         fetched = cached.get("fetched", "")
         try:
             age = (datetime.now(timezone.utc)
                    - datetime.fromisoformat(fetched)).days
-        except ValueError:
+        except (ValueError, TypeError):
             age = None
-        if age is not None and age <= max_age_days:
+        if same_place and age is not None and age <= max_age_days:
             have_ground = cached.get("ground_aqi") is not None
             if not want_ground or have_ground:
                 return cached
@@ -789,11 +800,17 @@ def fetch_all_providers(lat: float, lon: float, slug: str,
                 cached["ground_aqi"] = fetch_openaq_ground(lat, lon)["monthly"]
                 cached["ground_error"] = None
             except Exception as exc:
+                # Keep the failure marker but do NOT reset `fetched`: the model
+                # series must still age out and be refreshed.
                 cached["ground_aqi"] = None
                 cached["ground_error"] = str(exc)
-            cached["fetched"] = datetime.now(timezone.utc).isoformat()
+                cached["ground_retried"] = datetime.now(timezone.utc).isoformat()
             save_cached(slug, cached)
             return cached
+        if not same_place:
+            print(f"   (cache for {slug} was fetched for "
+                  f"{cached.get('lat')},{cached.get('lon')} — refetching)",
+                  flush=True)
 
     model = fetch_openmeteo_aqi(lat, lon)
     result = {
@@ -915,15 +932,23 @@ def update_destination_climate(name: str, model_aqi: dict, climate: dict,
             headers[nm] = col
         return headers[nm]
 
+    # Every cell written here is collected so it can be journaled for sync
+    # (F13): this is the bulk producer the phone never used to see.
+    written: dict[str, object] = {}
+
+    def _put(col_name: str, value) -> None:
+        ws.cell(row, _ensure_header(col_name), value=value)
+        written[col_name] = value
+
     # Model AQI + climate.
     for m in MONTHS_SHORT:
         if model_aqi.get(m) is not None:
-            ws.cell(row, _ensure_header(f"{m} AQI"), value=model_aqi[m])
+            _put(f"{m} AQI", model_aqi[m])
         for suffix, key in (("High (C)", "High (C)"), ("Low (C)", "Low (C)"),
                             ("Rain (mm)", "Rain (mm)"), ("Rainy Days", "Rainy Days")):
             v = climate.get(key, [None] * 12)[MONTHS_SHORT.index(m)]
             if v is not None:
-                ws.cell(row, _ensure_header(f"{m} {suffix}"), value=v)
+                _put(f"{m} {suffix}", v)
 
     # Ground AQI (own columns, only months that actually have data).
     ground_written = 0
@@ -931,7 +956,7 @@ def update_destination_climate(name: str, model_aqi: dict, climate: dict,
         for m in MONTHS_SHORT:
             v = ground_aqi.get(m)
             if v is not None:
-                ws.cell(row, _ensure_header(f"{m} AQI (Ground)"), value=v)
+                _put(f"{m} AQI (Ground)", v)
                 ground_written += 1
 
     # Multi-year typical series (hard-coded workbook columns — user decision).
@@ -940,36 +965,44 @@ def update_destination_climate(name: str, model_aqi: dict, climate: dict,
         for m in MONTHS_SHORT:
             v = model_typical.get(m)
             if v is not None:
-                ws.cell(row, _ensure_header(f"{m} AQI (Typical)"), value=v)
+                _put(f"{m} AQI (Typical)", v)
                 typ_written += 1
     gtyp_written = 0
     if ground_typical:
         for m in MONTHS_SHORT:
             v = ground_typical.get(m)
             if v is not None:
-                ws.cell(row, _ensure_header(f"{m} AQI (Ground Typical)"), value=v)
+                _put(f"{m} AQI (Ground Typical)", v)
                 gtyp_written += 1
+
+    # Nothing to write: do NOT touch the workbook. A failed fetch used to
+    # overwrite the existing "AQI Source" provenance with a claim that data
+    # had been written, and the runner then reported success.
+    if not written:
+        wb.close()
+        return (f"{dest_clean}: nothing to write (no model AQI and no climate "
+                f"data returned) — workbook left untouched.")
 
     # Avg AQI from the model series.
     nums = [v for v in (model_aqi.get(m) for m in MONTHS_SHORT) if v is not None]
     if nums:
-        ws.cell(row, _ensure_header("Avg AQI"), value=round(sum(nums) / len(nums), 1))
+        _put("Avg AQI", round(sum(nums) / len(nums), 1))
 
     # Provenance. The divergence note is kept deliberately (option A): it is
     # a workbook-level audit flag for where the two providers disagree,
     # independent of how the chart renders (the chart is always-on now).
-    def _series_tag(typical: dict | None, written: int) -> str:
-        return "12M + typical" if written else "12M"
+    def _series_tag(typical: dict | None, written_count: int) -> str:
+        return "12M + typical" if written_count else "12M"
 
     div = divergent_months(model_aqi, ground_aqi)
     if ground_aqi and ground_written:
         src = (f"open-meteo CAMS ({_series_tag(model_typical, typ_written)})"
                f" + openaq ground ({_series_tag(ground_typical, gtyp_written)}")
-        src += f"; diverges: {', '.join(div)})" if div else "; agree)"
+        src += (f"; diverges: {', '.join(div)}" if div else "; agree")
     else:
-        src = (f"open-meteo CAMS ({_series_tag(model_typical, typ_written)};"
-               f" no ground data)")
-    ws.cell(row, _ensure_header("AQI Source"), value=src)
+        src = (f"open-meteo CAMS ({_series_tag(model_typical, typ_written)}"
+               f"; no ground data)")
+    _put("AQI Source", src)
 
     try:
         save_workbook_atomic(wb, path)
@@ -979,6 +1012,7 @@ def update_destination_climate(name: str, model_aqi: dict, climate: dict,
             "Destinations workbook is open in another program — close it and retry."
         ) from exc
     wb.close()
+    journal_cell_changes(dest_clean, written, path)
     _clear_destination_cache()
 
     tag = f", ground months: {ground_written}" if ground_written else ""

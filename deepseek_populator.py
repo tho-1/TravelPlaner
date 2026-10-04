@@ -16,6 +16,7 @@ from data_utils import (
     DATA_PATH,
     WorkbookLockedError,
     _find_destination_sheet,
+    journal_cell_changes,
     load_workbook_for_update,
     save_workbook_atomic,
     update_reviews,
@@ -119,7 +120,8 @@ def populate_destination_with_ai(
             return False, f"Destination '{dest_clean}' already exists in the workbook (Row {row_idx})."
 
     new_row = ws.max_row + 1
-    review_score = _apply_profile_to_row(ws, headers, new_row, profile, country, continent, dest_clean)
+    review_score, written = _apply_profile_to_row(
+        ws, headers, new_row, profile, country, continent, dest_clean)
 
     # Data Status intentionally left blank for AI-populated rows (not a placeholder).
 
@@ -132,6 +134,10 @@ def populate_destination_with_ai(
             "Please close the file and press Retry."
         ) from exc
     wb.close()
+
+    # Make the new row travel to the other devices (F13). A destination the
+    # other side does not have yet is reported by the sync apply as skipped.
+    journal_cell_changes(dest_clean, written, path)
 
     from data_utils import _clear_destination_cache
     _clear_destination_cache()
@@ -154,12 +160,17 @@ def _apply_profile_to_row(ws, headers, row_idx, profile, country, continent, des
             headers[name] = col
         return headers[name]
 
+    # Collected so the write can be journaled for sync afterwards (F13): the
+    # AI populate writes ~40 columns and none of them used to reach the phone.
+    written: dict[str, object] = {}
+
     def _set(name: str, value) -> None:
         if value is None:
             return
         if isinstance(value, str) and not value.strip():
             return
         ws.cell(row=row_idx, column=_ensure_header(name), value=value)
+        written[name] = value
 
     def _num(value):
         try:
@@ -295,7 +306,7 @@ def _apply_profile_to_row(ws, headers, row_idx, profile, country, continent, des
     except Exception:
         pass
 
-    return review_score
+    return review_score, written
 
 
 def populate_existing_destination_with_ai(
@@ -366,7 +377,8 @@ def populate_existing_destination_with_profile(
         wb.close()
         return False, f"Destination '{dest_clean}' was not found in the workbook."
 
-    review_score = _apply_profile_to_row(ws, headers, target_row, profile, country, continent, dest_clean)
+    review_score, written = _apply_profile_to_row(
+        ws, headers, target_row, profile, country, continent, dest_clean)
 
     # Clear the placeholder status so the "incomplete" warning disappears.
     # NOTE: use `.value = None` (not `cell(..., value=None)`) — openpyxl treats
@@ -374,6 +386,7 @@ def populate_existing_destination_with_profile(
     status_col = headers.get("Data Status")
     if status_col:
         ws.cell(row=target_row, column=status_col).value = None
+        written["Data Status"] = None
 
     try:
         save_workbook_atomic(wb, path)
@@ -384,6 +397,8 @@ def populate_existing_destination_with_profile(
             "Please close the file and press Retry."
         ) from exc
     wb.close()
+
+    journal_cell_changes(dest_clean, written, path)
 
     from data_utils import _clear_destination_cache
     _clear_destination_cache()

@@ -76,6 +76,8 @@ Highlights:
 | `tests/test_writers.py` | every workbook writer's contract (success / nothing-written) |
 | `tests/test_filters.py` | "a filter may only hide rows whose field is populated" |
 | `tests/test_sync_integrity.py` | journal ownership, lossless transport, one workbook write per sync |
+| `tests/test_bulk_sync.py` | the climate/AQI/food producers journal their writes; skipped changes are reported |
+| `tests/test_caches_and_matching.py` | geocode/AQI/IQAir cache staleness, country matching, column matching, cache keys |
 
 ## Architecture in one screen
 
@@ -111,12 +113,14 @@ runtime_paths.py       where runtime state is written
 
 ## Known limitations
 
-* The workbook → Cloud sync transports the interactive edits (favourite,
-  visited, research flag, Prio, comment, reviews, food) — **not** the bulk
-  climate/AQI/cost columns written by the `populate_*.py` scripts. Those reach
-  the phone only through `refresh_cloud_workbook.py` + a redeploy.
 * A trip conflict is resolved per *variant*: "keep cloud" replaces the whole
   variant, including stops the other device added. The conflict panel states
   this. Per-stop journal keys are the planned fix.
+* A destination that exists only on the other device cannot receive cell-level
+  changes yet — the sync reports it under "changes that could not be applied"
+  instead of dropping it silently. Add the destination (or refresh the
+  workbook) and sync again.
 * `Destinations-cloud.xlsx` is committed, so Cloud edits are lost on redeploy
   unless they have been synced or downloaded first.
+* `{Mon} Rainy Days` is still filled by two scripts with slightly different
+  definitions (0.1 mm vs WMO ≥1 mm), so a few rows may mix both.

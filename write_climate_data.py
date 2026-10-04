@@ -22,7 +22,13 @@ Usage:
 
 import openpyxl
 
-from data_utils import DATA_PATH, load_workbook_for_update, save_workbook_atomic
+from data_utils import (
+    DATA_PATH,
+    _find_destination_sheet,
+    journal_cell_changes,
+    load_workbook_for_update,
+    save_workbook_atomic,
+)
 
 WORKBOOK = DATA_PATH
 
@@ -147,12 +153,17 @@ def write_monthly_row(row_idx: int, data: dict, overwrite: bool = False):
     """
     Write monthly (or annual) climate data for a specific 1-based row index.
     """
+    sheet = _find_destination_sheet(WORKBOOK)
+    if sheet is None:
+        print("[ERROR] Could not find the destinations sheet.")
+        return
     wb = load_workbook_for_update(WORKBOOK)
-    ws = wb.active
+    ws = wb[sheet]
     headers = _get_or_create_headers(ws)
 
     written = 0
     skipped = 0
+    journal: dict = {}
     for col_name, value in data.items():
         col_idx = headers.get(col_name)
         if col_idx is None:
@@ -163,11 +174,14 @@ def write_monthly_row(row_idx: int, data: dict, overwrite: bool = False):
             skipped += 1
             continue
         cell.value = value
+        journal[col_name] = value
         written += 1
 
+    dest = ws.cell(row=row_idx, column=1).value   # read BEFORE closing
     save_workbook_atomic(wb, WORKBOOK)
     wb.close()
-    dest = ws.cell(row=row_idx, column=1).value
+    if journal:
+        journal_cell_changes(str(dest).strip(), journal, WORKBOOK)
     print(f"[OK] Row {row_idx} ({dest}): wrote {written} cells" +
           (f", skipped {skipped} already filled" if skipped else ""))
 
@@ -181,13 +195,19 @@ def write_monthly(destination: str, data: dict, overwrite: bool = False):
         data: dict mapping column names (from MONTHLY_COLS or ANNUAL_COLS) to values
         overwrite: if False, skip cells that already have a value
     """
+    sheet = _find_destination_sheet(WORKBOOK)
+    if sheet is None:
+        print("[ERROR] Could not find the destinations sheet.")
+        return
     wb = load_workbook_for_update(WORKBOOK)
-    ws = wb.active
+    ws = wb[sheet]
     headers = _get_or_create_headers(ws)
 
     dest_col_idx = headers.get("Destination")
     if dest_col_idx is None:
-        dest_col_idx = 1
+        print("[ERROR] No 'Destination' column in the destinations sheet.")
+        wb.close()
+        return
 
     # find all matching rows
     matched_rows = []
@@ -202,6 +222,7 @@ def write_monthly(destination: str, data: dict, overwrite: bool = False):
 
     written_total = 0
     skipped_total = 0
+    journal: dict = {}
     for row_idx in matched_rows:
         written = 0
         skipped = 0
@@ -214,12 +235,15 @@ def write_monthly(destination: str, data: dict, overwrite: bool = False):
                 skipped += 1
                 continue
             cell.value = value
+            journal[col_name] = value
             written += 1
         written_total += written
         skipped_total += skipped
 
     save_workbook_atomic(wb, WORKBOOK)
     wb.close()
+    if journal:
+        journal_cell_changes(destination.strip(), journal, WORKBOOK)
     print(f"[OK] {destination} ({len(matched_rows)} rows): wrote {written_total} cells" +
           (f", skipped {skipped_total} already filled" if skipped_total else ""))
 
@@ -228,7 +252,8 @@ def write_monthly(destination: str, data: dict, overwrite: bool = False):
 def print_progress():
     """Print fill status for every destination."""
     wb = openpyxl.load_workbook(WORKBOOK, data_only=True)
-    ws = wb.active
+    sheet = _find_destination_sheet(WORKBOOK)
+    ws = wb[sheet] if sheet else wb.active
     headers = {cell.value: (cell.column - 1)  # 0-indexed for values tuple
                for cell in ws[1] if cell.value is not None}
 

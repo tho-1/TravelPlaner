@@ -31,6 +31,7 @@ from data_utils import (
     DATA_PATH,
     WorkbookLockedError,
     _find_destination_sheet,
+    journal_cell_changes,
     load_workbook_for_update,
     save_workbook_atomic,
 )
@@ -377,6 +378,7 @@ def populate_malaria_risk(
 
     warnings = []
     filled = 0
+    journal: dict = {}
 
     def _write(row_idx: int, dest: str) -> None:
         nonlocal filled
@@ -396,6 +398,7 @@ def populate_malaria_risk(
         # Requested EUR rule: exact "No", no comment.
         if _is_eur(region_value, eff_country):
             ws.cell(row=row_idx, column=malaria_col).value = EUR_VALUE
+            journal[dest] = EUR_VALUE
             filled += 1
             return
 
@@ -409,7 +412,9 @@ def populate_malaria_risk(
             result = (ai_result["status"], ai_result["description"])
 
         status, description = result
-        ws.cell(row=row_idx, column=malaria_col).value = f"{status} — {description}"
+        cell_value = f"{status} — {description}"
+        ws.cell(row=row_idx, column=malaria_col).value = cell_value
+        journal[dest] = cell_value
         filled += 1
 
     if destination is not None:
@@ -445,6 +450,11 @@ def populate_malaria_risk(
         ) from exc
 
     wb.close()
+
+    # Journal each write so the phone/other device receives the risk column
+    # (the bulk producers used to save without journaling anything).
+    for dest_name, cell_value in journal.items():
+        journal_cell_changes(dest_name, {COLUMN: cell_value}, path)
 
     # Invalidate cached destination data if data_utils uses lru_cache or similar.
     from data_utils import _clear_destination_cache

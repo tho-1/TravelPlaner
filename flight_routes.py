@@ -25,11 +25,17 @@ from deepseek_client import generate_flight_routes
 
 
 def _normalize_key(value: object) -> str:
-    """Normalize destination or airline name for caching and matching."""
+    """Normalize a destination or airline name for caching and matching.
+
+    The province/state qualifier is KEPT: 24 workbook rows use the
+    "Name (Province)" form, and dropping it gave "Suzhou (Jiangsu)" and
+    "Suzhou (Anhui)" one shared cache file and one shared planner lookup, so
+    one of them showed the other's airport, Prio and rating. Airline names
+    have no parentheses, so their keys are unaffected.
+    """
     if value is None:
         return ""
     text = str(value)
-    text = re.sub(r"\([^)]*\)", "", text)
     text = unicodedata.normalize("NFKD", text)
     text = text.encode("ascii", "ignore").decode("ascii")
     text = re.sub(r"[^a-z0-9]+", "", text.lower())
@@ -281,6 +287,14 @@ def render_flight_routes_section(
                 k = _normalize_key(str(dest_val))
                 prio_val = row.get(prio_col) if prio_col and prio_col in row else None
                 rev_val = row.get(reviews_col) if reviews_col and reviews_col in row else None
+                if k in planner_lookup:
+                    # Two workbook rows normalizing to the same key would
+                    # silently overwrite each other; keep the first and say so
+                    # rather than showing one city's data under another's name.
+                    print(f"[WARN] flight routes: '{planner_lookup[k]['name']}' and "
+                          f"'{str(dest_val).strip()}' share the cache key {k!r}; "
+                          f"keeping the first.", flush=True)
+                    continue
                 planner_lookup[k] = {
                     "name": str(dest_val).strip(),
                     "prio": prio_val,

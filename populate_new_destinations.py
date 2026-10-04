@@ -9,7 +9,13 @@ from __future__ import annotations
 
 import pandas as pd
 
-from data_utils import DATA_PATH, load_workbook_for_update, save_workbook_atomic
+from data_utils import (
+    DATA_PATH,
+    _find_destination_sheet,
+    journal_cell_changes,
+    load_workbook_for_update,
+    save_workbook_atomic,
+)
 from review_analyzer import (
     AspectSentiment,
     DestinationReviewData,
@@ -595,8 +601,16 @@ DESTINATION_FULL_PROFILES = {
 
 def populate_workbook():
     print(f"Loading workbook: {DATA_PATH}")
+    sheet_name = _find_destination_sheet(DATA_PATH)
+    if sheet_name is None:
+        raise RuntimeError(
+            f"{DATA_PATH.name}: could not find the destinations sheet. "
+            "Refusing to write into an arbitrary tab.")
     wb = load_workbook_for_update(DATA_PATH)
-    ws = wb.active
+    # NOTE: wb.active is the *Airlines* sheet in this workbook, which made this
+    # script write (or crash) in the wrong place. Always target the destinations
+    # sheet explicitly.
+    ws = wb[sheet_name]
 
     # Build header map
     headers = {}
@@ -607,6 +621,10 @@ def populate_workbook():
 
     print(f"Found {len(headers)} columns in sheet '{ws.title}'.")
     dest_col_idx = headers.get("Destination")
+    if dest_col_idx is None:
+        wb.close()
+        raise RuntimeError(
+            f"{DATA_PATH.name}: sheet '{ws.title}' has no 'Destination' column.")
 
     # Compute ratings via review analyzer
     ratings_df = compute_destination_ratings(NEW_DESTINATIONS_DATA)
@@ -615,6 +633,7 @@ def populate_workbook():
     # Update destination_review_analysis.csv and ratings.csv
     csv_rows = []
     ratings_csv_rows = []
+    journal: dict = {}
 
     # Map destinations in sheet
     for row_idx in range(2, ws.max_row + 1):
@@ -634,30 +653,34 @@ def populate_workbook():
             confidence = rating_info.get("Confidence", "High")
             date_range = rating_info.get("Date_Range", "Feb 2024 - Feb 2026")
 
+            cells: dict = {}
+            row_ref = row_idx
+
+            def put(header: str, value, _row: int = row_ref, _cells: dict = cells) -> None:
+                """Write one cell and remember it for the sync journal."""
+                if header not in headers or not headers[header]:
+                    return
+                ws.cell(row=_row, column=headers[header]).value = value
+                _cells[header] = value
+
             # Write review score
-            if "Reviews" in headers:
-                ws.cell(row=row_idx, column=headers["Reviews"]).value = float(score_10)
+            put("Reviews", float(score_10))
 
             # Write Tourist Reviews summary
             tourist_summary = (
                 f"{profile['What do the reviews praise?']} Recurring criticisms mention {profile['What do they dislike?']}"
             )
-
-            if "Tourist Reviews" in headers:
-                ws.cell(row=row_idx, column=headers["Tourist Reviews"]).value = tourist_summary
-
-            if "What do the reviews praise?" in headers:
-                ws.cell(row=row_idx, column=headers["What do the reviews praise?"]).value = profile["What do the reviews praise?"]
-
-            if "What do they dislike?" in headers:
-                ws.cell(row=row_idx, column=headers["What do they dislike?"]).value = profile["What do they dislike?"]
+            put("Tourist Reviews", tourist_summary)
+            put("What do the reviews praise?", profile["What do the reviews praise?"])
+            put("What do they dislike?", profile["What do they dislike?"])
 
             # Write all other profile fields
             for key, val in profile.items():
-                if key in headers and headers[key]:
-                    cell = ws.cell(row=row_idx, column=headers[key])
-                    if val is not None:
-                        cell.value = val
+                if key in headers and headers[key] and val is not None:
+                    put(key, val)
+
+            if cells:
+                journal[dest_name] = cells
 
             print(f"Populated row {row_idx}: {dest_name} (Score: {score_10}/10 | {score_100}/100)")
 
@@ -686,7 +709,11 @@ def populate_workbook():
 
     save_workbook_atomic(wb, DATA_PATH)
     wb.close()
-    print("Successfully saved Destinations.xlsx!")
+    print(f"Successfully saved {DATA_PATH.name}!")
+
+    # Journal every write so the change reaches the other devices (F13).
+    for dest_name, cells in journal.items():
+        journal_cell_changes(dest_name, cells, DATA_PATH)
 
     # Append to destination_review_analysis.csv
     analysis_csv_path = DATA_PATH.parent / "destination_review_analysis.csv"
@@ -699,10 +726,22 @@ def populate_workbook():
         updated_analysis_df.to_csv(analysis_csv_path, index=False)
         print(f"Updated {analysis_csv_path}")
 
-    # Write ratings.csv artifact
+    # ratings.csv is MERGED, not overwritten: the old code wrote only this
+    # script's ten destinations and silently dropped every other rating.
     ratings_csv_path = DATA_PATH.parent / "ratings.csv"
-    pd.DataFrame(ratings_csv_rows).to_csv(ratings_csv_path, index=False)
-    print(f"Saved {ratings_csv_path}")
+    new_ratings = pd.DataFrame(ratings_csv_rows)
+    if ratings_csv_path.exists():
+        try:
+            existing_ratings = pd.read_csv(ratings_csv_path)
+            replaced = [r["Destination"] for r in ratings_csv_rows]
+            existing_ratings = existing_ratings[
+                ~existing_ratings["Destination"].isin(replaced)]
+            new_ratings = pd.concat([existing_ratings, new_ratings], ignore_index=True)
+        except Exception as exc:
+            print(f"[WARN] Could not merge {ratings_csv_path.name} ({exc}); "
+                  "writing this run's rows only.")
+    new_ratings.to_csv(ratings_csv_path, index=False)
+    print(f"Saved {ratings_csv_path} ({len(new_ratings)} rows)")
 
 
 if __name__ == "__main__":

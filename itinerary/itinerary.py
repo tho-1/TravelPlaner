@@ -244,8 +244,34 @@ def warnings_for(variant: dict) -> list[str]:
             out.append(f"'{ref.get('name')}': departure date without arrival.")
         if stop.get("nights") is not None and int(stop["nights"]) < 0:
             out.append(f"'{ref.get('name')}': negative nights.")
+    out.extend(_leg_warnings(stops))
     if variant.get("months") and len(variant["months"]) > 12:
         out.append("More than 12 months selected?!")
+    return out
+
+
+def _leg_warnings(stops: list[dict]) -> list[str]:
+    """Flag legs that cannot happen: arriving before the previous departure.
+
+    The per-stop checks cannot see this — an 11-hour flight with a large time
+    offset arrives on the *next* day, so identical dates on two consecutive
+    stops mean the route is impossible.
+    """
+    out: list[str] = []
+    for i in range(len(stops) - 1):
+        here, nxt = stops[i], stops[i + 1]
+        dep, arr = here.get("departure_date"), nxt.get("arrival_date")
+        if not dep or not arr:
+            continue
+        try:
+            dep_date, arr_date = date.fromisoformat(dep), date.fromisoformat(arr)
+        except ValueError:
+            continue
+        if arr_date < dep_date:
+            out.append(
+                f"{nxt['ref'].get('name', '?')} arrives {arr} — before leaving "
+                f"{here['ref'].get('name', '?')} on {dep}."
+            )
     return out
 
 

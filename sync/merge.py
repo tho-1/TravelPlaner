@@ -144,26 +144,31 @@ def apply_entries(
     os.environ["SYNC_MERGE_APPLY"] = "1"
     try:
         applied = 0
+        skipped: list[str] = []
         if workbook_entries:
-            applied += _apply_workbook_entries(workbook_entries, wb_path)
+            applied, skipped = _apply_workbook_entries(workbook_entries, wb_path)
         for entry in trips_entries:
             if _apply_trips(entry, tr_path):
                 applied += 1
+            else:
+                key = entry.get("key", [])
+                skipped.append("trips / " + " / ".join(str(k) for k in key))
     finally:
         if previous_flag is None:
             os.environ.pop("SYNC_MERGE_APPLY", None)
         else:
             os.environ["SYNC_MERGE_APPLY"] = previous_flag
-    return {"applied": applied, "snapshots": snapshots}
+    return {"applied": applied, "skipped": skipped, "snapshots": snapshots}
 
 
-def _apply_workbook_entries(entries: list[dict], wb_path: Path) -> int:
+def _apply_workbook_entries(entries: list[dict], wb_path: Path) -> tuple[int, list[str]]:
     """Apply every workbook cell entry in ONE load/save cycle.
 
-    The old code loaded, edited, saved and snapshotted the workbook per entry:
-    a 30-cell sync meant 30 serialisations of a 300 KB workbook, and because
-    ``_snapshot_workbook`` keeps only the newest 12, the pre-sync snapshot
-    taken just before the apply was deleted by the 12th write.
+    Returns ``(applied, skipped)``. The old code loaded, edited, saved and
+    snapshotted the workbook per entry: a 30-cell sync meant 30 serialisations
+    of a 300 KB workbook, and because ``_snapshot_workbook`` keeps only the
+    newest 12, the pre-sync snapshot taken just before the apply was deleted by
+    the 12th write.
     """
     from data_utils import (
         _find_destination_sheet,
@@ -173,13 +178,14 @@ def _apply_workbook_entries(entries: list[dict], wb_path: Path) -> int:
 
     sheet = _find_destination_sheet(wb_path)
     if sheet is None:
-        return 0
+        return 0, [f"{wb_path.name}: no destinations sheet"]
     try:
         wb = load_workbook_for_update(wb_path)
     except Exception:
-        return 0
+        return 0, [f"{wb_path.name}: could not be opened for writing"]
 
     applied = 0
+    skipped: list[str] = []
     try:
         ws = wb[sheet]
         headers: dict[str, int] = {}
@@ -191,10 +197,11 @@ def _apply_workbook_entries(entries: list[dict], wb_path: Path) -> int:
             (i for h, i in headers.items() if "destination" in h.lower()), None
         )
         if dest_idx is None:
-            return 0
+            return 0, [f"{wb_path.name}: no Destination column"]
 
         row_cache: dict[str, int | None] = {}
         col_cache: dict[str, int | None] = {}
+        missing_rows: set[str] = set()
 
         def _row_for(destination: str) -> int | None:
             key = destination.strip().lower()
@@ -222,23 +229,34 @@ def _apply_workbook_entries(entries: list[dict], wb_path: Path) -> int:
         for entry in entries:
             key = entry.get("key", [])
             if len(key) != 2:
+                skipped.append("malformed key " + repr(key))
                 continue
-            row_idx = _row_for(str(key[0]))
-            col_idx = _col_for(str(key[1]))
-            if row_idx is None or col_idx is None:
+            destination, column = str(key[0]), str(key[1])
+            row_idx = _row_for(destination)
+            col_idx = _col_for(column)
+            if row_idx is None:
+                # Typically a destination added on the other device: the row
+                # does not exist here yet. Say so instead of dropping it.
+                if destination not in missing_rows:
+                    missing_rows.add(destination)
+                    skipped.append(f"{destination} (row not in this workbook)")
+                continue
+            if col_idx is None:
+                skipped.append(f"{destination} / {column} (no such column)")
                 continue
             ws.cell(row_idx, column=col_idx).value = copy.deepcopy(entry.get("value"))
             applied += 1
         if applied:
             save_workbook_atomic(wb, wb_path)
-    except Exception:
+    except Exception as exc:
         applied = 0
+        skipped.append(f"{wb_path.name}: apply failed ({type(exc).__name__})")
     finally:
         try:
             wb.close()
         except Exception:
             pass
-    return applied
+    return applied, skipped
 
 
 def _apply_trips(entry: dict, tr_path: Path) -> bool:
