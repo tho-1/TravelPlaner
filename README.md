@@ -33,6 +33,21 @@ Interactive edits (favourite / visited / ❔ / Prio / comment / reviews / food)
 travel the other way through the sync journals, so a phone edit still reaches
 the PC without a redeploy.
 
+What a sync can move, and at what size:
+
+| Thing | Journal key | Example |
+|---|---|---|
+| a workbook cell | `(destination, column)` | a comment on Naples |
+| a new destination | `(destination, "#row")` | added on the PC, created on the phone, then its cells land in the new row |
+| a trip variant's own fields | `(trip, variant, "meta")` | name, rating, months, comment |
+| one stop | `(trip, variant, "stop:<id>")` | two devices editing *different* stops of one trip both keep their change |
+| stop order | `(trip, variant, "order")` | drag a stop to position 1 |
+| one leg | `(trip, variant, "leg:<n>")` | change the second leg to a train |
+
+Entries are applied in timestamp order, so a row creation always precedes the
+cell writes that target it. A whole-variant key `(trip, variant)` from a journal
+written before 2026-10-04 is still replayable.
+
 `runtime_paths.py` decides where runtime state is written:
 
 | Order | Location | When |
@@ -53,7 +68,7 @@ instead of silently forgetting your changes.
 
 ```powershell
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest                  # full suite (188 tests, ~35 s)
+python -m pytest                  # full suite (218 tests, ~70 s)
 python tests/run_all.py           # same, with a fallback for no-pytest setups
 python tests/run_all.py --no-pytest   # only the dependency-free script runners
 python -m ruff check .            # lint
@@ -84,6 +99,8 @@ Highlights:
 | `tests/test_sync_integrity.py` | journal ownership, lossless transport, one workbook write per sync |
 | `tests/test_bulk_sync.py` | the climate/AQI/food producers journal their writes; skipped changes are reported |
 | `tests/test_caches_and_matching.py` | geocode/AQI/IQAir cache staleness, country matching, column matching, cache keys |
+| `tests/test_sync_per_stop.py` | new-destination rows, per-stop trip keys, parallel edits on two devices |
+| `tests/test_rainy_days.py` | one rainy-day definition for all writers; the provenance report |
 
 ## Architecture in one screen
 
@@ -96,6 +113,7 @@ pages/destination_detail.py   one page per city (banner, metrics, climate
                        dashboard, galleries, AI populate, flight routes)
 pages/itinerary.py     trips → variants → stops → legs + route map
 filters.py             shared, tested filter primitives (blank values never filter out)
+rainy_days.py          the one definition of a rainy day (>= 1 mm/day)
 data_utils.py          workbook I/O: atomic saves, stale-write detection, writers
 itinerary/             pure, Streamlit-free trip logic + persistence (tests/geo/map)
 sync/                  journal → merge → GitHub transport → sidebar UI
@@ -119,14 +137,11 @@ runtime_paths.py       where runtime state is written
 
 ## Known limitations
 
-* A trip conflict is resolved per *variant*: "keep cloud" replaces the whole
-  variant, including stops the other device added. The conflict panel states
-  this. Per-stop journal keys are the planned fix.
-* A destination that exists only on the other device cannot receive cell-level
-  changes yet — the sync reports it under "changes that could not be applied"
-  instead of dropping it silently. Add the destination (or refresh the
-  workbook) and sync again.
 * `Destinations-cloud.xlsx` is committed, so Cloud edits are lost on redeploy
   unless they have been synced or downloaded first.
-* `{Mon} Rainy Days` is still filled by two scripts with slightly different
-  definitions (0.1 mm vs WMO ≥1 mm), so a few rows may mix both.
+* Seven destinations still hold `{Mon} Rainy Days` values transcribed from
+  published climate normals, which count trace precipitation instead of the
+  project's ≥1 mm definition. They are not re-fetched on purpose (it would cost
+  API calls). Run
+  `python write_climate_data.py --list-legacy-rainy-days` to see exactly which
+  rows, at any time, without an API call.

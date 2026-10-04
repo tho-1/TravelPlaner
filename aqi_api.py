@@ -55,6 +55,8 @@ from pathlib import Path
 import openpyxl
 import requests
 
+# The one canonical definition of a "rainy day" (WMO: >= 1 mm/day).
+import rainy_days  # noqa: E402  (kept after data_utils to preserve import order)
 from data_utils import (
     DATA_PATH,
     WorkbookLockedError,
@@ -368,7 +370,8 @@ def fetch_openmeteo_climate(lat: float, lon: float) -> dict[str, list]:
         if precip[i] is not None:
             acc = rain_totals.setdefault((dt.year, dt.month), [0.0, 0.0])
             acc[0] += float(precip[i])
-            acc[1] += 1.0 if float(precip[i]) >= 1.0 else 0.0
+            # One shared definition of "rainy day" for the whole project.
+            acc[1] += 1.0 if rainy_days.is_rain_day(precip[i]) else 0.0
 
     def _monthly_avg(bucket: dict[int, list[float]], years: int) -> list:
         # Each calendar month should appear once per year (10 samples).

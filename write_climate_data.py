@@ -8,13 +8,23 @@ Monthly columns added (60 total):
   Jan Rain (mm) .. Dec Rain (mm)    - avg rainfall in mm
   Jan AQI      .. Dec AQI           - avg Air Quality Index
 
-.. warning::
-   **"Rainy days" here does not mean the same thing as in ``aqi_api.py``.**
-   ``aqi_api.py`` counts a WMO rain day (>= 1 mm daily precipitation); the
-   curated tables below were transcribed from published climate normals that
-   use a lower threshold. Both feed the same ``{Mon} Rainy Days`` column, so a
-   few rows may mix the two definitions. Standardise on one and regenerate the
-   affected rows before comparing destinations (README, "Known limitations").
+.. note::
+   **"Rainy days" now means one thing everywhere: >= 1 mm of daily
+   precipitation** (the WMO rain day). The threshold lives in
+   ``rainy_days.RAINY_DAY_THRESHOLD_MM`` and both writers import it, so future
+   updates are comparable by construction.
+
+   The hardcoded tables below were transcribed from published climate normals
+   that count *trace* precipitation, so those rows hold slightly higher
+   numbers than a fetch would produce. They are intentionally **not**
+   regenerated (that would cost API calls for no immediate gain). The rows
+   that would change are listed, without any API call, by::
+
+       python write_climate_data.py --list-legacy-rainy-days
+
+   Use the same command's output as the worklist when you decide to spend the
+   calls: every listed destination gets re-fetched by ``aqi_api.py`` under the
+   unified definition.
 
 Usage:
     from write_climate_data import write_monthly, print_progress
@@ -28,8 +38,13 @@ Usage:
     })
 """
 
+import argparse
+import sys
+from pathlib import Path
+
 import openpyxl
 
+import rainy_days
 from data_utils import (
     DATA_PATH,
     _find_destination_sheet,
@@ -63,9 +78,20 @@ MONTHLY_COLS = (
 
 ALL_CLIMATE_COLS = ANNUAL_COLS + MONTHLY_COLS
 
+#: How many of the 12 months must equal the curated table before a row counts
+#: as a *partial* overwrite. Two or three equal months are common by accident
+#: (small integers), so a low bar would list almost every destination and teach
+#: the user to ignore the report.
+PARTIAL_MATCH_MIN = 6
+
 # 2025 monthly aggregates fetched from Open-Meteo for Bogotá (4.7110, -74.0721).
 # High/low are means of daily maxima/minima; rain is monthly precipitation sum;
-# rainy days count days with at least 0.1 mm; AQI is the mean of hourly US AQI.
+# AQI is the mean of hourly US AQI.
+#
+# NOTE: this block's rainy days were counted with the pre-2026-10-04 rule
+# (>= 0.1 mm). Kept as-is on purpose: the values are not regenerated. Every
+# *future* write uses rainy_days.RAINY_DAY_THRESHOLD_MM (1.0 mm) instead. See
+# this module's docstring and `--list-legacy-rainy-days`.
 BOGOTA_CLIMATE = {
     "Avg High Temp (°C)": 19.6,
     "Avg Low Temp (°C)": 9.5,
@@ -108,13 +134,57 @@ LAST_SIX_AQI = {
 }
 
 
-def preserved_destination_climate(destination: str) -> dict:
-    """Build writer fields from the preserved six-destination climate script."""
-    from populate_destination_details import CLIMATE_DATA
+#: Curated climate normals for the six destinations whose AQI was preserved
+#: from the earlier station-based script. Recovered from
+#: ``populate_destination_details.py`` (deleted as broken in 89b777c, which had
+#: left this import dangling) and kept here because this module is its only
+#: consumer. These values use the pre-2026-10-04 lower threshold; they are
+#: provenance, not a recommendation — see the module docstring.
+CURATED_CLIMATE = {
+    "Panama City": {
+        "high": [32.2, 32.7, 33.2, 33.4, 32.4, 31.8, 31.8, 31.9, 31.4, 31.1, 31.1, 31.7],
+        "low": [21.4, 21.5, 21.8, 22.6, 22.9, 22.7, 22.6, 22.5, 22.4, 22.2, 22.1, 21.8],
+        "rainy_days": [2.4, 1.6, 1.9, 5.2, 15.4, 16.8, 15.1, 16.0, 17.4, 19.5, 16.8, 7.5],
+        "rain": [24.1, 12.3, 14.2, 71.0, 221.8, 242.0, 189.5, 221.0, 268.4, 311.2, 258.9, 124.6],
+    },
+    "San José": {
+        "high": [28.2, 29.1, 29.9, 30.3, 28.8, 28.2, 28.2, 28.3, 27.8, 27.1, 27.2, 27.9],
+        "low": [18.5, 18.7, 18.8, 19.1, 19.2, 19.0, 19.0, 18.8, 18.3, 18.5, 18.3, 18.3],
+        "rainy_days": [3, 3, 5, 10, 23, 22, 20, 22, 26, 25, 17, 8],
+        "rain": [6.3, 10.2, 13.8, 79.9, 267.6, 280.1, 181.5, 276.9, 355.1, 330.6, 135.5, 33.5],
+    },
+    "Yogyakarta": {
+        "high": [29.8, 30.5, 31.3, 31.5, 31.1, 31.0, 30.3, 30.7, 31.5, 31.6, 30.9, 30.1],
+        "low": [22.9, 22.8, 22.9, 23.0, 22.7, 21.5, 20.6, 20.6, 21.7, 22.7, 23.0, 22.8],
+        "rainy_days": [18, 16, 15, 12, 8, 6, 5, 4, 5, 10, 15, 18],
+        "rain": [392, 299, 363, 149, 141, 68, 29, 16, 49, 136, 237, 278],
+    },
+    "Bishkek": {
+        "high": [2.9, 5.1, 12.1, 18.7, 24.1, 29.5, 32.4, 31.4, 25.6, 18.5, 10.3, 4.6],
+        "low": [-7.1, -4.9, 1.0, 6.9, 11.2, 16.1, 18.4, 16.9, 11.7, 5.6, -0.5, -5.2],
+        "rainy_days": [3, 5, 9, 12, 13, 10, 10, 6, 6, 8, 7, 4],
+        "rain": [28, 36, 48, 71, 59, 34, 19, 15, 18, 37, 45, 37],
+    },
+    "Dubai": {
+        "high": [24.0, 25.0, 30.0, 34.0, 37.5, 39.9, 41.7, 42.1, 39.5, 36.5, 31.0, 26.0],
+        "low": [14.3, 15.5, 18.3, 21.7, 25.1, 26.9, 30.0, 30.4, 27.7, 24.1, 20.1, 16.3],
+        "rainy_days": [5.5, 4.7, 5.8, 2.6, 0.3, 0.2, 0.5, 0.5, 0.1, 0.2, 1.3, 3.8],
+        "rain": [18.8, 25.0, 22.1, 7.2, 0.4, 0.2, 0.8, 0.2, 0.0, 1.1, 2.7, 16.2],
+    },
+    "Montevideo": {
+        "high": [27.8, 27.0, 25.3, 22.0, 18.5, 15.6, 14.7, 16.7, 17.9, 20.7, 23.7, 26.4],
+        "low": [18.8, 18.6, 17.1, 14.1, 11.0, 8.1, 7.3, 8.5, 9.9, 12.4, 14.7, 17.1],
+        "rainy_days": [6, 6, 6, 7, 6, 7, 6, 7, 7, 7, 7, 7],
+        "rain": [94.6, 93.8, 105.8, 111.1, 83.4, 89.4, 93.2, 89.9, 92.1, 102.2, 95.9, 91.3],
+    },
+}
 
-    climate = CLIMATE_DATA[destination]
+
+def preserved_destination_climate(destination: str) -> dict:
+    """Build writer fields from the preserved six-destination climate table."""
+    climate = CURATED_CLIMATE[destination]
     data = {}
-    for month, high, low, rainy_days, rain, aqi in zip(
+    for month, high, low, rainy, rain, aqi in zip(
         MONTHS,
         climate["high"],
         climate["low"],
@@ -124,7 +194,7 @@ def preserved_destination_climate(destination: str) -> dict:
     ):
         data[f"{month} High (C)"] = high
         data[f"{month} Low (C)"] = low
-        data[f"{month} Rainy Days"] = rainy_days
+        data[f"{month} Rainy Days"] = rainy
         data[f"{month} Rain (mm)"] = rain
         data[f"{month} AQI"] = aqi
 
@@ -289,8 +359,146 @@ def print_progress():
     wb.close()
 
 
+def curated_rainy_day_destinations() -> dict:
+    """Every destination whose rainy days came from a curated table.
+
+    Returns ``{destination: source}``. No API call, no workbook write: this is
+    pure provenance, read from the hardcoded tables that still live in this
+    repo. Those tables use the pre-2026-10-04 lower threshold, so their rows
+    are the worklist for making the column uniform under
+    ``rainy_days.RAINY_DAY_THRESHOLD_MM``.
+    """
+    sources: dict[str, str] = {
+        name: "write_climate_data.CURATED_CLIMATE"
+        for name in CURATED_CLIMATE
+    }
+    sources["Bogotá"] = "write_climate_data.BOGOTA_CLIMATE"
+    try:
+        from populate_all_climate import ALL_REMAINING_CLIMATE
+
+        for name in ALL_REMAINING_CLIMATE:
+            sources.setdefault(str(name), "populate_all_climate.ALL_REMAINING_CLIMATE")
+    except Exception as exc:  # the batch table is optional
+        print(f"[WARN] populate_all_climate unavailable: {type(exc).__name__}",
+              file=sys.stderr)
+    return sources
+
+
+def list_legacy_rainy_days(path: Path = WORKBOOK) -> dict:
+    """Report which rainy-day rows are curated vs canonical. No API calls.
+
+    Returns ``{"curated": [...], "canonical": [...], "review": [...],
+    "no_data": [...]}``:
+
+    * ``curated``   - all 12 values still equal a curated table, so the
+      pre-2026-10-04 lower-threshold numbers are still in the workbook. This
+      is the list to re-fetch to make the column uniform.
+    * ``canonical`` - the values no longer match any curated table: fetched
+      under the unified definition (or filled by something else entirely).
+    * ``review``    - only *some* months match the curated table, which means
+      a partial overwrite or a hand edit. A human should look before
+      regenerating, because re-fetching would silently discard those edits.
+    * ``no_data``   - no rainy-day values at all
+    """
+    wb = openpyxl.load_workbook(path, data_only=True)
+    try:
+        sheet = _find_destination_sheet(path)
+        ws = wb[sheet] if sheet else wb.active
+        headers = {str(c.value).strip(): c.column for c in ws[1]
+                   if c.value is not None}
+        cols = [headers.get(f"{month} Rainy Days") for month in MONTHS]
+
+        curated_expected = {}
+        for destination in CURATED_CLIMATE:
+            data = preserved_destination_climate(destination)
+            curated_expected[destination] = [
+                float(data[f"{month} Rainy Days"]) for month in MONTHS]
+        curated_expected["Bogotá"] = [
+            float(BOGOTA_CLIMATE[f"{month} Rainy Days"]) for month in MONTHS]
+        try:
+            from populate_all_climate import ALL_REMAINING_CLIMATE
+
+            for name, climate in ALL_REMAINING_CLIMATE.items():
+                curated_expected.setdefault(
+                    str(name), [float(v) for v in climate["RainyDays"]])
+        except Exception:
+            pass
+
+        result = {"curated": [], "canonical": [], "review": [], "no_data": []}
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            name = row[0]
+            if not name:
+                continue
+            name = str(name).strip()
+            values = [row[c - 1] if c and c <= len(row) else None for c in cols]
+            if all(v is None for v in values):
+                result["no_data"].append(name)
+                continue
+            expected = curated_expected.get(name)
+            if expected is None:
+                result["canonical"].append(name)
+                continue
+            try:
+                current = [float(v) if v is not None else None for v in values]
+            except (TypeError, ValueError):
+                result["review"].append(name)
+                continue
+            agreeing = sum(
+                1 for a, b in zip(current, expected)
+                if a is not None and abs(a - b) < 0.05)
+            if agreeing == 12:
+                result["curated"].append(name)
+            elif agreeing >= PARTIAL_MATCH_MIN:
+                result["review"].append(
+                    f"{name} ({agreeing}/12 months match the curated table)")
+            else:
+                # 1-2 coincidentally equal months (e.g. both 2) are not evidence
+                # of a partial overwrite, so they count as canonical.
+                result["canonical"].append(name)
+        for key in result:
+            result[key] = sorted(set(result[key]))
+        return result
+    finally:
+        wb.close()
+
+
+def _print_legacy_rainy_days() -> None:
+    report = list_legacy_rainy_days()
+    print(f'Rainy day = {rainy_days.DEFINITION} (rainy_days.py)')
+    print("Provenance of {Mon} Rainy Days - nothing changed, no API call made.\n")
+    print(f"Curated, older lower threshold ({len(report['curated'])}): "
+          f"still hold pre-unification values")
+    for name in report["curated"]:
+        print(f"  {name}")
+    print(f"\nCanonical ({len(report['canonical'])}): match no curated table")
+    print(f"Review ({len(report['review'])}): partly match a curated table - "
+          f"a re-fetch would overwrite")
+    for name in report["review"]:
+        print(f"  {name}")
+    print(f"No rainy-day data ({len(report['no_data'])})")
+
+
 if __name__ == "__main__":
-    write_monthly("Bogotá", BOGOTA_CLIMATE, overwrite=True)
-    for destination in LAST_SIX_AQI:
-        write_monthly(destination, preserved_destination_climate(destination), overwrite=True)
-    print_progress()
+    parser = argparse.ArgumentParser(
+        description="Write curated monthly climate rows / report data provenance.")
+    parser.add_argument(
+        "--list-legacy-rainy-days", action="store_true",
+        help="print which {Mon} Rainy Days rows came from the curated "
+             "tables (older, lower-threshold definition) and exit; no writes, "
+             "no API calls")
+    parser.add_argument(
+        "--progress", action="store_true",
+        help="print the climate fill status per destination")
+    args = parser.parse_args()
+
+    if args.list_legacy_rainy_days:
+        _print_legacy_rainy_days()
+    elif args.progress:
+        print_progress()
+    else:
+        write_monthly("Bogotá", BOGOTA_CLIMATE, overwrite=True)
+        for destination in LAST_SIX_AQI:
+            write_monthly(destination,
+                          preserved_destination_climate(destination),
+                          overwrite=True)
+        print_progress()

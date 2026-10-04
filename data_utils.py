@@ -138,6 +138,34 @@ def _check_workbook_mtime(path: Path, expected_mtime_ns: int | None) -> None:
         )
 
 
+#: How often to retry an operation that failed with PermissionError, and the
+#: growing delay between attempts (seconds).
+LOCK_RETRIES = 6
+LOCK_BACKOFF = 0.05
+
+
+def retry_while_locked(action, retries: int = LOCK_RETRIES, delay: float = LOCK_BACKOFF):
+    """Run ``action``, retrying while Windows reports the file as locked.
+
+    A genuine lock (the workbook open in Excel) must not hang the UI for long,
+    but a *transient* deny is common and invisible to the user: antivirus
+    scanners, the Windows Search indexer and OneDrive hold a freshly written
+    file for a few hundred milliseconds. Without a retry, that surfaces as
+    "Destinations.xlsx is currently open in another program (e.g. Excel)" when
+    Excel was never opened. Six attempts with a growing backoff (~0.75 s total)
+    covers the transient case and still fails fast on a real lock.
+    """
+    last: PermissionError | None = None
+    for attempt in range(max(1, retries)):
+        try:
+            return action()
+        except PermissionError as exc:
+            last = exc
+            if attempt + 1 < retries:
+                time.sleep(delay * (attempt + 1))
+    raise last
+
+
 def _snapshot_workbook(path: Path) -> Path | None:
     """Snapshot the outgoing workbook before replacement; retain newest 12."""
     if not path.exists():
@@ -151,13 +179,17 @@ def _snapshot_workbook(path: Path) -> Path | None:
     while backup.exists():
         backup = backup_dir / f"{path.stem}-{stamp}-{millis:03d}-{suffix}.xlsx"
         suffix += 1
-    shutil.copy2(path, backup)
+    retry_while_locked(lambda: shutil.copy2(path, backup))
     backups = sorted(
         backup_dir.glob(f"{path.stem}-*.xlsx"),
         key=lambda p: (p.stat().st_mtime_ns, p.name),
     )
     for stale in backups[:-WORKBOOK_BACKUP_KEEP]:
-        stale.unlink(missing_ok=True)
+        try:
+            stale.unlink(missing_ok=True)
+        except OSError:
+            # A backup we cannot delete is harmless; the next save retries.
+            pass
     return backup
 
 
@@ -181,9 +213,9 @@ def save_workbook_atomic(workbook, path: Path = DATA_PATH) -> None:
         # Check again after serialization so an edit made during the save is
         # not silently replaced with this stale snapshot.
         _check_workbook_mtime(target, expected_mtime_ns)
-        _snapshot_workbook(target)
+        retry_while_locked(lambda: _snapshot_workbook(target))
         _check_workbook_mtime(target, expected_mtime_ns)
-        os.replace(temporary, target)
+        retry_while_locked(lambda: os.replace(temporary, target))
     except WorkbookLockedError:
         workbook.close()
         raise
@@ -1109,6 +1141,23 @@ def add_new_destination(
         (h for h, idx in headers.items() if idx == dest_col_idx),
         "Destination",
     )
+    # The row's *creation* is journalled BEFORE its cells. A merge orders
+    # entries by time, so the other device appends the row first and the cell
+    # entries then land in it; journalled afterwards they would be reported as
+    # "row not in this workbook" and skipped.
+    try:
+        if os.environ.get("SYNC_MERGE_APPLY") != "1" and \
+                Path(path).resolve() == Path(DATA_PATH).resolve():
+            from sync import journal as _journal
+
+            _journal.ensure_baseline()
+            _journal.record_destination_row(
+                dest_clean, country.strip() or None,
+                continent.strip() or None,
+                data_status="PLACEHOLDER - UPDATE REQUIRED",
+            )
+    except Exception:
+        pass
     _journal_workbook_safe(dest_clean, dest_header, dest_clean, path)
     _journal_workbook_safe(dest_clean, "Data Status", "PLACEHOLDER - UPDATE REQUIRED", path)
 

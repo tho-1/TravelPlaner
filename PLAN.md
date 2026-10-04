@@ -38,36 +38,58 @@ implementation batches are done and verified by **188 automated tests**:
 | Matching | IQAir country matching requires equal token sets (Guinea ≠ Equatorial Guinea); `find_column` no longer binds a short column name inside a longer alias; flight-route cache keys keep the province qualifier so two same-named cities stop sharing data |
 | Tooling | `pyproject.toml` (deps + pytest + ruff), `tests/conftest.py` sandbox, 128 new tests, `tests/run_all.py`, `.github/workflows/ci.yml` (Linux + Windows), `requirements.txt` floors corrected |
 | Dead code | deleted `populate_destination_details.py` (writes removed columns, non-atomic save), `check_rows.py` and `inspect_workbook.py` (scratch scripts with paths from another machine) |
+| **Batch 3** (2026-10-04, `ec4d0a2` + this commit) | CI actually installs its dependencies; new destinations sync; trip sync is per stop; one rainy-day definition; transient Windows locks are retried |
+
+### Batch 3 (2026-10-04)
+
+| Area | Fixed |
+|---|---|
+| **CI never installed anything** | all three workflow runs died in ~18 s: `pip install -e ".[dev]"` trips setuptools' flat-layout package discovery on this app's four sibling top-level packages. `pyproject.toml` is now tool config + metadata that installs nothing; deps live in `requirements.txt` / new `requirements-dev.txt`. `pip install -e .` is now a harmless no-op |
+| **A destination added on the PC never reached the phone** | new journal entry `(destination, "#row")` (`journal.record_destination_row`, written *before* the row's cells so timestamp order creates the row first). `merge._create_destination_row` appends the row; an existing row is left untouched, so it can never clobber the other device's newer edits |
+| **Trip sync is per stop** (F14) | `storage._collect_trips_diffs` now emits one entry per part — `meta`, `order`, `stop:<id>`, `leg:<n>` — instead of one whole-variant entry. A phone edit to stop A and a PC edit to stop B both survive. Deletions are expressible (`op="delete"` per part). Legacy 2-element keys stay replayable |
+| **One rainy-day definition** (F37) | `rainy_days.py` holds `RAINY_DAY_THRESHOLD_MM = 1.0` (WMO); `aqi_api.py` imports it, so no writer hardcodes a threshold. The 7 rows still holding curated (trace-precipitation) values are **not** regenerated, by decision; `python write_climate_data.py --list-legacy-rainy-days` names them without an API call |
+| **Regression from my own cleanup** | deleting `populate_destination_details.py` in `89b777c` left `write_climate_data.preserved_destination_climate` importing a module that no longer existed, so `python write_climate_data.py` raised `ModuleNotFoundError`. Its `CLIMATE_DATA` table is restored in-module as `CURATED_CLIMATE` |
+| **Flaky CI / misleading error** | a transient Windows `PermissionError` (AV or the indexer holding the just-written temp file) surfaced as "open it in Excel and press Retry". `data_utils.retry_while_locked` retries the copy and the replace (~0.75 s total) and a permanently locked file still fails fast. A real flake, not a logic bug |
+
+Measured with the new command, no API calls: 7 curated rows, 137 canonical,
+0 partially-overwritten rows, 0 rows without rainy-day data.
 
 **Still open:**
 
-1. **F14 (partly)** Trip conflicts are resolved per variant: "keep cloud"
-   replaces the whole variant, including stops the other device added. A
-   per-stop union was implemented and **reverted** — it cannot express a
-   deletion, so removed stops came back. The fix is per-stop journal keys in
-   `storage._collect_trips_diffs`; the conflict panel states the consequence.
-2. **F18 (partly)** The sidebar still re-reads `trips.json` on every rerun of
+1. **F18 (partly)** The sidebar still re-reads `trips.json` on every rerun of
    every page (the backup-snapshot part is cached now).
-3. **F37** Two writers still define a "rainy day" differently (0.1 mm in
-   `write_climate_data.py`, WMO ≥1 mm in `aqi_api.py`), so the same column can
-   mix both definitions. Pick one and regenerate the affected rows.
-4. **F33** `open_destinations.json` is per device; Cloud loses the tab layout on
+2. **F33** `open_destinations.json` is per device; Cloud loses the tab layout on
    redeploy. Documented instead of synced.
-5. **Q1 (open)** Whether the Cloud deployment can persist anything is still
+3. **Q1 (open)** Whether the Cloud deployment can persist anything is still
    unverified by the user. The code no longer depends on the answer, and the
    sidebar names the directory in use.
+4. **The 7 curated rainy-day rows** stay as they are until someone decides to
+   spend the API calls; the report command is the worklist.
 
-Validation: `ruff check .` clean, `compileall` clean, **188 pytest tests pass**
-(~30 s), and `python tests/run_all.py --no-pytest` passes.
+Validation: `ruff check .` clean, `compileall` clean, **218 pytest tests pass**
+(~70 s), and `python tests/run_all.py --no-pytest` passes.
 
 ### Decisions added on 2026-10-03
 
 - Sync granularity: **per cell for the workbook, per trip variant for itineraries**
-  (whole-file transport was considered and rejected).
+  (whole-file transport was considered and rejected). *Superseded 2026-10-04:
+  trips are now per **stop**, see batch 3.*
 - **"Only show unvisited" stays ON by default**, but no filter ever hides a row
   whose field is blank.
 - The DDG/Unsplash gallery is **essential** and stays; the banner falls back to a
   plain title when a destination has no photo.
+
+### Decisions added on 2026-10-04
+
+- **A destination added on one device is journaled as a row creation**, so the
+  other device appends the row and then receives the cell changes. (Without it
+  the cells could only ever be reported as "skipped".)
+- **Trips sync per stop** (`meta` / `order` / `stop:<id>` / `leg:<n>`) instead of
+  per variant, so concurrent edits to different stops both survive. Whole-file
+  `trips.json` transport was considered and rejected again.
+- **Rainy days are unified going forward at ≥1 mm/day (WMO)** — but the existing
+  curated rows are **not** regenerated: that would mean re-fetching climate data,
+  which was declined. The affected rows are listed instead, without API calls.
 
 ---
 

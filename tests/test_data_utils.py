@@ -107,6 +107,66 @@ def test_workbook_backups_keep_newest_twelve():
         assert _read_value(path) == "13"
 
 
+def test_transient_lock_is_retried_and_a_permanent_one_is_not():
+    """Antivirus/indexer holds a file for a moment; Excel holds it for good.
+
+    The difference must be *retries*, not luck, because both surface to
+    openpyxl as the same PermissionError.
+    """
+    attempts = []
+
+    def flaky():
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise PermissionError("scanner")
+        return "saved"
+
+    assert data_utils.retry_while_locked(flaky, retries=5, delay=0) == "saved"
+    assert len(attempts) == 3
+
+    attempts.clear()
+
+    def locked_forever():
+        attempts.append(1)
+        raise PermissionError("open in Excel")
+
+    try:
+        data_utils.retry_while_locked(locked_forever, retries=4, delay=0)
+    except PermissionError:
+        pass
+    else:
+        raise AssertionError("a permanent lock must still surface")
+    assert len(attempts) == 4, "it must stop after the configured retries"
+
+
+def test_save_survives_a_transient_replace_denial():
+    """The flake this retries: Windows denies the replace once, then allows it."""
+    import os as _os
+
+    real_replace = _os.replace
+    calls = []
+
+    def deny_once(src, dst):
+        calls.append(1)
+        if len(calls) == 1:
+            raise PermissionError("transient")
+        return real_replace(src, dst)
+
+    with tempfile.TemporaryDirectory() as td:
+        path = Path(td) / "sample.xlsx"
+        _make_workbook(path)
+        workbook = data_utils.load_workbook_for_update(path)
+        workbook.active["A1"] = "eventually"
+        try:
+            with patch("data_utils.os.replace", side_effect=deny_once), \
+                    patch("data_utils.time.sleep"):
+                data_utils.save_workbook_atomic(workbook, path)
+        finally:
+            workbook.close()
+        assert _read_value(path) == "eventually"
+        assert len(calls) == 2
+
+
 def test_replace_failure_preserves_original_and_raises_friendly_error():
     with tempfile.TemporaryDirectory() as td:
         path = Path(td) / "sample.xlsx"
@@ -114,7 +174,9 @@ def test_replace_failure_preserves_original_and_raises_friendly_error():
         workbook = data_utils.load_workbook_for_update(path)
         workbook.active["A1"] = "not installed"
         try:
-            with patch("data_utils.os.replace", side_effect=PermissionError("locked")):
+            # sleep is patched out: the retry backoff must not slow the tests
+            with patch("data_utils.os.replace", side_effect=PermissionError("locked")), \
+                    patch("data_utils.time.sleep"):
                 try:
                     data_utils.save_workbook_atomic(workbook, path)
                 except data_utils.WorkbookLockedError:
@@ -133,6 +195,8 @@ if __name__ == "__main__":
         test_update_comment_uses_atomic_writer,
         test_stale_workbook_cannot_overwrite_newer_save,
         test_workbook_backups_keep_newest_twelve,
+        test_transient_lock_is_retried_and_a_permanent_one_is_not,
+        test_save_survives_a_transient_replace_denial,
         test_replace_failure_preserves_original_and_raises_friendly_error,
     ]
     for test in tests:

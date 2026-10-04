@@ -10,6 +10,7 @@ accidental deletion can be undone (see ``list_backups`` / ``restore_backup``).
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import time
@@ -158,7 +159,18 @@ def save_to(data: dict, path: Path) -> None:
 
 
 def _collect_trips_diffs(path: Path, new_payload: dict) -> list[tuple[str, str, object, str]]:
-    """Compare live file vs new payload. Returns [(trip_id, variant_id, value, op)]."""
+    """Compare live file vs new payload.
+
+    Returns ``[(trip_id, variant_id, part, value, op), ...]`` — or 4-tuples
+    ``(trip_id, variant_id, value, op)`` for the legacy whole-variant entries
+    that older journals still contain.
+
+    Variants are diffed at **stop granularity** (decision 2026-10-04): one
+    entry per stop, per leg, plus one for the variant's own fields and one for
+    the stop order. A whole-variant key made "keep cloud" discard the PC's
+    edit to a *different* stop of the same trip, because there was no way to
+    say which parts each side had actually changed.
+    """
     try:
         if Path(path) != _LIVE_TRIPS_PATH:
             return []
@@ -177,13 +189,18 @@ def _collect_trips_diffs(path: Path, new_payload: dict) -> list[tuple[str, str, 
             for t in new_payload.get("trips", [])
             for v in t.get("variants", [])
         }
-        diffs: list[tuple[str, str, object, str]] = []
+        diffs: list[tuple] = []
+
         for key, variant in new_map.items():
             old_variant = old_map.get(key)
-            if old_variant is None or json.dumps(
-                old_variant, sort_keys=True, ensure_ascii=False
-            ) != json.dumps(variant, sort_keys=True, ensure_ascii=False):
-                diffs.append((key[0], key[1], variant, "upsert"))
+            if old_variant is None:
+                # Brand new variant: one entry per stop/leg plus the meta.
+                diffs.extend(_variant_parts(key, variant, {}, is_new=True))
+                continue
+            diffs.extend(_variant_parts(key, variant, old_variant,
+                                        is_new=False))
+
+        # Anything that disappeared entirely (deleted variant/trip).
         for key in old_map:
             if key not in new_map:
                 diffs.append((key[0], key[1], None, "delete"))
@@ -192,7 +209,72 @@ def _collect_trips_diffs(path: Path, new_payload: dict) -> list[tuple[str, str, 
         return []
 
 
-def _journal_trips_safe(path: Path, diffs: list[tuple[str, str, object, str]]) -> None:
+#: Journal key parts for a variant (see ``_collect_trips_diffs``).
+PART_META = "meta"
+PART_ORDER = "order"
+STOP_PREFIX = "stop:"
+LEG_PREFIX = "leg:"
+
+_META_FIELDS = ("name", "notes", "rating", "months", "comment")
+
+
+def _variant_parts(key: tuple[str, str], variant: dict, old: dict,
+                   is_new: bool) -> list[tuple[str, str, str, object, str]]:
+    """Per-part diff of one variant between ``old`` and ``variant``."""
+    trip_id, variant_id = key
+    out: list[tuple[str, str, str, object, str]] = []
+
+    old_stops = {s.get("id"): s for s in (old.get("stops") or []) if isinstance(s, dict)}
+    new_stops = [s for s in (variant.get("stops") or []) if isinstance(s, dict)]
+    new_stop_ids = {s.get("id") for s in new_stops}
+
+    # 1) variant-level fields
+    meta = {field: variant.get(field) for field in _META_FIELDS}
+    old_meta = {field: old.get(field) for field in _META_FIELDS} if old else {}
+    if is_new or meta != old_meta:
+        out.append((trip_id, variant_id, PART_META, meta, "upsert"))
+
+    # 2) stop order (only the ids: the content is diffed per stop)
+    order = [s.get("id") for s in new_stops]
+    old_order = [s.get("id") for s in (old.get("stops") or [])] if old else []
+    if is_new or order != old_order:
+        out.append((trip_id, variant_id, PART_ORDER, order, "upsert"))
+
+    # 3) each stop: added / changed
+    for stop in new_stops:
+        stop_id = stop.get("id")
+        if is_new or stop_id not in old_stops or \
+                _json(stop) != _json(old_stops[stop_id]):
+            out.append((trip_id, variant_id, f"{STOP_PREFIX}{stop_id}",
+                        copy.deepcopy(stop), "upsert"))
+
+    # 4) each stop that disappeared
+    for stop_id in old_stops:
+        if stop_id not in new_stop_ids:
+            out.append((trip_id, variant_id, f"{STOP_PREFIX}{stop_id}",
+                        None, "delete"))
+
+    # 5) legs, positional: identified by their index
+    new_legs = [leg for leg in (variant.get("legs") or []) if isinstance(leg, dict)]
+    old_legs = [leg for leg in (old.get("legs") or []) if isinstance(leg, dict)]
+    for index, leg in enumerate(new_legs):
+        if is_new or index >= len(old_legs) or _json(leg) != _json(old_legs[index]):
+            out.append((trip_id, variant_id, f"{LEG_PREFIX}{index}",
+                        copy.deepcopy(leg), "upsert"))
+    for index in range(len(new_legs), len(old_legs)):
+        out.append((trip_id, variant_id, f"{LEG_PREFIX}{index}", None, "delete"))
+
+    return out
+
+
+def _json(value) -> str:
+    try:
+        return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+    except Exception:
+        return repr(value)
+
+
+def _journal_trips_safe(path: Path, diffs: list[tuple]) -> None:
     if not diffs:
         return
     try:
@@ -203,8 +285,16 @@ def _journal_trips_safe(path: Path, diffs: list[tuple[str, str, object, str]]) -
         from sync import journal as _journal
 
         _journal.ensure_baseline(trips_path=TRIPS_PATH)
-        for trip_id, variant_id, value, op in diffs:
-            _journal.record_trips_change(trip_id, variant_id, value, op=op)
+        for diff in diffs:
+            if len(diff) == 5:
+                trip_id, variant_id, part, value, op = diff
+                _journal.record_trips_change(trip_id, variant_id, value,
+                                             op=op, key_part=part)
+            else:
+                # Legacy whole-variant entry (journals written before
+                # 2026-10-04) — still replayable.
+                trip_id, variant_id, value, op = diff
+                _journal.record_trips_change(trip_id, variant_id, value, op=op)
     except Exception:
         pass
 

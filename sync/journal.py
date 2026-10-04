@@ -150,6 +150,39 @@ def append_entries(entries: list[dict],
     return written
 
 
+#: Reserved key part for the "this destination row now exists" entry. A cell
+#: entry is ``(destination, column)``; the row entry is ``(destination, ROW_KEY)``
+#: so the receiving device can append the row before the cell changes land.
+ROW_KEY = "#row"
+
+
+def record_destination_row(
+    destination: str,
+    country: str | None = None,
+    continent: str | None = None,
+    data_status: str | None = None,
+    device: str | None = None,
+    journal_dir: Path | str | None = None,
+    timestamp: str | None = None,
+) -> Path:
+    """Journal the *creation* of a destination row.
+
+    Without this, a destination added on the PC could never reach the phone: the
+    sync can only write cells into a row that already exists there, so the new
+    destination's climate/cost cells were silently reported as "skipped".
+    """
+    value = {
+        "Destination": str(destination).strip(),
+        "Country": (str(country).strip() if country else None),
+        "Continent": (str(continent).strip() if continent else None),
+    }
+    if data_status:
+        value["Data Status"] = str(data_status)
+    entry = _make_entry("workbook", [str(destination).strip(), ROW_KEY], value,
+                        "row", device, timestamp)
+    return append_entry(entry, journal_dir)
+
+
 def record_workbook_change(
     destination: str,
     column: str,
@@ -173,10 +206,18 @@ def record_trips_change(
     device: str | None = None,
     journal_dir: Path | str | None = None,
     timestamp: str | None = None,
+    key_part: str | None = None,
 ) -> Path:
-    entry = _make_entry(
-        "trips", [str(trip_id), str(variant_id)], value, op, device, timestamp
-    )
+    """Journal one change to a trip variant.
+
+    ``key_part`` selects the granularity (decision 2026-10-04): ``"meta"``,
+    ``"order"``, ``"stop:<id>"``, ``"leg:<index>"``. Without it the legacy
+    2-element key (whole variant) is written, which older journals still use.
+    """
+    key = [str(trip_id), str(variant_id)]
+    if key_part:
+        key.append(str(key_part))
+    entry = _make_entry("trips", key, value, op, device, timestamp)
     return append_entry(entry, journal_dir)
 
 

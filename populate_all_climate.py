@@ -6,6 +6,16 @@ Each entry has:
 - 12 Rainy Days
 - 12 Rain (mm)
 - 12 AQI (US AQI benchmark)
+
+.. note::
+   The ``RainyDays`` values in ``ALL_REMAINING_CLIMATE`` are curated
+   (transcribed from published climate normals, which count trace
+   precipitation). From 2026-10-04 the project-wide definition of a rainy day
+   is ``rainy_days.RAINY_DAY_THRESHOLD_MM`` (1.0 mm/day, the WMO rain day) and
+   every *fetched* row uses it. These curated rows are kept as they are - they
+   are not re-fetched - and
+   ``python write_climate_data.py --list-legacy-rainy-days`` reports which
+   workbook rows still hold them, without making an API call.
 """
 from pathlib import Path
 
