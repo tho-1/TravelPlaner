@@ -8,6 +8,14 @@ Monthly columns added (60 total):
   Jan Rain (mm) .. Dec Rain (mm)    - avg rainfall in mm
   Jan AQI      .. Dec AQI           - avg Air Quality Index
 
+.. warning::
+   **"Rainy days" here does not mean the same thing as in ``aqi_api.py``.**
+   ``aqi_api.py`` counts a WMO rain day (>= 1 mm daily precipitation); the
+   curated tables below were transcribed from published climate normals that
+   use a lower threshold. Both feed the same ``{Mon} Rainy Days`` column, so a
+   few rows may mix the two definitions. Standardise on one and regenerate the
+   affected rows before comparing destinations (README, "Known limitations").
+
 Usage:
     from write_climate_data import write_monthly, print_progress
 

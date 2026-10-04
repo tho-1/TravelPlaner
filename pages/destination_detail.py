@@ -57,6 +57,21 @@ def _normalize_picture_key(value: object) -> str:
     return text
 
 
+def _normalize_exact_key(value: object) -> str:
+    """Same normalisation as :func:`_normalize_picture_key` but KEEPING the
+    qualifier, so a city can be matched to its own photo.
+
+    ``_normalize_picture_key`` deliberately drops ``(Province)`` because only
+    one photo exists for most of those rows; that fallback must not override an
+    exact match when both photos are present.
+    """
+    if value is None:
+        return ""
+    text = unicodedata.normalize("NFKD", str(value))
+    text = text.encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+
 def _country_text(selected_row: pd.Series, metadata: dict) -> str:
     """Return the destination's country as a clean string, or ``""`` if missing."""
     country_col = metadata.get("country_col")
@@ -625,11 +640,6 @@ def render_destination(destination_name: str):
     pictures_dir = DATA_PATH.parent / "Pictures"
     image_path = None
     if pictures_dir.exists():
-        candidate_bases = {
-            _normalize_picture_key(dest_title),
-            _normalize_picture_key(destination_name),
-        }
-
         def _picture_rank(path: Path) -> int:
             """Rank candidate banner photos (lower = preferred).
 
@@ -645,15 +655,34 @@ def render_destination(destination_name: str):
             return 2
 
         existing_files = {f.name: f for f in pictures_dir.iterdir() if f.is_file()}
-        matches = [
+
+        # 1) An exact name match always wins, so "San José (Mexico)" can never
+        #    be shown the photo that belongs to "San José (Costa Rica)".
+        exact_bases = {_normalize_exact_key(dest_title),
+                       _normalize_exact_key(destination_name)}
+        exact_matches = [
             path for name, path in existing_files.items()
-            if any(
-                _normalize_picture_key(Path(name).stem) in {base, base + "1"}
-                for base in candidate_bases
-            )
+            if _normalize_exact_key(Path(name).stem) in exact_bases
         ]
-        if matches:
-            image_path = min(matches, key=_picture_rank)
+        if exact_matches:
+            image_path = min(exact_matches, key=_picture_rank)
+        else:
+            # 2) Otherwise fall back to the qualifier-insensitive match, so
+            #    "Mexico City" still finds "MexicoCity_1.jpg" and
+            #    "San José (Costa Rica)" still finds "San José_1.jpg".
+            candidate_bases = {
+                _normalize_picture_key(dest_title),
+                _normalize_picture_key(destination_name),
+            }
+            matches = [
+                path for name, path in existing_files.items()
+                if any(
+                    _normalize_picture_key(Path(name).stem) in {base, base + "1"}
+                    for base in candidate_bases
+                )
+            ]
+            if matches:
+                image_path = min(matches, key=_picture_rank)
 
     if image_path is None:
         # No local picture: fall back to the first image from the Unsplash

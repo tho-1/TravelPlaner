@@ -36,6 +36,42 @@ def _coords_index_cached() -> dict:
 
 
 @st.cache_data(show_spinner=False)
+def _trip_captions_cached(signature) -> list[str]:
+    """One caption line per trip, cached on the trips.json mtime/size.
+
+    Returns a list positionally aligned with ``storage.load_trips()["trips"]``.
+    """
+    data = storage.load_trips()
+    out: list[str] = []
+    for trip in data.get("trips", []):
+        variant = models.active_variant(trip)
+        if variant is None:
+            out.append("")
+            continue
+        t = ops.totals(variant)
+        if not t["stops"]:
+            out.append("No stops yet")
+            continue
+        n_var = len(trip["variants"])
+        bits = [f"{n_var} variant{'s' if n_var != 1 else ''} · "
+                f"{t['stops']} stops · {t['nights']} nights"]
+        span = f"{t['start'] or '—'} → {t['end'] or '—'}"
+        warn = len(ops.warnings_for(variant))
+        if warn:
+            span += f" · ⚠️ {warn}"
+        modes = f"✈ {t['flights']} · 🚆 {t['trains']}"
+        if t["other"]:
+            modes += f" · 🚌 {t['other']}"
+        bits.append(f"{span} · {modes}")
+        comment = (variant.get("comment") or "").strip()
+        if comment:
+            short = comment[:60] + ("…" if len(comment) > 60 else "")
+            bits.append(f"*{short}*")
+        out.append("  \n".join(bits))
+    return out
+
+
+@st.cache_data(show_spinner=False)
 def _backup_labels_cached(signature) -> list[dict]:
     """Sidebar backup list, cached on the trips.json mtime/size.
 
@@ -886,10 +922,14 @@ def render_sidebar_trips(pg, itinerary_page) -> None:
     if not trips:
         return
     active_id = _resolve_active_id(trips)
+    # The sidebar is rendered on EVERY page of the app on EVERY rerun, so the
+    # per-trip caption lines are computed once per trips.json revision instead
+    # of re-walking every variant on each keystroke.
+    captions = _trip_captions_cached(storage.file_signature())
 
     st.markdown("**Travel Itineraries**")
     with st.container(key="itin_trips"):
-        for trip in trips:
+        for index, trip in enumerate(trips):
             is_active = trip["id"] == active_id
             clicked = st.button(("✅ " if is_active else "🧳 ") + trip["name"],
                                 key=f"itin_nav_{trip['id']}",
@@ -901,29 +941,10 @@ def render_sidebar_trips(pg, itinerary_page) -> None:
             on_itinerary = getattr(pg, "url_path", "") == "itinerary"
             if clicked and not (is_active and on_itinerary):
                 _open_trip_from_nav(trip["id"], pg, itinerary_page)
-            variant = models.active_variant(trip)
-            if variant is None:
+            caption = (captions[index] if index < len(captions) else "") or None
+            if not caption:
                 continue
-            t = ops.totals(variant)
-            if not t["stops"]:
-                st.caption("No stops yet")
-                continue
-            n_var = len(trip["variants"])
-            bits = [f"{n_var} variant{'s' if n_var != 1 else ''} · "
-                    f"{t['stops']} stops · {t['nights']} nights"]
-            span = f"{t['start'] or '—'} → {t['end'] or '—'}"
-            warn = len(ops.warnings_for(variant))
-            if warn:
-                span += f" · ⚠️ {warn}"
-            modes = f"✈ {t['flights']} · 🚆 {t['trains']}"
-            if t["other"]:
-                modes += f" · 🚌 {t['other']}"
-            bits.append(f"{span} · {modes}")
-            comment = (variant.get("comment") or "").strip()
-            if comment:
-                short = comment[:60] + ("…" if len(comment) > 60 else "")
-                bits.append(f"*{short}*")
-            st.caption("  \n".join(bits))
+            st.caption(caption)
 
     if st.button("➕ New itinerary", key="itin_nav_new", type="tertiary",
                  width="stretch"):
