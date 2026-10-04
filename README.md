@@ -68,7 +68,7 @@ instead of silently forgetting your changes.
 
 ```powershell
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest                  # full suite (218 tests, ~70 s)
+python -m pytest                  # full suite (221 tests, ~35 s)
 python tests/run_all.py           # same, with a fallback for no-pytest setups
 python tests/run_all.py --no-pytest   # only the dependency-free script runners
 python -m ruff check .            # lint
@@ -77,6 +77,10 @@ python -m compileall -q .         # byte-compile (the project's "build")
 
 `pip install -e .` is deliberately a no-op (it installs no modules) — this is
 an application you run from a checkout, not a library.
+
+`Destinations-local.xlsx` is git-ignored, so a fresh clone starts from the
+committed `Destinations-cloud.xlsx`; the app and the test suite both work with
+either.
 
 CI runs on every push to `main`: **Actions → CI** on GitHub shows the result.
 Both jobs (Linux and Windows) run byte-compile → ruff → pytest, plus the

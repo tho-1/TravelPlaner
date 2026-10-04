@@ -39,6 +39,7 @@ implementation batches are done and verified by **188 automated tests**:
 | Tooling | `pyproject.toml` (deps + pytest + ruff), `tests/conftest.py` sandbox, 128 new tests, `tests/run_all.py`, `.github/workflows/ci.yml` (Linux + Windows), `requirements.txt` floors corrected |
 | Dead code | deleted `populate_destination_details.py` (writes removed columns, non-atomic save), `check_rows.py` and `inspect_workbook.py` (scratch scripts with paths from another machine) |
 | **Batch 3** (2026-10-04, `ec4d0a2` + this commit) | CI actually installs its dependencies; new destinations sync; trip sync is per stop; one rainy-day definition; transient Windows locks are retried |
+| **Batch 4** (2026-10-05, `f9ab036`) | the suite and a fresh clone work without the git-ignored local workbook — **CI is green** |
 
 ### Batch 3 (2026-10-04)
 
@@ -54,20 +55,38 @@ implementation batches are done and verified by **188 automated tests**:
 Measured with the new command, no API calls: 7 curated rows, 137 canonical,
 0 partially-overwritten rows, 0 rows without rainy-day data.
 
+### Batch 4 (2026-10-05) — CI is green
+
+Once the install step was fixed, pytest ran for the first time in CI and failed
+on both runners: `FileNotFoundError: Destinations-local.xlsx`.
+`Destinations-local.xlsx` is **git-ignored**, so a clean checkout only has the
+committed `Destinations-cloud.xlsx`, and `get_workbook_path()` asked for the
+local file unconditionally.
+
+| Area | Fixed |
+|---|---|
+| A fresh clone could not start | `get_workbook_path()` falls back to the committed cloud seed in local mode. With neither file present it still returns the local name, so the error message can name the missing file. Three tests, incl. the "neither exists" case |
+| Test hygiene gap | `conftest` now redirects `data_utils.DATA_PATH` / `environment.WORKBOOK_PATH` (the default argument of most writers, imported by value in `app.py`) to a disposable copy, so no test can write to the real or the committed workbook. Verified: after a full run in a clean clone, `git status` shows no `.xlsx` change |
+| F18 closed by measurement | `load_trips()` costs **0.29 ms** on the 6.8 KB `trips.json` — ~3 ms per rerun even at ten calls. The remaining "sidebar re-reads trips.json" item is not worth a cache, and a `(mtime, size)`-keyed cache would reintroduce exactly the stale-read data loss that `TripsFileChanged` exists to prevent. **Closed, no code** |
+
+Verified: `ruff check .` clean, `compileall` clean, **221 pytest tests pass**,
+`tests/run_all.py --no-pytest` passes — and the same four commands pass in a
+fresh `git clone`, which is what CI runs. GitHub Actions run #6: **success**
+on Linux and Windows.
+
 **Still open:**
 
-1. **F18 (partly)** The sidebar still re-reads `trips.json` on every rerun of
-   every page (the backup-snapshot part is cached now).
-2. **F33** `open_destinations.json` is per device; Cloud loses the tab layout on
+1. **F33** `open_destinations.json` is per device; Cloud loses the tab layout on
    redeploy. Documented instead of synced.
-3. **Q1 (open)** Whether the Cloud deployment can persist anything is still
+2. **Q1 (open)** Whether the Cloud deployment can persist anything is still
    unverified by the user. The code no longer depends on the answer, and the
    sidebar names the directory in use.
-4. **The 7 curated rainy-day rows** stay as they are until someone decides to
+3. **The 7 curated rainy-day rows** stay as they are until someone decides to
    spend the API calls; the report command is the worklist.
 
-Validation: `ruff check .` clean, `compileall` clean, **218 pytest tests pass**
-(~70 s), and `python tests/run_all.py --no-pytest` passes.
+Validation: `ruff check .` clean, `compileall` clean, **221 pytest tests pass**,
+and `python tests/run_all.py --no-pytest` passes — locally *and* in a fresh
+clone.
 
 ### Decisions added on 2026-10-03
 
