@@ -1,0 +1,5 @@
+Metadata-Version: 2.4
+Name: travel-planner
+Version: 1.0.0
+Summary: Streamlit travel planner: destinations catalogue, itinerary planner, local/cloud sync
+Requires-Python: >=3.11

@@ -1,0 +1,6 @@
+# Development / CI dependencies on top of requirements.txt.
+#   python -m pip install -r requirements.txt -r requirements-dev.txt
+pytest>=8.0
+ruff>=0.6
+# Optional: lets `pytest --timeout=...` work. The suite runs without it.
+pytest-timeout>=2.3

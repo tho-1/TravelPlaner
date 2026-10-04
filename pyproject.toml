@@ -1,30 +1,34 @@
+# Tool configuration only.
+#
+# This repository is a Streamlit *application*, not a library: it is run with
+# `streamlit run app.py` from a checkout, and nothing imports it from an
+# installed distribution. It therefore deliberately has no [project] table and
+# must not be pip-installed — `pip install -e .` fails setuptools' flat-layout
+# package discovery ("multiple top-level packages discovered in a flat-layout:
+# itinerary, pages, sync, tests"), which is what broke the first CI runs.
+#
+# Dependencies: requirements.txt (what Streamlit Cloud installs) and
+# requirements-dev.txt (pytest + ruff, for local checks and CI).
+
 [project]
+# Metadata only — this project installs NOTHING (see [tool.setuptools] below).
+# Runtime dependencies live in requirements.txt; dev tools in
+# requirements-dev.txt.
 name = "travel-planner"
 version = "1.0.0"
-description = "Streamlit travel planner: destinations catalogue + itinerary planner + local/cloud sync"
+description = "Streamlit travel planner: destinations catalogue, itinerary planner, local/cloud sync"
 requires-python = ">=3.11"
+dependencies = []
 
-# Runtime floors that actually match the code. The previous requirements.txt
-# allowed streamlit 1.37, but the app uses st.button(width=...),
-# st.container(key=...), type="tertiary" and vertical_alignment, which need
-# >=1.45 — installing the declared minimum crashed every page with
-# "TypeError: button() got an unexpected keyword argument 'width'".
-dependencies = [
-    "streamlit>=1.62,<2",
-    "pandas>=2.2",
-    "openpyxl>=3.1",
-    "plotly>=5.20",
-    "requests>=2.31",
-    "Pillow>=10.0",
-    "ddgs>=9.0",
-]
+[build-system]
+# Declared so that an accidental `pip install -e .` succeeds as a no-op instead
+# of dying inside setuptools' flat-layout package discovery.
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
 
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.0",
-    "pytest-timeout>=2.3",
-    "ruff>=0.6",
-]
+[tool.setuptools]
+py-modules = []
+packages = []
 
 [tool.pytest.ini_options]
 minversion = "8.0"
@@ -63,5 +67,3 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Tests may import without ordering, and the __main__ runner is intentional.
 "tests/*" = ["E402", "F401"]
-"check_rows.py" = ["F401", "F841"]
-"inspect_workbook.py" = ["F401", "F841"]

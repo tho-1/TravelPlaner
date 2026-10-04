@@ -52,16 +52,22 @@ instead of silently forgetting your changes.
 ## Tests, lint, build
 
 ```powershell
-python -m pytest                  # full suite (151+ tests, ~30 s)
+python -m pip install -r requirements.txt -r requirements-dev.txt
+python -m pytest                  # full suite (188 tests, ~35 s)
 python tests/run_all.py           # same, with a fallback for no-pytest setups
 python tests/run_all.py --no-pytest   # only the dependency-free script runners
 python -m ruff check .            # lint
 python -m compileall -q .         # byte-compile (the project's "build")
 ```
 
-CI (`.github/workflows/ci.yml`) runs compileall → ruff → pytest on Linux **and**
-Windows on every push, because two of the trickier bugs (atomic replace, file
-locking) are platform specific.
+`pip install -e .` is deliberately a no-op (it installs no modules) — this is
+an application you run from a checkout, not a library.
+
+CI runs on every push to `main`: **Actions → CI** on GitHub shows the result.
+Both jobs (Linux and Windows) run byte-compile → ruff → pytest, plus the
+dependency-free test path. Windows is included because two of the trickier bugs
+(atomic replace, file locking) are platform specific. You do not need to do
+anything for it — if it is red, the push broke something.
 
 The suite never touches the live workbook, `trips.json` or the journals:
 `tests/conftest.py` redirects all runtime state into a temporary directory, and
