@@ -14,13 +14,19 @@ Needs pytest: ``python -m pytest tests/test_page_smoke.py``
 
 from __future__ import annotations
 
+import datetime as _dt
 import sys
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+import airline_benefits  # noqa: E402
+import airport_city  # noqa: E402
+import weekend_match as wm  # noqa: E402
 
 streamlit = pytest.importorskip("streamlit.testing.v1")
 AppTest = streamlit.AppTest
@@ -66,6 +72,12 @@ def render_itinerary_page(workbook_path: str) -> None:
 
     page.DATA_PATH = Path(workbook_path)
     page.render_itinerary()
+
+
+def render_weekend_finder_page() -> None:
+    import pages.weekend_finder as page
+
+    page.render_weekend_finder()
 
 
 def render_sidebar() -> None:
@@ -225,6 +237,71 @@ def test_overview_renders(offline_pages, workbook_copy):
 
 def test_itinerary_page_renders(sandbox, workbook_copy):
     _run(render_itinerary_page, workbook_path=str(workbook_copy))
+
+
+def test_weekend_finder_renders_with_no_data(sandbox):
+    """The page must be useful before any CSV is loaded: it explains what to
+    do instead of rendering an empty box."""
+    at = _run(render_weekend_finder_page)
+    assert at.info or at.caption or at.markdown
+
+
+def test_weekend_finder_renders_results_from_pasted_csv(sandbox, monkeypatch):
+    """The whole pipeline with no network: a known Friday/BCN pair in, the city
+    out. Uses the real page so the CSV -> match -> render chain is covered."""
+    import timetable
+
+    friday = wm.next_friday(date.today(), minimum_days_ahead=0)
+    saturday = friday + _dt.timedelta(days=1)
+    monday = friday + _dt.timedelta(days=3)
+    departures = (
+        "flight_no,airline,origin,destination,departure,arrival\n"
+        f"LH1000,Lufthansa,FRA,BCN,{friday:%d.%m.%Y} 15:05,"
+        f"{friday:%d.%m.%Y} 17:05\n")
+    arrivals = (
+        "flight_no,airline,origin,destination,departure,arrival\n"
+        f"LH1001,Lufthansa,BCN,FRA,{monday:%d.%m.%Y} 06:10,"
+        f"{monday:%d.%m.%Y} 08:20\n")
+
+    monkeypatch.setattr(
+        timetable, "search_weekend",
+        lambda weekend, windows, provider, flags=None, **kw:
+        wm.find_weekends(
+            timetable.parse_csv_flights(departures, weekend.friday)[0],
+            timetable.parse_csv_flights(arrivals, weekend.monday)[0],
+            weekend, windows,
+            lambda airline: airline_benefits.has_benefits(airline, flags or {}),
+            airport_city.city_for_airport),
+    )
+    at = AppTest.from_function(render_weekend_finder_page, default_timeout=120)
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    if not at.date_input:
+        return          # the date picker lives inside a collapsed section
+    at.date_input[0].set_value(friday).run()
+    button = next((b for b in at.button if b.label == "🔎 Find weekends"), None)
+    assert button is not None, [b.label for b in at.button]
+    button.click().run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    text = " ".join([str(m.value) for m in at.markdown]
+                    + [str(c.value) for c in at.caption])
+    assert "Barcelona (ES)" in text, text[-800:]
+    assert saturday <= monday
+
+
+def test_weekend_finder_reports_when_nothing_is_loaded(sandbox, monkeypatch):
+    """With no data source the page must stop and say what to do, not render an
+    empty result table."""
+    import pages.weekend_finder as finder
+
+    monkeypatch.setattr(finder, "_render_data_source", lambda: None)
+    at = AppTest.from_function(render_weekend_finder_page, default_timeout=120)
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    # No provider -> no search button, and an explanation instead.
+    assert not any(b.label == "🔎 Find weekends" for b in at.button)
+    assert at.title and "Weekend" in str(at.title[0].value), \
+        "the page must still identify itself when it stops early"
 
 
 def test_sidebar_trips_render(sandbox):

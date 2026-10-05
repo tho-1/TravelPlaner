@@ -71,7 +71,7 @@ instead of silently forgetting your changes.
 
 ```powershell
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest                  # full suite (233 tests, ~100 s)
+python -m pytest                  # full suite (339 tests, ~50 s)
 python tests/run_all.py           # same, with a fallback for no-pytest setups
 python tests/run_all.py --no-pytest   # only the dependency-free script runners
 python -m ruff check .            # lint
@@ -108,6 +108,10 @@ Highlights:
 | `tests/test_caches_and_matching.py` | geocode/AQI/IQAir cache staleness, country matching, column matching, cache keys |
 | `tests/test_sync_per_stop.py` | new-destination rows, per-stop trip keys, parallel edits on two devices |
 | `tests/test_tabs_sync.py` | open-tab journaling, newest-wins, two-device convergence |
+| `tests/test_weekend_match.py` | the weekend finder's time windows, pairing, city grouping |
+| `tests/test_timetable.py` | CSV parsing, caching, and which flight sources are usable |
+| `tests/test_airport_city.py` | airport → city → country, multi-airport cities merged |
+| `tests/test_airline_benefits.py` | the per-airline benefit flag and name normalisation |
 | `tests/test_rainy_days.py` | one rainy-day definition for all writers; the provenance report |
 
 ## Architecture in one screen
@@ -120,6 +124,12 @@ pages/overview.py      filterable, country-grouped catalogue
 pages/destination_detail.py   one page per city (banner, metrics, climate
                        dashboard, galleries, AI populate, flight routes)
 pages/itinerary.py     trips → variants → stops → legs + route map
+pages/weekend_finder.py  Fri→Mon weekend possibilities from FRA (CSV in,
+                       all matching in weekend_match.py)
+weekend_match.py       pure weekend matcher: flights + windows -> cities
+timetable.py           flight data providers + CSV parsing + caching
+airport_city.py        airport -> city -> country, metro merge (data/airports.csv)
+airline_benefits.py    the per-airline "has benefits" flag (workbook sheet)
 filters.py             shared, tested filter primitives (blank values never filter out)
 rainy_days.py          the one definition of a rainy day (>= 1 mm/day)
 data_utils.py          workbook I/O: atomic saves, stale-write detection, writers
@@ -147,6 +157,11 @@ runtime_paths.py       where runtime state is written
 
 * `Destinations-cloud.xlsx` is committed, so Cloud edits are lost on redeploy
   unless they have been synced or downloaded first.
+* The weekend trip finder has no automatic flight data source yet. Both boards
+  we tried are unreachable from plain HTTP (Fraport's page is a JavaScript shell
+  with no public JSON endpoint; FlightStats sits behind AWS WAF + captcha), so
+  the finder reads a CSV you upload or paste. `python timetable.py` prints the
+  current status of every provider. See `WEEKEND_FINDER_PLAN.md`.
 * Seven destinations still hold `{Mon} Rainy Days` values transcribed from
   published climate normals, which count trace precipitation instead of the
   project's ≥1 mm definition. They are not re-fetched on purpose (it would cost

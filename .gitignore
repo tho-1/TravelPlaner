@@ -23,6 +23,10 @@ scratch_*.py
 # Run artifacts (never commit)
 *.log
 
+# OurAirports raw download (12 MB). data/airports.csv is generated from it by
+# build_airport_table.py and IS committed; only the raw file is disposable.
+airports_raw.csv
+
 # IQAir scraper cache (rebuildable via python -m iqair_ranking)
 iqair_cache/
 

@@ -27,6 +27,11 @@ Monthly columns added (60 total):
    unified definition.
 
 Usage:
+    python write_climate_data.py                     # write the curated rows
+    python write_climate_data.py --progress         # per-destination fill status
+    python write_climate_data.py --list-legacy-rainy-days   # provenance only
+
+Usage:
     from write_climate_data import write_monthly, print_progress
 
     write_monthly("Bogotá", {

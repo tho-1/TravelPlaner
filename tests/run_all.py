@@ -27,6 +27,10 @@ SCRIPT_RUNNABLE = [
     "test_sync_merge.py",
     "test_tabs_sync.py",
     "test_filters.py",
+    "test_airport_city.py",
+    "test_airline_benefits.py",
+    "test_weekend_match.py",
+    "test_timetable.py",
 ]
 
 

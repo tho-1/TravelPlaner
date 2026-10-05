@@ -93,9 +93,36 @@ on Linux and Windows.
 
 Validation: `ruff check .` clean, **233 pytest tests pass**, `tests/run_all.py --no-pytest` passes — and a full run leaves the real `sync_journals/` and the tabs file untouched (verified).
 
-Validation: `ruff check .` clean, `compileall` clean, **233 pytest tests pass**,
-and `python tests/run_all.py --no-pytest` passes — locally *and* in a fresh
-clone.
+### Batch 6 (2026-10-05) — weekend trip finder (plan-driven, unsupervised)
+
+Built from `WEEKEND_FINDER_PLAN.md`. 339 tests, all passing; `streamlit run`
+boots healthy (HTTP 200).
+
+| Area | State |
+|---|---|
+| Airport → city → country | `airport_city.py` + generated `data/airports.csv` (4568 airports, OurAirports, public domain) via `build_airport_table.py`. Multi-airport cities merged (London's 6, Paris' 3, Tokyo, Milan, New York, …); districts like "Marignane, Bouches-du-Rhone" are overridden or dropped rather than shown as a city name |
+| Airline benefit flag | `airline_benefits.py`. Single flag per carrier in a new `Airline Benefits` sheet — *not* the existing `Airlines` sheet, which `sync_airlines_to_excel` rewrites. Seeded with 24 carriers and written into the local workbook; **the user must correct the ticks** |
+| Matcher | `weekend_match.py` — pure, no I/O, 37 tests covering all six bounds, overnight flights, Monday-before-09:00 returns, multi-airport merging, codeshare/operator logic, and the one-way-only bucket |
+| Page | `pages/weekend_finder.py`, sidebar entry "Weekend Finder" |
+| **Scraping** | **blocked, verified not assumed** — Fraport's departures page is a JavaScript shell with zero flight rows and no public JSON endpoint (`/api/flight/*` and `/api/flights/*` 404); FlightStats is behind AWS WAF + captcha. Both registered as unavailable *with the reason recorded*, so the finding is testable and not repeated |
+| Escape hatch | `csv` provider: upload or paste, header aliases accepted, bad rows reported not fatal. This is why the feature is usable at all today |
+
+Design calls worth remembering:
+
+* **Benefits follow the operating carrier**, not the marketing one: a
+  LH-numbered flight operated by Vueling does not qualify.
+* **Multi-airport cities merge by city, not by airport** — the user asked for
+  this, and it also stops a codeshare from listing the same city twice.
+* **Genuinely different cities that share a name stay separate** (Ubud vs
+  Denpasar, Fez vs Saïss, two Khivas). A metro merge that hid those would
+  silently delete a destination.
+* The workbook's `Sri Lanka` row is a **country**, so it is refused as a match:
+  "Sri Lanka (LK)" must not appear in a list of cities.
+* An **unticked airline silently removes destinations**, so the results header
+  always states how many carriers are flagged.
+
+Validation: `ruff check .` clean, `compileall` clean, **339 pytest tests pass**
+(~50 s), `tests/run_all.py --no-pytest` passes.
 
 ### Decisions added on 2026-10-03
 
