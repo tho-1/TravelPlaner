@@ -25,6 +25,7 @@ SCRIPT_RUNNABLE = [
     "test_itinerary.py",
     "test_sync_journal.py",
     "test_sync_merge.py",
+    "test_tabs_sync.py",
     "test_filters.py",
 ]
 

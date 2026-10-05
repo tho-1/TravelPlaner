@@ -1,14 +1,18 @@
 """Deterministic merge for sync journals (Phase 2).
 
-Newer-wins per key, with conflicts surfaced — never silently resolved.
+Newer-wins per key, with conflicts surfaced — never silently resolved —
+except for open tabs, which are ephemeral UI state and always resolve to the
+newest change without asking.
 
 - Key: (store, key...). Workbook: ("workbook", destination, column).
-  Trips: ("trips", trip_id, variant_id).
+  Trips: ("trips", trip_id, variant_id[, part]).
+  Tabs: ("tabs", "tab", destination) — one key per tab.
 - last_sync.json tracks per-key applied timestamps. An entry with ts newer
   than the last applied ts for its key is a change since last sync.
 - If both local and remote changed the same key since last sync to different
   values -> conflict, written to conflicts.json for UI review. Nothing is
-  applied for that key until the user resolves it.
+  applied for that key until the user resolves it. Tabs never conflict (see
+  above): concurrent opens on both devices are different keys anyway.
 - If only one side changed -> that side wins and is applied.
 - Idempotent re-sync: re-running with no new entries applies nothing.
 - Offline accumulation: entries queue in local JSONL until a sync runs.
@@ -121,7 +125,17 @@ def plan_merge(
         local_new = [e for e in locals_sorted if since is None or e["ts"] > since]
         remote_new = [e for e in remotes_sorted if since is None or e["ts"] > since]
         if local_new and remote_new:
-            if _values_equal(local_new[-1]["value"], remote_new[-1]["value"]) and local_new[
+            if key and key[0] == "tabs":
+                # Open tabs are ephemeral UI state, not data: never ask the
+                # user to resolve them. The newest change wins — a close beats
+                # an older open and vice versa. Concurrent opens on both
+                # devices are different keys, so both survive without ever
+                # reaching this branch.
+                winner = max(
+                    [local_new[-1], remote_new[-1]], key=_entry_sort_key
+                )
+                apply.append(winner)
+            elif _values_equal(local_new[-1]["value"], remote_new[-1]["value"]) and local_new[
                 -1
             ].get("op") == remote_new[-1].get("op"):
                 winner = max(
@@ -158,9 +172,10 @@ def apply_entries(
     entries: list[dict],
     workbook_path: Path | None = None,
     trips_path: Path | None = None,
+    tabs_path: Path | None = None,
     dry_run: bool = False,
 ) -> dict:
-    """Apply winning entries to both stores. Snapshots first. Returns summary.
+    """Apply winning entries to all three stores. Snapshots first. Returns summary.
 
     Sets SYNC_MERGE_APPLY=1 so the apply itself is not re-journaled.
     """
@@ -168,12 +183,19 @@ def apply_entries(
 
     wb_path = Path(workbook_path) if workbook_path else get_workbook_path()
     tr_path = Path(trips_path) if trips_path else (ROOT / "trips.json")
+    if tabs_path is not None:
+        tb_path = Path(tabs_path)
+    else:
+        from data_utils import OPEN_TABS_PATH as _live_tabs
+
+        tb_path = Path(_live_tabs)
     ordered = sorted(entries, key=_entry_sort_key)
     if dry_run:
         return {"would_apply": len(ordered), "snapshots": [], "applied": 0}
 
     workbook_entries = [e for e in ordered if e.get("store") == "workbook"]
     trips_entries = [e for e in ordered if e.get("store") == "trips"]
+    tabs_entries = [e for e in ordered if e.get("store") == "tabs"]
 
     # Snapshot ONLY the store that is about to be written. The old code always
     # snapshotted the workbook, so a trips-only sync (and every test that called
@@ -200,6 +222,12 @@ def apply_entries(
             else:
                 key = entry.get("key", [])
                 skipped.append("trips / " + " / ".join(str(k) for k in key))
+        for entry in tabs_entries:
+            if _apply_tabs(entry, tb_path):
+                applied += 1
+            else:
+                key = entry.get("key", [])
+                skipped.append("tabs / " + " / ".join(str(k) for k in key))
     finally:
         if previous_flag is None:
             os.environ.pop("SYNC_MERGE_APPLY", None)
@@ -461,6 +489,47 @@ _PART_ORDER = "order"
 _STOP_PREFIX = "stop:"
 _LEG_PREFIX = "leg:"
 _META_FIELDS = ("name", "notes", "rating", "months", "comment")
+
+#: Key prefix of open-tab entries. Kept as a literal so merge.py does not
+#: import journal.py at module level (the import graph stays one-directional).
+_TAB_PREFIX = "tab"
+
+
+def _apply_tabs(entry: dict, tabs_path: Path) -> bool:
+    """Apply one open-tab entry to ``open_destinations.json``.
+
+    ``upsert`` appends the tab (in arrival order) unless it is already open;
+    ``delete`` removes it unless it is already closed. An entry whose intent is
+    already satisfied counts as applied: tabs entries assert state, and a
+    re-applied assertion is success, not a problem to report. Returns False
+    only for malformed entries and unwritable files.
+    """
+    key = entry.get("key", [])
+    if len(key) != 2 or str(key[0]) != _TAB_PREFIX:
+        return False
+    name = str(key[1]).strip()
+    if (not name or name == _TAB_PREFIX or len(name) > 200
+            or "\n" in name or "\r" in name):
+        return False
+    try:
+        path = Path(tabs_path)
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            current = [str(v).strip() for v in raw
+                       if isinstance(raw, list) and str(v).strip()]
+        except (OSError, ValueError):
+            current = []
+        if entry.get("op") == "delete":
+            updated = [d for d in current if d != name]
+        else:
+            updated = current if name in current else current + [name]
+        if updated != current:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(updated, ensure_ascii=False, indent=2),
+                            encoding="utf-8")
+        return True
+    except OSError:
+        return False
 
 
 def _resize_legs(legs: list, wanted: int) -> list:

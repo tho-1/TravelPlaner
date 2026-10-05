@@ -76,15 +76,24 @@ on Linux and Windows.
 
 **Still open:**
 
-1. **F33** `open_destinations.json` is per device; Cloud loses the tab layout on
-   redeploy. Documented instead of synced.
-2. **Q1 (open)** Whether the Cloud deployment can persist anything is still
+1. **Q1 (open)** Whether the Cloud deployment can persist anything is still
    unverified by the user. The code no longer depends on the answer, and the
    sidebar names the directory in use.
-3. **The 7 curated rainy-day rows** stay as they are until someone decides to
+2. **The 7 curated rainy-day rows** stay as they are until someone decides to
    spend the API calls; the report command is the worklist.
 
-Validation: `ruff check .` clean, `compileall` clean, **221 pytest tests pass**,
+### Batch 5 (2026-10-05) — open tabs sync (F33 closed)
+
+| Area | Done |
+|---|---|
+| Tabs sync | each tab is its own journal key `("tabs", "tab", destination)` — opened journals `upsert`, closed journals `delete`. Concurrent opens on both devices are different keys, so both survive with no conflict; an open against a close of the same tab resolves to the newest change, so tabs never appear in the conflict list |
+| Backfill | the first journalled save asserts the whole tab list (pre-existing tabs reach the other device); afterwards only deltas travel, so a tab closed on one device is not resurrected by the other device's next save |
+| Session | after a sync the running app adopts the synced tab list into `st.session_state` before rerunning, instead of showing the pre-sync layout until reload |
+| Suite hygiene (real bug found by this work) | the page smoke tests render through `save_open_destinations` without the `sandbox` fixture, and one of them mocks `Path.exists` globally — a full run overwrote the real `open_destinations.json` with test tabs and journalled ~10k test entries into the real `sync_journals/` (which would then have synced to the phone). The session fixture now redirects the tabs path and the journal dir to temp for the whole session, plus an in-process backfill guard; a regression test pins the redirect. Test pollution in the real dirs was removed; the real tabs file held only a test remnant, so it was deleted and the app falls back to favorites |
+
+Validation: `ruff check .` clean, **233 pytest tests pass**, `tests/run_all.py --no-pytest` passes — and a full run leaves the real `sync_journals/` and the tabs file untouched (verified).
+
+Validation: `ruff check .` clean, `compileall` clean, **233 pytest tests pass**,
 and `python tests/run_all.py --no-pytest` passes — locally *and* in a fresh
 clone.
 

@@ -3,6 +3,7 @@
 Design (PLAN.md Phase 2):
 - Every successful write records one JSONL entry per changed key.
 - Workbook key: (destination, column header). Trips key: (trip_id, variant_id).
+- Open-tabs key: ("tab", destination) — one entry per opened/closed tab.
 - Entry: ts (UTC) + device id + store + op + key + value.
 - Files: sync_journals/<device>-<YYYYMMDD>.jsonl (gitignored, transported via
   data-sync branch later). Baseline in sync_journals/baseline.json marks the
@@ -218,6 +219,31 @@ def record_trips_change(
     if key_part:
         key.append(str(key_part))
     entry = _make_entry("trips", key, value, op, device, timestamp)
+    return append_entry(entry, journal_dir)
+
+
+#: Key prefix for open-tab entries. The full key is ``["tab", destination]``.
+TAB_KEY_PREFIX = "tab"
+
+
+def record_tabs_change(
+    destination: str,
+    op: str = "upsert",
+    device: str | None = None,
+    journal_dir: Path | str | None = None,
+    timestamp: str | None = None,
+) -> Path:
+    """Journal one tab being opened (``upsert``) or closed (``delete``).
+
+    Tabs are ephemeral UI state, not data: each tab gets its own key so a tab
+    opened on the PC and another opened on the phone are different keys and
+    both survive a merge, with no conflict to resolve. The value carries no
+    information (``True`` for an open tab); the key and the op are the change.
+    """
+    if op not in ("upsert", "delete"):
+        raise ValueError(f"tabs entry op must be 'upsert' or 'delete', not {op!r}")
+    entry = _make_entry("tabs", [TAB_KEY_PREFIX, str(destination).strip()],
+                        True if op == "upsert" else None, op, device, timestamp)
     return append_entry(entry, journal_dir)
 
 

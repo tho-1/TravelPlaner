@@ -14,6 +14,29 @@ def _short_ts(ts: str) -> str:
         return str(ts)
 
 
+def _refresh_session_tabs() -> None:
+    """Adopt the synced tab list into the running session.
+
+    A sync can open tabs (created on the other device) or close them there.
+    The file is the truth; the session copy would otherwise keep showing the
+    pre-sync layout until the next full reload.
+    """
+    try:
+        import streamlit as st
+
+        from data_utils import OPEN_TABS_PATH, load_open_destinations
+
+        if "open_destinations" not in st.session_state:
+            return
+        if not OPEN_TABS_PATH.exists():
+            return
+        fresh = load_open_destinations()
+        if list(st.session_state["open_destinations"]) != fresh:
+            st.session_state["open_destinations"] = fresh
+    except Exception:
+        pass
+
+
 def render_sync_sidebar() -> None:
     import json
 
@@ -60,6 +83,7 @@ def render_sync_sidebar() -> None:
             if result.get("skipped"):
                 st.session_state["sync_skipped"] = result["skipped"]
             conflicts = _merge.load_conflicts()
+            _refresh_session_tabs()
             st.rerun()
     if st.session_state.get("sync_result"):
         st.toast(f"Sync done: {st.session_state.pop('sync_result')}", icon="✅")
@@ -71,7 +95,8 @@ def render_sync_sidebar() -> None:
                 "These journal entries had no target on this device — most "
                 "often a destination that was added on the other device (or "
                 "renamed here). Refresh the workbook from the other device, or "
-                "add the destination here, then sync again."
+                "add the destination here, then sync again. Lines starting "
+                "with `tabs /` are unreadable tab entries, not destinations."
             )
             for line in skipped[:25]:
                 st.markdown(f"- {line}")
@@ -82,7 +107,8 @@ def render_sync_sidebar() -> None:
             st.caption(
                 "The same trip variant was changed on both devices since the "
                 "last sync. Pick a winner per entry — the winner replaces that "
-                "whole variant, including stops the other device added."
+                "whole variant, including stops the other device added. "
+                "Open tabs never appear here: the newest change always wins."
             )
             for i, conflict in enumerate(conflicts):
                 key = conflict.get("key", [])

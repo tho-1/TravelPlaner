@@ -39,17 +39,97 @@ def save_open_destinations(destinations) -> bool:
     Returns False (instead of failing silently) when the data directory is not
     writable, so the app can tell the user that their tab layout is not being
     remembered instead of quietly forgetting it.
+
+    The change is also journalled for device sync (F33): tabs opened since the
+    last save become ``tabs`` upserts, tabs closed since the last save become
+    deletes. The first journalled save additionally asserts the *whole* list,
+    so tabs that were already open before syncing existed still reach the other
+    device; afterwards only deltas travel. Unlike the workbook writers there is
+    only one tabs file, so no "is this the live path?" check is needed — but
+    like them, journaling is skipped during a sync apply and never breaks a save.
     """
+    clean = _clean_tab_list(destinations)
     try:
+        previous = load_open_destinations()
         OPEN_TABS_PATH.parent.mkdir(parents=True, exist_ok=True)
         OPEN_TABS_PATH.write_text(
-            json.dumps([str(d) for d in destinations], ensure_ascii=False, indent=2),
+            json.dumps(clean, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-        return True
     except Exception as exc:
         _note_state_write_error(f"open destination tabs: {exc}")
         return False
+    _journal_tabs_safe(previous, clean)
+    return True
+
+
+def _clean_tab_list(destinations) -> list[str]:
+    """Strip, drop empties and de-duplicate a tab list, keeping first order."""
+    clean: list[str] = []
+    seen: set[str] = set()
+    try:
+        items = list(destinations or [])
+    except TypeError:
+        return []
+    for value in items:
+        name = str(value).strip()
+        if name and name not in seen:
+            seen.add(name)
+            clean.append(name)
+    return clean
+
+
+def _tabs_backfill_done(journal_dir: Path) -> bool:
+    return (Path(journal_dir) / "tabs_backfill_v1.json").exists()
+
+
+#: Journal dirs already backfilled by this process. A file marker is the
+#: cross-process record, but a single process must never backfill twice even
+#: if the marker check lies — the page smoke tests mock ``Path.exists``
+#: globally, and without this guard one suite run journalled the whole tab
+#: list on every save (~10k entries for 144 renders).
+_BACKFILLED_TABS_DIRS: set[str] = set()
+
+
+def _journal_tabs_safe(previous: list[str], current: list[str]) -> int:
+    """Journal a tab-list change. Returns entries written; never raises."""
+    try:
+        if os.environ.get("SYNC_MERGE_APPLY") == "1":
+            return 0
+        from sync import journal as _journal
+
+        _journal.ensure_baseline()
+        jdir = _journal._journal_dir(None)
+        if str(jdir) not in _BACKFILLED_TABS_DIRS and not _tabs_backfill_done(jdir):
+            # First journalled save: assert the whole list so pre-existing tabs
+            # reach the other device, plus deletes for anything removed since.
+            # Afterwards only deltas travel, so a tab closed on one device is
+            # not resurrected by the other device's next save.
+            for name in current:
+                _journal.record_tabs_change(name, op="upsert")
+            for name in previous:
+                if name not in current:
+                    _journal.record_tabs_change(name, op="delete")
+            (jdir / "tabs_backfill_v1.json").write_text(
+                json.dumps({"backfilled_utc": _journal._utcnow_iso(),
+                            "device": _journal.get_device_id()},
+                           ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            _BACKFILLED_TABS_DIRS.add(str(jdir))
+            return len(current) + sum(1 for name in previous if name not in current)
+        count = 0
+        for name in current:
+            if name not in previous:
+                _journal.record_tabs_change(name, op="upsert")
+                count += 1
+        for name in previous:
+            if name not in current:
+                _journal.record_tabs_change(name, op="delete")
+                count += 1
+        return count
+    except Exception:
+        return 0
 
 
 def _note_state_write_error(message: str) -> None:

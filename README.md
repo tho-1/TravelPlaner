@@ -43,10 +43,13 @@ What a sync can move, and at what size:
 | one stop | `(trip, variant, "stop:<id>")` | two devices editing *different* stops of one trip both keep their change |
 | stop order | `(trip, variant, "order")` | drag a stop to position 1 |
 | one leg | `(trip, variant, "leg:<n>")` | change the second leg to a train |
+| one open tab | `("tab", destination)` | a tab opened on the phone appears on the PC after sync (and vice versa) |
 
 Entries are applied in timestamp order, so a row creation always precedes the
 cell writes that target it. A whole-variant key `(trip, variant)` from a journal
-written before 2026-10-04 is still replayable.
+written before 2026-10-04 is still replayable. Open tabs are the exception to
+the conflict rule: an open against a close of the same tab resolves to the
+newest change without asking, so tabs never appear in the conflict list.
 
 `runtime_paths.py` decides where runtime state is written:
 
@@ -68,7 +71,7 @@ instead of silently forgetting your changes.
 
 ```powershell
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest                  # full suite (221 tests, ~35 s)
+python -m pytest                  # full suite (233 tests, ~100 s)
 python tests/run_all.py           # same, with a fallback for no-pytest setups
 python tests/run_all.py --no-pytest   # only the dependency-free script runners
 python -m ruff check .            # lint
@@ -104,6 +107,7 @@ Highlights:
 | `tests/test_bulk_sync.py` | the climate/AQI/food producers journal their writes; skipped changes are reported |
 | `tests/test_caches_and_matching.py` | geocode/AQI/IQAir cache staleness, country matching, column matching, cache keys |
 | `tests/test_sync_per_stop.py` | new-destination rows, per-stop trip keys, parallel edits on two devices |
+| `tests/test_tabs_sync.py` | open-tab journaling, newest-wins, two-device convergence |
 | `tests/test_rainy_days.py` | one rainy-day definition for all writers; the provenance report |
 
 ## Architecture in one screen

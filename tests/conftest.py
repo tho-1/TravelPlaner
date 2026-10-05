@@ -39,28 +39,41 @@ def workbook_source() -> Path | None:
 
 @pytest.fixture(scope="session", autouse=True)
 def _redirect_default_workbook(tmp_path_factory, workbook_source):
-    """Point every *default* workbook argument at a disposable copy.
+    """Point every *default* state path at disposable copies.
 
     ``data_utils.DATA_PATH`` is the default of most writers, and ``app.py``
     imports it by value, so a test that renders or edits through the default
-    would otherwise touch the real file. This also makes the suite work in CI,
-    where ``Destinations-local.xlsx`` is absent (it is git-ignored) and
+    would otherwise touch the real file. The same holds for the open-tabs file
+    and the journal directory: the page smoke tests render through
+    ``save_open_destinations`` without the ``sandbox`` fixture, and a full run
+    used to overwrite the real ``open_destinations.json`` with test tabs and
+    journal thousands of test entries into the real ``sync_journals/`` (which
+    would then have synced to the other device). This also makes the suite work
+    in CI, where ``Destinations-local.xlsx`` is absent (it is git-ignored) and
     ``workbook_source`` falls back to the committed cloud seed.
     """
     import data_utils
     import environment
+    from sync import journal
 
-    target = tmp_path_factory.mktemp("workbook") / "Destinations.xlsx"
+    workdir = tmp_path_factory.mktemp("workbook")
+    target = workdir / "Destinations.xlsx"
     shutil.copy2(workbook_source, target)
     original_data_path = data_utils.DATA_PATH
     original_workbook_path = environment.WORKBOOK_PATH
+    original_tabs_path = data_utils.OPEN_TABS_PATH
+    original_journal_dir = journal.DEFAULT_JOURNAL_DIR
     data_utils.DATA_PATH = target
     environment.WORKBOOK_PATH = target
+    data_utils.OPEN_TABS_PATH = workdir / "open_destinations.json"
+    journal.DEFAULT_JOURNAL_DIR = workdir / "sync_journals"
     try:
         yield target
     finally:
         data_utils.DATA_PATH = original_data_path
         environment.WORKBOOK_PATH = original_workbook_path
+        data_utils.OPEN_TABS_PATH = original_tabs_path
+        journal.DEFAULT_JOURNAL_DIR = original_journal_dir
 
 
 @pytest.fixture()
