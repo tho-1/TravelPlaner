@@ -107,6 +107,7 @@ def render_weekend_finder() -> None:
 
     flags = airline_benefits.load_benefit_flags()
     st.caption(airline_benefits.benefit_summary(flags))
+    _render_benefit_source()
 
     if not st.button("🔎 Find weekends", type="primary", width="stretch"):
         return
@@ -202,6 +203,44 @@ def _run(provider, weekend: wm.Weekend, windows: wm.Windows,
         st.error(str(exc))
         return wm.MatchReport(weekend=weekend, windows=windows,
                               notes=[str(exc)])
+
+
+def _render_benefit_source() -> None:
+    """Show which airlines qualify and offer to re-read the external file.
+
+    The user maintains ``airlines_benefits.xlsx`` in another project, so a
+    button is worth having: it re-reads that file and refreshes the count
+    without a page reload.
+    """
+    path = airline_benefits.external_file_path()
+    if not path.exists():
+        with st.expander("Airline benefits"):
+            st.caption(
+                f"No benefits file at `{path}`. Set the environment variable "
+                f"`{airline_benefits.EXTERNAL_FILE_ENV}` to point at it, or "
+                f"tick the `{airline_benefits.SHEET_NAME}` sheet in the workbook."
+            )
+        return
+
+    qualified = airline_benefits.benefit_names()
+    with st.expander(f"Airlines with benefits ({len(qualified)})", expanded=False):
+        st.caption(f"Read from `{path}`. An airline qualifies when **any** of "
+                   f"discount_eligible / business_class / confirmed_booking is "
+                   f"Yes. 'Unknown' counts as no.")
+        st.markdown(", ".join(qualified) if qualified else "_none yet_")
+        if st.button("🔄 Re-read the benefits file"):
+            with st.spinner("Reading…"):
+                report = airline_benefits.import_benefits_file()
+            for problem in report["problems"]:
+                st.warning(problem)
+            if report["read"]:
+                st.success(
+                    f"Read {report['read']} airlines, {report['qualified']} "
+                    f"with benefits. Mirrored {report['written']} row(s) into the "
+                    f"workbook.")
+                st.rerun()
+            else:
+                st.warning("Nothing could be read — keeping the previous list.")
 
 
 def _render_notes(report: wm.MatchReport, windows: wm.Windows) -> None:

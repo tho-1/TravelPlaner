@@ -34,7 +34,7 @@ and step 2's sheet is created but needs your ticks. Details below.
 | Step | State |
 |---|---|
 | 1. Airport -> city -> country | **done** — `airport_city.py` + `data/airports.csv` (4568 airports, built by `build_airport_table.py` from OurAirports) |
-| 2. Airline Benefits sheet | **done, needs your input** — `airline_benefits.py`; the sheet was created in your local workbook with 24 seeded airlines, all ticked |
+| 2. Airline Benefits | **done, reads your real file** — `airline_benefits.py` imports `airlines_benefits.xlsx` from the other project (IATA-keyed, `Yes`/`No`/`Unknown` per benefit column) and mirrors it into the workbook |
 | 3. Matcher | **done** — `weekend_match.py`, 37 tests |
 | 4. Fraport live board | **BLOCKED** — see below |
 | 5. Timetable scrape | **BLOCKED** — same cause; `csv` is the shipped fallback |
@@ -139,16 +139,46 @@ weekend_match.py          pure, tested matcher: flights × windows → city list
 
 ## Still needs from the user
 
-1. **The airline list** — this is the one thing blocking useful results. The
-   sheet is in `Destinations-local.xlsx` with 24 seeded carriers ticked. Untick
-   what you have no benefits with; add any missing carrier with an `x`. The
-   finder only ever shows what you tick. **Note:** an unticked airline silently
-   removes destinations, so the results header states how many are flagged.
-2. **A flight data source** if you want the finder to fetch its own data: either
+1. **A flight data source** if you want the finder to fetch its own data: either
    a Lufthansa Developer API key (best fit — exactly the benefit carriers, any
    date) or approval of another source. Until then, upload/paste CSV.
-3. Confirm the Monday-return reading is right: *land Monday before 09:00*
+2. Confirm the Monday-return reading is right: *land Monday before 09:00*
    (i.e. Sunday-night/Monday-early flights home), Sunday itself unbounded.
+
+## Airline benefits: where the answers come from
+
+The single source of truth is **your** file, not this project:
+
+```
+C:\Users\Thors\OneDrive\Documents\VS Code - Flights\flightroutes-app\data\airlines_benefits.xlsx
+```
+
+* Read on every run, cached for 5 minutes and invalidated immediately when the
+  file's mtime or size changes — so editing it in the other project shows up
+  without a restart.
+* An airline qualifies when **any** of `discount_eligible`, `business_class`,
+  `confirmed_booking` is `Yes`. `Unknown` and `No` both mean no: an unverified
+  airline is not one you can book on, and treating `Unknown` as a yes would
+  silently widen the result list.
+* Matched by **IATA code first** (boards say `LH`, CSV exports say `Lufthansa`),
+  then by normalised name.
+* Mirrored into the workbook's `Airline Benefits` sheet on import, so the app
+  still works on a machine that cannot see the OneDrive folder (e.g. Cloud).
+* Override the path with the environment variable
+  `TRAVEL_PLANNER_AIRLINE_BENEFITS`.
+
+```powershell
+python airline_benefits.py    # import + report, no Streamlit needed
+```
+
+The page shows the qualifying airlines in an expander and has a
+**Re-read the benefits file** button.
+
+Today that yields 7 of 597: CX Cathay Pacific, JL JAL, KC Air Astana,
+LH Lufthansa, VL Lufthansa City Airlines, VN Vietnam Airlines, ZH Shenzhen
+Airlines. Everything else is `Unknown`, which means the finder will show very
+few destinations until you fill the file in — that is the honest result, not a
+bug.
 
 ## Try it
 
@@ -160,7 +190,7 @@ streamlit run app.py
 Or from the command line:
 
 ```powershell
-python timetable.py    # shows which providers work, and parses a sample CSV
-python airline_benefits.py
+python timetable.py        # which flight sources work, and a sample CSV
+python airline_benefits.py # import your airline benefits file
 python -m pytest tests/test_weekend_match.py tests/test_timetable.py
 ```

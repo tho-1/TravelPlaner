@@ -101,7 +101,8 @@ boots healthy (HTTP 200).
 | Area | State |
 |---|---|
 | Airport → city → country | `airport_city.py` + generated `data/airports.csv` (4568 airports, OurAirports, public domain) via `build_airport_table.py`. Multi-airport cities merged (London's 6, Paris' 3, Tokyo, Milan, New York, …); districts like "Marignane, Bouches-du-Rhone" are overridden or dropped rather than shown as a city name |
-| Airline benefit flag | `airline_benefits.py`. Single flag per carrier in a new `Airline Benefits` sheet — *not* the existing `Airlines` sheet, which `sync_airlines_to_excel` rewrites. Seeded with 24 carriers and written into the local workbook; **the user must correct the ticks** |
+| Airline benefit flag | `airline_benefits.py`. Reads the user's `airlines_benefits.xlsx` from the *other* project (IATA-keyed, `Yes`/`No`/`Unknown` per benefit column) as the source of truth; the workbook `Airline Benefits` sheet is a mirror/fallback and the seed list the last resort |
+| Benefits import | any single `Yes` qualifies; `Unknown` does not (an unverified airline is not bookable, and treating Unknown as yes would silently widen the list). Matched by IATA code first, then name. Cached 5 min, invalidated on mtime/size. `python airline_benefits.py` imports and reports; the page has a re-read button |
 | Matcher | `weekend_match.py` — pure, no I/O, 37 tests covering all six bounds, overnight flights, Monday-before-09:00 returns, multi-airport merging, codeshare/operator logic, and the one-way-only bucket |
 | Page | `pages/weekend_finder.py`, sidebar entry "Weekend Finder" |
 | **Scraping** | **blocked, verified not assumed** — Fraport's departures page is a JavaScript shell with zero flight rows and no public JSON endpoint (`/api/flight/*` and `/api/flights/*` 404); FlightStats is behind AWS WAF + captcha. Both registered as unavailable *with the reason recorded*, so the finding is testable and not repeated |
@@ -119,7 +120,11 @@ Design calls worth remembering:
 * The workbook's `Sri Lanka` row is a **country**, so it is refused as a match:
   "Sri Lanka (LK)" must not appear in a list of cities.
 * An **unticked airline silently removes destinations**, so the results header
-  always states how many carriers are flagged.
+  always states how many carriers are flagged. (Later the same day the user
+  pointed out the real source: `airlines_benefits.xlsx` in their *other*
+  project. That is now the primary source, read by IATA code — see README,
+  "Which airlines have benefits". The seeded 24-airline list is gone; today the
+  file yields 7 of 597.)
 
 Validation: `ruff check .` clean, `compileall` clean, **339 pytest tests pass**
 (~50 s), `tests/run_all.py --no-pytest` passes.

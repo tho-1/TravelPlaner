@@ -141,8 +141,9 @@ def no_photo_files(monkeypatch):
     monkeypatch.setattr(detail, "_footsteps_data_uri", lambda visited: "")
 
 
-def _run(fn, **kwargs) -> AppTest:
-    at = AppTest.from_function(fn, kwargs=kwargs, default_timeout=RENDER_TIMEOUT)
+def _run(fn, *, timeout: int | None = None, **kwargs) -> AppTest:
+    at = AppTest.from_function(fn, kwargs=kwargs,
+                               default_timeout=timeout or RENDER_TIMEOUT)
     at.run()
     if at.exception:
         raise AssertionError(
@@ -185,15 +186,20 @@ def test_unknown_destination_renders_a_warning(offline_pages, no_photo_files,
 def test_every_destination_page_renders(offline_pages, no_photo_files, workbook_copy):
     """Render all 144 pages — the check that would have caught the 112 broken ones.
 
-    Fast enough (~15 s) to run on every commit, so it is deliberately *not*
-    marked ``slow``.
+    This is the slowest test in the suite and it must not be allowed to fail on a
+    timeout: a false failure here trains you to ignore the one test that catches
+    a broken destination page. It gets its own generous budget (the 144 pages
+    render in roughly a minute on a slow machine) instead of the 60 s default,
+    which a full render started exceeding after the catalogue and the gallery
+    cache grew.
     """
     from data_utils import load_destinations
 
     df, metadata = load_destinations(workbook_copy)
     names = [str(v) for v in df[metadata["destination_col"]].dropna().tolist()]
     assert len(names) > 100, "expected the full catalogue"
-    _run(render_detail_list, names=names, workbook_path=str(workbook_copy))
+    _run(render_detail_list, timeout=300, names=names,
+         workbook_path=str(workbook_copy))
 
 
 def test_every_destination_renders_with_junk_in_the_climate_columns(

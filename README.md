@@ -71,7 +71,7 @@ instead of silently forgetting your changes.
 
 ```powershell
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest                  # full suite (339 tests, ~50 s)
+python -m pytest                  # full suite (355 tests, ~2 min)
 python tests/run_all.py           # same, with a fallback for no-pytest setups
 python tests/run_all.py --no-pytest   # only the dependency-free script runners
 python -m ruff check .            # lint
@@ -129,7 +129,7 @@ pages/weekend_finder.py  Fri→Mon weekend possibilities from FRA (CSV in,
 weekend_match.py       pure weekend matcher: flights + windows -> cities
 timetable.py           flight data providers + CSV parsing + caching
 airport_city.py        airport -> city -> country, metro merge (data/airports.csv)
-airline_benefits.py    the per-airline "has benefits" flag (workbook sheet)
+airline_benefits.py    airline benefits, read from airlines_benefits.xlsx
 filters.py             shared, tested filter primitives (blank values never filter out)
 rainy_days.py          the one definition of a rainy day (>= 1 mm/day)
 data_utils.py          workbook I/O: atomic saves, stale-write detection, writers
@@ -152,6 +152,25 @@ runtime_paths.py       where runtime state is written
    unions the remote copy instead of overwriting it.
 5. **A filter may only remove rows whose field is populated** — use the helpers
    in `filters.py`.
+
+## Which airlines have benefits
+
+The weekend finder needs to know that, and the answers live in **your** file,
+not in this repo:
+
+```
+C:\Users\Thors\OneDrive\Documents\VS Code - Flights\flightroutes-app\data\airlines_benefits.xlsx
+```
+
+`python airline_benefits.py` reads it and reports. It is also read on every run
+by the app, so edits show up without a restart (cached 5 minutes, invalidated
+immediately on a file change). An airline counts as having benefits when **any**
+of `discount_eligible` / `business_class` / `confirmed_booking` is `Yes`;
+`Unknown` and `No` both mean no. Airlines are matched by IATA code first, then
+by name. The result is mirrored into the workbook's `Airline Benefits` sheet so
+the app still works where that folder is not visible (e.g. Cloud).
+
+Set `TRAVEL_PLANNER_AIRLINE_BENEFITS` to point at a different copy.
 
 ## Known limitations
 

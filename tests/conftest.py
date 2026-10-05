@@ -109,6 +109,27 @@ def sandbox(tmp_path, monkeypatch, workbook_source):
     return data_dir
 
 
+@pytest.fixture(autouse=True)
+def _isolate_external_benefits_file(monkeypatch):
+    """Point the external airline-benefits file at a path that does not exist.
+
+    The user keeps ``airlines_benefits.xlsx`` in another project on their own
+    machine. Tests must not read it: it would make the suite depend on a file
+    outside the repository (absent in CI), and a developer's edits would change
+    test results. Tests that need the file patch ``external_file_path``
+    themselves.
+    """
+    import airline_benefits
+
+    # Set the env var rather than replacing the function, so the real
+    # resolution path stays under test.
+    monkeypatch.setenv(airline_benefits.EXTERNAL_FILE_ENV,
+                       str(ROOT / "tests" / "_no_external_benefits.xlsx"))
+    airline_benefits._EXTERNAL_CACHE = None
+    yield
+    airline_benefits._EXTERNAL_CACHE = None
+
+
 @pytest.fixture()
 def workbook_copy(tmp_path, workbook_source):
     """A writable copy of the real destinations workbook."""
