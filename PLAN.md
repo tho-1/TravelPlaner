@@ -1,13 +1,15 @@
 # Travel Planner — Plan & Handoff
 
-Last updated: 2026-10-03 (after the full code review + the first fix batch).
+Last updated: 2026-10-06.
 
-**Read `README.md` first** — it documents where runtime data is written, the
-test/lint commands, and the five data-safety rules that must not be broken.
-This file is the history and the open-issues list.
+**Read `AGENTS.md` first** (orientation, invariants, open items), then
+`README.md` (how to run it, where runtime data is written, the data-safety
+rules). This file is the **history**: every review finding, every fix, every
+decision, with dates and commit hashes.
 
-This document records what is finished, what is still open, the decisions already made,
-and the verified commands for testing. It is the authoritative handoff for the next session.
+Sections §1–§4 below are historical (they describe the state *before* the
+2026-10-03 batches) and are superseded by §0. Where they disagree with §0 or
+`AGENTS.md`, believe those.
 
 ---
 
@@ -74,13 +76,10 @@ Verified: `ruff check .` clean, `compileall` clean, **221 pytest tests pass**,
 fresh `git clone`, which is what CI runs. GitHub Actions run #6: **success**
 on Linux and Windows.
 
-**Still open:**
-
-1. **Q1 (open)** Whether the Cloud deployment can persist anything is still
-   unverified by the user. The code no longer depends on the answer, and the
-   sidebar names the directory in use.
-2. **The 7 curated rainy-day rows** stay as they are until someone decides to
-   spend the API calls; the report command is the worklist.
+**Still open:** see the consolidated list in `AGENTS.md` §6. As of this batch it
+was the Cloud-persistence check (Q1) and the 7 curated rainy-day rows; later
+batches added the weekend finder's blocked flight scraping and the partly filled
+airline-benefits file.
 
 ### Batch 5 (2026-10-05) — open tabs sync (F33 closed)
 

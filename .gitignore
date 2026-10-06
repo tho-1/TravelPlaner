@@ -7,6 +7,8 @@ __pycache__/
 env/
 venv/
 ENV/
+# Build detritus from `pip install -e .`, which is a deliberate no-op here
+*.egg-info/
 
 # IDE
 .vscode/

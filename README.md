@@ -6,6 +6,10 @@ dates, transport legs and a route map. Edits made on the PC and on the phone
 (Streamlit Cloud) are merged through change journals instead of overwriting
 each other.
 
+> **Working on this codebase? Read [`AGENTS.md`](AGENTS.md) first** — it is the
+> entry point: where everything lives, the data-safety rules that must not break,
+> how to verify a change, and the open items.
+
 ## Running it
 
 ```powershell
@@ -71,7 +75,7 @@ instead of silently forgetting your changes.
 
 ```powershell
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest                  # full suite (355 tests, ~2 min)
+python -m pytest                  # full suite (355 tests, ~2 min; the 144-page render dominates)
 python tests/run_all.py           # same, with a fallback for no-pytest setups
 python tests/run_all.py --no-pytest   # only the dependency-free script runners
 python -m ruff check .            # lint
