@@ -150,6 +150,108 @@ Validation: `ruff check .` clean, `compileall` clean, **339 pytest tests pass**
   curated rows are **not** regenerated: that would mean re-fetching climate data,
   which was declined. The affected rows are listed instead, without API calls.
 
+### 2026-10-07 batch: airline benefits move to Turso, and Fraport is not blocked
+
+**A wrong conclusion, corrected.** The 2026-10-05 batch recorded Fraport as
+impossible to scrape, on the grounds that the departures page is a JavaScript
+shell with no public JSON endpoint. Both halves of that were artefacts of how I
+looked: I inspected only the *rendered HTML* (which genuinely has zero flight
+rows) and then *guessed* paths under `/api`, which all 404. The endpoint is not
+under `/api` — it is advertised in the page's own markup as a `data-api-url`
+attribute. **Lesson: read the markup for `data-*` attributes before concluding a
+page is client-side only.**
+
+The endpoint, verified against live data:
+
+```
+https://www.frankfurt-airport.com/en/_jcr_content.flights.json/filter
+  ?flighttype=departures|arrivals
+  &time=2026-10-09T00:00:00+02:00     # full ISO datetime WITH tz offset
+  &perpage=50&page=1&lang=en
+```
+
+* `time` must be a **full ISO datetime with a timezone offset**. `?date=2026-10-09`,
+  `?time=2026-10-09` and `?time=09.10.2026` are silently ignored.
+* `time` is a **cursor, not a filter**: paging walks forward through the whole
+  ~88 600-record archive. Any date works (tested −7 to +60 days).
+* Berlin is +01:00 in summer and +02:00 in winter — getting the offset wrong
+  returns the wrong day.
+* A weekend costs **~39 requests** if the cursor starts at the first moment
+  needed (14 for outbound from Fri 14:00, 25 for returns from Sat 12:00).
+* End-to-end check for Fri 2026-10-09 → Mon 2026-10-12: 700 outbound and 1250
+  inbound flights scanned, 399/683 on benefit airlines, **123 cities reachable
+  both ways**.
+
+Consequences in the code: `timetable.FraportBoardProvider`'s reason text now says
+*endpoint verified, not implemented* instead of *unreachable* (a false claim in a
+docstring is worse than a missing feature — it stops the next agent looking), the
+endpoint and both page URLs are pinned as class attributes, and
+`test_the_blocked_providers_document_why` became
+`test_the_unavailable_providers_document_why`, which asserts the reason says
+"verified working" and **not** "JavaScript shell".
+
+**Airline benefits now come from a Turso database**, at the user's decision,
+replacing the `airlines_benefits.xlsx` import:
+
+| | |
+|---|---|
+| Remote | `https://flightconnections-tz123.aws-eu-north-1.turso.io` |
+| Table | `airlines(iata, name, discount_eligible, business_class, confirmed_booking, comments, updated_at)` |
+| Values | lowercase `yes` / `no` / `unknown` |
+| Local copy | `flightroutes-app/data/flightroutes.db` |
+
+Verified rather than assumed: the local `.db` has **597** rows with exactly those
+columns, 7/4/2 yes/unknown splits, `updated_at` on all rows, and the same 7
+qualifying carriers (CX, JL, KC, LH, VL, VN, ZH) the Excel file produced. The
+remote answers `/health` 200, `/v2/pipeline` 401 without a token and 400 with a
+bad one — so the host and auth path are right and only a token is missing.
+
+Decisions:
+
+* **Raw HTTP over Turso's SQL-over-HTTP pipeline API**, not the `libsql` driver:
+  one read query does not justify a native dependency in `requirements.txt`.
+  Tests use stdlib `sqlite3` against a temporary file built to the same schema, so
+  the real SQL and the real column names are exercised with no network and no
+  credential.
+* **Column matching and the meaning of "yes" are defined once.** `shape_records`
+  and `records_to_flags` were extracted from `parse_external_rows` so the Excel
+  and Turso paths cannot drift apart — the Excel reader had been carrying its own
+  copy of the same rules.
+* **An empty read is a failure, not "nobody qualifies."** An empty flag map would
+  remove every destination from the finder with no visible cause.
+* **Fallback ladder:** Turso → workbook `Airline Benefits` sheet (the only source
+  on Cloud) → the Excel file, but *only* when Turso is not configured at all →
+  the built-in seed list. Every failure returns a problem string; none raises.
+* `benefit_source_name` / `benefit_summary` / `benefit_names` were reading the
+  Excel file directly and would have *described a source the flags did not come
+  from*. They now go through `_qualifying_rows()`, which returns the label
+  alongside the data.
+* The token is never logged or printed, and the cache key holds a 12-character
+  SHA-256 fingerprint rather than the token.
+* The weekend finder's benefits expander names the real source and offers the
+  right button for it (clear the cache for Turso, re-read the file for legacy).
+
+A bug worth recording: `ENV_LOCAL_DB` was first written
+`TRAVEL_PLANER_FLIGHTROUTES_DB` — one letter from `TRAVEL_PLANNER_DATA_DIR`,
+which is the spelling every other variable in this project uses. An unset
+misspelled variable is completely silent: it reads as "the offline fallback does
+not exist" rather than as a typo, and it cost a confusing debugging pass. There is
+now a test asserting the PLANNER spelling, plus one asserting the local fallback
+actually engages.
+
+Validation: `ruff check .` clean, `compileall` clean, **405 pytest tests pass**,
+`tests/run_all.py --no-pytest` exits 0.
+
+### Decisions added on 2026-10-07
+
+- **Benefits are read from a Turso database**, not a spreadsheet. A database is
+  the right shape for something the user edits per-airline on two machines.
+- **Any one of the three benefit columns being `yes` qualifies an airline**;
+  `unknown` never does.
+- A **remote outage must degrade to the workbook mirror, never to an empty list.**
+- Fraport's endpoint is undocumented, so the CSV fallback stays and a recorded
+  response fixture should fail a test loudly if their markup changes.
+
 ---
 
 ## 1. Where things stood before the 2026-10-03 batch (historical)

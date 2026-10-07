@@ -206,28 +206,51 @@ def _run(provider, weekend: wm.Weekend, windows: wm.Windows,
 
 
 def _render_benefit_source() -> None:
-    """Show which airlines qualify and offer to re-read the external file.
+    """Show which airlines qualify, and say which source they came from.
 
-    The user maintains ``airlines_benefits.xlsx`` in another project, so a
-    button is worth having: it re-reads that file and refreshes the count
-    without a page reload.
+    Two cases, because the button means different things in each:
+
+    * **Turso configured** — the database is read on every run and cached, so the
+      only useful action is clearing that cache. The text names the real source,
+      never a guess.
+    * **Not configured** — the legacy Excel file is being used, and re-reading it
+      is worth a button (it lives in another project, so it changes without this
+      app noticing).
     """
-    path = airline_benefits.external_file_path()
-    if not path.exists():
-        with st.expander("Airline benefits"):
-            st.caption(
-                f"No benefits file at `{path}`. Set the environment variable "
-                f"`{airline_benefits.EXTERNAL_FILE_ENV}` to point at it, or "
-                f"tick the `{airline_benefits.SHEET_NAME}` sheet in the workbook."
-            )
-        return
-
     qualified = airline_benefits.benefit_names()
+    source = airline_benefits.benefit_source_name()
+    using_turso = airline_benefits.turso_configured()
+
     with st.expander(f"Airlines with benefits ({len(qualified)})", expanded=False):
-        st.caption(f"Read from `{path}`. An airline qualifies when **any** of "
+        st.caption(f"Read from **{source}**. An airline qualifies when **any** of "
                    f"discount_eligible / business_class / confirmed_booking is "
-                   f"Yes. 'Unknown' counts as no.")
+                   f"`yes`. 'unknown' counts as no.")
         st.markdown(", ".join(qualified) if qualified else "_none yet_")
+
+        if using_turso:
+            if st.button("🔄 Re-read the benefits database"):
+                with st.spinner("Reading…"):
+                    import benefits_turso
+
+                    benefits_turso.clear_cache()
+                    _records, problems = benefits_turso.fetch_benefit_records(
+                        use_cache=False)
+                for problem in problems:
+                    st.warning(problem)
+                st.rerun()
+            return
+
+        path = airline_benefits.external_file_path()
+        if not path.exists():
+            st.info(
+                f"No benefits database configured and no legacy file at `{path}`. "
+                f"Set `TURSO_AUTH_TOKEN` (preferred) or "
+                f"`{airline_benefits.EXTERNAL_FILE_ENV}`; until then the "
+                f"`{airline_benefits.SHEET_NAME}` workbook sheet is used.")
+            return
+
+        st.caption(f"Legacy source: `{path}`. The benefits database is the "
+                   f"intended source — set `TURSO_AUTH_TOKEN` to switch over.")
         if st.button("🔄 Re-read the benefits file"):
             with st.spinner("Reading…"):
                 report = airline_benefits.import_benefits_file()

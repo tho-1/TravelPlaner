@@ -116,6 +116,7 @@ Highlights:
 | `tests/test_timetable.py` | CSV parsing, caching, and which flight sources are usable |
 | `tests/test_airport_city.py` | airport → city → country, multi-airport cities merged |
 | `tests/test_airline_benefits.py` | the per-airline benefit flag and name normalisation |
+| `tests/test_benefits_turso.py` | the Turso database reader: value semantics, schema drift, every failure path |
 | `tests/test_rainy_days.py` | one rainy-day definition for all writers; the provenance report |
 
 ## Architecture in one screen
@@ -133,7 +134,8 @@ pages/weekend_finder.py  Fri→Mon weekend possibilities from FRA (CSV in,
 weekend_match.py       pure weekend matcher: flights + windows -> cities
 timetable.py           flight data providers + CSV parsing + caching
 airport_city.py        airport -> city -> country, metro merge (data/airports.csv)
-airline_benefits.py    airline benefits, read from airlines_benefits.xlsx
+airline_benefits.py    airline benefits: resolver, name normalisation, workbook mirror
+benefits_turso.py      the benefits database reader (Turso over HTTP, local .db offline)
 filters.py             shared, tested filter primitives (blank values never filter out)
 rainy_days.py          the one definition of a rainy day (>= 1 mm/day)
 data_utils.py          workbook I/O: atomic saves, stale-write detection, writers
@@ -159,32 +161,47 @@ runtime_paths.py       where runtime state is written
 
 ## Which airlines have benefits
 
-The weekend finder needs to know that, and the answers live in **your** file,
-not in this repo:
+The weekend finder needs to know that, and the answers live in a **Turso
+database** you maintain (changed 2026-10-07 — this used to be an Excel file):
 
 ```
-C:\Users\Thors\OneDrive\Documents\VS Code - Flights\flightroutes-app\data\airlines_benefits.xlsx
+table:  airlines(iata, name, discount_eligible, business_class,
+                  confirmed_booking, comments, updated_at)
+remote: https://flightconnections-tz123.aws-eu-north-1.turso.io
 ```
 
-`python airline_benefits.py` reads it and reports. It is also read on every run
-by the app, so edits show up without a restart (cached 5 minutes, invalidated
-immediately on a file change). An airline counts as having benefits when **any**
-of `discount_eligible` / `business_class` / `confirmed_booking` is `Yes`;
-`Unknown` and `No` both mean no. Airlines are matched by IATA code first, then
-by name. The result is mirrored into the workbook's `Airline Benefits` sheet so
-the app still works where that folder is not visible (e.g. Cloud).
+`benefits_turso.py` reads it over Turso's SQL-over-HTTP pipeline API and reports;
+so does the app, on every run, cached one hour. `python benefits_turso.py` prints
+the current state. An airline counts as having benefits when **any** of
+`discount_eligible` / `business_class` / `confirmed_booking` is `yes`;
+`unknown` and `no` both mean no — an unverified airline must never silently widen
+the results. Airlines are matched by IATA code first, then by name.
 
-Set `TRAVEL_PLANNER_AIRLINE_BENEFITS` to point at a different copy.
+| Variable | Purpose |
+|---|---|
+| `TURSO_AUTH_TOKEN` | **required** — read-only bearer token for the database |
+| `TURSO_DATABASE_URL` | override the host (defaults to the one above) |
+| `TURSO_AIRLINE_TABLE` | override the table name (default `airlines`) |
+| `TRAVEL_PLANNER_FLIGHTROUTES_DB` | local `flightroutes.db`, used offline if the remote is unavailable |
+
+**Fallbacks, in order:** Turso → the workbook's `Airline Benefits` sheet (so
+Cloud still works) → the old `airlines_benefits.xlsx` (read *only* when Turso is
+not configured at all) → a built-in seed list. Every failure falls through rather
+than raising, and an **empty** read is treated as a failure — an empty flag map
+would remove every destination from the finder with no visible cause. Details and
+the access contract: `TURSO_PLAN.md`.
 
 ## Known limitations
 
 * `Destinations-cloud.xlsx` is committed, so Cloud edits are lost on redeploy
   unless they have been synced or downloaded first.
-* The weekend trip finder has no automatic flight data source yet. Both boards
-  we tried are unreachable from plain HTTP (Fraport's page is a JavaScript shell
-  with no public JSON endpoint; FlightStats sits behind AWS WAF + captcha), so
-  the finder reads a CSV you upload or paste. `python timetable.py` prints the
-  current status of every provider. See `WEEKEND_FINDER_PLAN.md`.
+* The weekend trip finder fetches flights from **Fraport's own JSON endpoint**,
+  which was verified working on 2026-10-07 and covers any date. The provider is
+  not implemented yet, so the finder currently reads a CSV you upload or paste.
+  `python timetable.py` prints the status of every provider. An earlier note in
+  this file claimed the endpoint did not exist — that was wrong; see
+  `WEEKEND_FINDER_PLAN.md` §"Fraport endpoint" for the evidence and the request
+  shape.
 * Seven destinations still hold `{Mon} Rainy Days` values transcribed from
   published climate normals, which count trace precipitation instead of the
   project's ≥1 mm definition. They are not re-fetched on purpose (it would cost

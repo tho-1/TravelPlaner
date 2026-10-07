@@ -7,23 +7,24 @@ Two jobs, kept separate on purpose:
 * **Timetable providers** read published schedules for a given date, so any
   Friday can be planned.
 
-Status of each provider, verified 2026-10-05
----------------------------------------------
-``csv``         works. Manual data source; the guarantee that the feature is
+Status of each provider
+----------------------
+``csv``         **works.** Manual data source; the guarantee that the feature is
                 never dead. See :func:`parse_csv_flights`.
-``fraport``     **blocked**. The board at frankfurt-airport.com is a
-                JavaScript shell: a plain HTTP GET of the departures page
-                contains no flight rows at all, and no public JSON endpoint was
-                found (``/api/flight/*`` and ``/api/flights/*`` both 404).
-                Rendering it needs a browser, which Streamlit Cloud does not
-                have. Registered so the attempt is documented, not repeated.
-``flightstats`` **blocked**. The v2 board is Next.js and sits behind AWS WAF
+``fraport``     **endpoint found and verified** (2026-10-07). The rendered page
+                is a JavaScript shell with no flight rows, but the board's own
+                JSON endpoint is advertised in the page markup and answers
+                plain GETs. Implementation is pending — see
+                ``WEEKEND_FINDER_PLAN.md`` §"Fraport endpoint (verified)".
+``flightstats`` **blocked.** The v2 board is Next.js and sits behind AWS WAF
                 with a captcha challenge; the JSON routes return 404 without
                 the challenge cookie.
 
-So a fresh install has exactly one working source, ``csv``. Adding a real
-board provider means implementing :class:`FlightProvider` against a source that
-allows plain HTTP, and registering it below; nothing else in the app changes.
+Correction worth keeping: the first attempt concluded Fraport was unusable
+because only the *rendered HTML* was inspected and ``/api/...`` was guessed.
+The endpoint is not under ``/api`` at all — it is named by a ``data-api-url``
+attribute in the markup. Lesson: read the markup for ``data-`` attributes
+before concluding a page is client-side only.
 
 Every provider is rate-limited and cached: a failed fetch must never turn into
 a request storm, and a slow source must not be hit on every page rerun.
@@ -311,11 +312,19 @@ class FraportBoardProvider(FlightProvider):
 
     name = "fraport"
     available = False
+    #: The endpoint works; the provider does not exist yet. Kept as a class so
+    #: the finding is testable and so `provider_status()` can say "not
+    #: implemented" rather than the earlier, wrong "not reachable".
     unavailable_reason = (
-        "The Fraport departures page is a JavaScript shell — the HTML contains "
-        "no flight rows, and no public JSON endpoint is exposed. Rendering it "
-        "would need a browser, which Streamlit Cloud does not have."
+        "Endpoint verified working on 2026-10-07 "
+        "(frankfurt-airport.com/en/_jcr_content.flights.json/filter) but the "
+        "provider is not implemented yet — see WEEKEND_FINDER_PLAN.md."
     )
+
+    #: Verified request shape, kept here so the implementation has a spec.
+    endpoint = "https://www.frankfurt-airport.com/en/_jcr_content.flights.json/filter"
+    page_departures = "https://www.frankfurt-airport.com/en/flights-and-transfer/departures.html"
+    page_arrivals = "https://www.frankfurt-airport.com/en/flights-and-transfer/arrivals.html"
 
     def fetch(self, day: date, direction: str) -> FetchResult:
         raise ProviderUnavailable(self.unavailable_reason)

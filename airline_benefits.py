@@ -24,6 +24,7 @@ unticked airline is indistinguishable from a forgotten one.
 
 from __future__ import annotations
 
+import io
 import os
 import re
 import unicodedata
@@ -215,16 +216,76 @@ def _column_index(fieldnames, candidates: tuple[str, ...]) -> int | None:
     return None
 
 
+def shape_records(header, rows) -> tuple[list[dict], list[str]]:
+    """Turn a header row plus data rows into one dict per airline.
+
+    Shared by every source — the Excel file, the Turso database — so the column
+    matching and the meaning of "yes" are defined exactly once. Each record is
+    ``{"code", "name", "benefits", "which"}``, where ``which`` lists the benefit
+    columns that said yes, so the UI can say *why* an airline qualifies.
+
+    Column names are matched case-insensitively with ``_``/space ignored (see
+    :func:`_column_index`), so ``discount_eligible``, ``discount eligible`` and
+    ``DiscountEligible`` all resolve to the same field.
+
+    Returns ``([], [problem])`` when the columns are not recognisable, so a
+    schema change is *reported* rather than silently read as "no airline has
+    benefits" — which would empty the weekend finder with no visible cause.
+    """
+    code_at = _column_index(header, EXTERNAL_CODE_COLUMNS)
+    benefit_at = [(column, _column_index(header, (column,)))
+                  for column in EXTERNAL_BENEFIT_COLUMNS]
+    benefit_at = [(c, i) for c, i in benefit_at if i is not None]
+    if code_at is None or not benefit_at:
+        found = ", ".join(str(h) for h in (header or []) if h is not None)
+        return [], [f"expected a code column "
+                   f"({'/'.join(EXTERNAL_CODE_COLUMNS)}) and at least one "
+                   f"benefit column ({'/'.join(EXTERNAL_BENEFIT_COLUMNS)}); "
+                   f"found: {found}"]
+
+    name_at = _column_index(header, EXTERNAL_NAME_COLUMNS)
+    out: list[dict] = []
+    problems: list[str] = []
+    seen: set[str] = set()
+    for raw_row in rows or []:
+        values = list(raw_row)
+        if not values or code_at >= len(values):
+            continue
+        code = str(values[code_at] or "").strip().upper()
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        airline_name = ""
+        if name_at is not None and name_at < len(values):
+            airline_name = str(values[name_at] or "").strip()
+        which = [column for column, index in benefit_at
+                 if index < len(values) and _is_yes(values[index])]
+        out.append({"code": code, "name": airline_name or code,
+                    "benefits": bool(which), "which": which})
+    return out, problems
+
+
+def records_to_flags(records) -> dict[str, bool]:
+    """``{key: has benefits}`` from :func:`shape_records` output.
+
+    Each airline is registered under **both** its IATA code and its canonical
+    name, so a flight resolves whichever spelling the source gives us: boards say
+    ``LH``, CSV exports say ``Lufthansa``.
+    """
+    flags: dict[str, bool] = {}
+    for row in records or []:
+        flags[row["code"]] = row["benefits"]
+        if row["name"]:
+            flags[canonical_airline_key(row["name"])] = row["benefits"]
+    return flags
+
+
 def parse_external_rows(text_or_path) -> tuple[list[dict], list[str]]:
     """Read the external workbook into one dict per airline.
 
-    Returns ``(rows, problems)`` where each row is
-    ``{"code", "name", "benefits", "which"}`` and ``which`` lists the benefit
-    columns that said Yes (so the UI can say *why* an airline qualifies).
-    Problems (unreadable file, missing columns) are returned rather than raised.
+    Returns ``(rows, problems)``. Problems (unreadable file, missing columns) are
+    returned rather than raised.
     """
-    import io
-
     import openpyxl
 
     def _load(source):
@@ -254,38 +315,7 @@ def parse_external_rows(text_or_path) -> tuple[list[dict], list[str]]:
             header = next(rows)
         except StopIteration:
             return [], ["the benefits sheet is empty"]
-
-        code_at = _column_index(header, EXTERNAL_CODE_COLUMNS)
-        benefit_at = [(column, _column_index(header, (column,)))
-                      for column in EXTERNAL_BENEFIT_COLUMNS]
-        benefit_at = [(c, i) for c, i in benefit_at if i is not None]
-        if code_at is None or not benefit_at:
-            found = ", ".join(str(h) for h in header if h is not None)
-            return [], [f"expected a code column "
-                       f"({'/'.join(EXTERNAL_CODE_COLUMNS)}) and at least one "
-                       f"benefit column ({'/'.join(EXTERNAL_BENEFIT_COLUMNS)}); "
-                       f"found: {found}"]
-
-        name_at = _column_index(header, EXTERNAL_NAME_COLUMNS)
-        out: list[dict] = []
-        problems: list[str] = []
-        seen: set[str] = set()
-        for number, raw_row in enumerate(rows, start=2):
-            values = list(raw_row)
-            if not values or code_at >= len(values):
-                continue
-            code = str(values[code_at] or "").strip().upper()
-            if not code or code in seen:
-                continue
-            seen.add(code)
-            airline_name = ""
-            if name_at is not None and name_at < len(values):
-                airline_name = str(values[name_at] or "").strip()
-            which = [column for column, index in benefit_at
-                     if index < len(values) and _is_yes(values[index])]
-            out.append({"code": code, "name": airline_name or code,
-                        "benefits": bool(which), "which": which})
-        return out, problems
+        return shape_records(header, rows)
     except Exception as exc:
         return [], [f"could not read the benefits sheet: {exc}"]
     finally:
@@ -298,19 +328,12 @@ def parse_external_rows(text_or_path) -> tuple[list[dict], list[str]]:
 def parse_external_benefits(text_or_path) -> tuple[dict[str, bool], list[str]]:
     """Read the external workbook into ``{key: has benefits}``.
 
-    Each airline is registered under **both** its IATA code and its canonical
-    name, so a flight can be resolved by whichever the source gives us: boards
-    say "LH", CSV exports say "Lufthansa". "Unknown" and "No" both mean not
-    qualified — an unverified airline is not one you can book on, and treating
-    Unknown as a yes would silently widen the result list.
+    "Unknown" and "No" both mean not qualified — an unverified airline is not
+    one you can book on, and treating Unknown as a yes would silently widen the
+    result list.
     """
     rows, problems = parse_external_rows(text_or_path)
-    flags: dict[str, bool] = {}
-    for row in rows:
-        flags[row["code"]] = row["benefits"]
-        if row["name"]:
-            flags[canonical_airline_key(row["name"])] = row["benefits"]
-    return flags, problems
+    return records_to_flags(rows), problems
 
 
 def _is_yes(value: object) -> bool:
@@ -385,23 +408,60 @@ def import_benefits_file(source=None,
     return report
 
 
+def turso_configured() -> bool:
+    """Whether a Turso database is set up for this process.
+
+    Used to decide whether the legacy Excel file may be read at all: once Turso
+    is configured, ``airlines_benefits.xlsx`` is not consulted, because the user
+    decided (2026-10-07) that the database is the single source of truth.
+    """
+    try:
+        import benefits_turso
+    except Exception:
+        return False
+    config = benefits_turso.config_from_env()
+    return bool(config["token"] or os.environ.get(
+        benefits_turso.ENV_LOCAL_DB, "").strip())
+
+
 def load_benefit_flags(path: Path | str | None = None) -> dict[str, bool]:
     """``canonical key -> has benefits``, from the best source available.
 
-    Resolution order: the external ``airlines_benefits.xlsx`` the user maintains
-    wins, because that is where they edit. The workbook's ``Airline Benefits``
-    sheet is the mirror and the fallback, and the built-in seed list is the last
-    resort so the page still works on a machine with neither.
+    Resolution order, decided by the user on 2026-10-07:
+
+    1. the **Turso database** (``benefits_turso.py``) — the source of truth, read
+       over the SQL-over-HTTP pipeline API, with a local ``flightroutes.db`` as
+       the offline fallback when ``TRAVEL_PLANNER_FLIGHTROUTES_DB`` is set;
+    2. the workbook's ``Airline Benefits`` sheet — the mirror, and the only
+       source on Streamlit Cloud where the token may be absent;
+    3. ``airlines_benefits.xlsx`` — **legacy**. Read *only* when Turso is not
+       configured at all, so a machine that has not set up the database yet keeps
+       working. Configure Turso and this file is never opened again.
+    4. the built-in seed list — last resort.
 
     A missing sheet, a missing column, an empty cell and an unreadable file all
-    mean "nothing from this source", never an exception.
+    mean "nothing from this source", never an exception. An **empty** read is
+    treated the same way, because a flag map with no entries would remove every
+    destination from the weekend finder for no visible reason.
     """
     from data_utils import DATA_PATH
 
     target = Path(path) if path is not None else DATA_PATH
-    external, _problems = load_external_flags()
-    if external:
-        return external
+
+    if turso_configured():
+        try:
+            import benefits_turso
+
+            flags, _problems = benefits_turso.fetch_benefit_flags()
+            if flags:
+                return flags
+        except Exception:
+            # Never let a broken source take the page down; fall through.
+            pass
+    else:
+        external, _problems = load_external_flags()
+        if external:
+            return external
     flags: dict[str, bool] = {}
     try:
         import openpyxl
@@ -538,11 +598,34 @@ def unmatched_airlines(airlines, flags: dict[str, bool] | None = None) -> list[s
     return sorted(out)
 
 
+def _qualifying_rows() -> tuple[list[dict], list[str], str]:
+    """``(rows, problems, source label)`` from whichever source is configured.
+
+    Mirrors the ladder in :func:`load_benefit_flags`, so the names and the summary
+    the UI shows can never describe a different source than the flags it filters
+    with. Returning the label alongside the data is what keeps them honest.
+    """
+    if turso_configured():
+        try:
+            import benefits_turso
+
+            rows, problems = benefits_turso.fetch_benefit_records()
+            if rows:
+                return rows, problems, "Turso database"
+        except Exception:
+            pass
+    else:
+        rows, problems = parse_external_rows(external_file_path())
+        if rows and not problems:
+            return rows, problems, "airlines_benefits.xlsx"
+    return [], [], ""
+
+
 def benefit_source_name(flags: dict[str, bool] | None = None) -> str:
-    """Which source the flags came from: external file, sheet, or seed."""
-    _external, problems = load_external_flags()
-    if not problems and external_file_path().exists():
-        return "airlines_benefits.xlsx"
+    """Which source the flags came from: Turso database, sheet, or seed."""
+    _rows, _problems, label = _qualifying_rows()
+    if label:
+        return label
     if flags:
         return f"'{SHEET_NAME}' sheet"
     return "built-in defaults"
@@ -551,23 +634,23 @@ def benefit_source_name(flags: dict[str, bool] | None = None) -> str:
 def benefit_summary(flags: dict[str, bool] | None = None) -> str:
     """One line for the results header, so "nothing matched" is explainable.
 
-    With the external file loaded this reports real airlines rather than the
+    With a real source loaded this reports actual airlines rather than a
     597-entry table: the user cares which carriers qualify, not how many are
     listed. "Unknown" counts as not qualified and is stated as such.
     """
     if flags is None:
         flags = load_benefit_flags()
-    if not flags:
-        return (f"No '{SHEET_NAME}' sheet and no external benefits file - using "
-                f"the built-in default list of {len(SEED_BENEFIT_AIRLINES)} "
-                f"airlines.")
-    rows, problems = parse_external_rows(external_file_path())
-    if rows and not problems:
+    rows, problems, label = _qualifying_rows()
+    if rows:
         qualified = sorted(row["code"] for row in rows if row["benefits"])
         return (f"{len(qualified)} of {len(rows)} airlines have benefits "
-                f"(from airlines_benefits.xlsx: "
+                f"(from {label}: "
                 f"{', '.join(qualified) if qualified else 'none yet'}); "
                 f"'Unknown' counts as no.")
+    if not flags:
+        return (f"No '{SHEET_NAME}' sheet and no benefits database - using "
+                f"the built-in default list of {len(SEED_BENEFIT_AIRLINES)} "
+                f"airlines.")
     flagged = sum(1 for value in flags.values() if value)
     return (f"{flagged} of {len(flags)} listed airlines marked as having "
             f"benefits (sheet '{SHEET_NAME}')")
@@ -575,8 +658,8 @@ def benefit_summary(flags: dict[str, bool] | None = None) -> str:
 
 def benefit_names(flags: dict[str, bool] | None = None) -> list[str]:
     """The qualifying airlines as ``"LH Lufthansa"`` strings, for the UI."""
-    rows, problems = parse_external_rows(external_file_path())
-    if rows and not problems:
+    rows, _problems, _label = _qualifying_rows()
+    if rows:
         return [f'{row["code"]} {row["name"]}' for row in sorted(
             rows, key=lambda r: str(r["code"])) if row["benefits"]]
     if flags is None:

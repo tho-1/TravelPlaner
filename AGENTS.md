@@ -80,19 +80,30 @@ folder.
 > keys. Move it by encrypted USB or cable, not by email or a share link. They are
 > git-ignored; never commit them.
 
-### External file this project reads
+### External data this project reads
 
-`airline_benefits.py` reads **`airlines_benefits.xlsx`** from the user's *other*
-project:
+**Airline benefits — a Turso database** (`benefits_turso.py`), decided 2026-10-07:
 
-```
-C:\Users\Thors\OneDrive\Documents\VS Code - Flights\flightroutes-app\data\airlines_benefits.xlsx
-```
+| | |
+|---|---|
+| Remote | `https://flightconnections-tz123.aws-eu-north-1.turso.io` |
+| Table | `airlines(iata, name, discount_eligible, business_class, confirmed_booking, comments, updated_at)` |
+| Values | lowercase `yes` / `no` / `unknown` |
+| Token | `TURSO_AUTH_TOKEN` — **not yet set**; until it is, the source is inert |
+| Offline copy | `flightroutes-app/data/flightroutes.db` via `TRAVEL_PLANNER_FLIGHTROUTES_DB` |
 
-The user edits that file; it will keep its structure. It is IATA-keyed with
-`Yes`/`No`/`Unknown` per benefit column. Override the path with
-`TRAVEL_PLANNER_AIRLINE_BENEFITS`. The app degrades gracefully (workbook mirror,
-then built-in seed list) if it is missing — but the results change, so do not
+**`unknown` must never count as a yes**, and an **empty read is a failure**, not
+"nobody qualifies" — an empty flag map removes every destination from the finder
+with no visible cause. Verified against the local `.db`: 597 rows, 7 qualifying
+(CX, JL, KC, LH, VL, VN, ZH). Full contract in `TURSO_PLAN.md`.
+
+**Legacy:** `airlines_benefits.xlsx` in the user's other project is still read,
+but *only* when Turso is not configured at all. Once the token exists it is never
+opened again; `TRAVEL_PLANNER_AIRLINE_BENEFITS` still points at it.
+
+The fallback ladder is Turso → workbook `Airline Benefits` sheet → that Excel file
+→ built-in seed list. Every failure falls through rather than raising, so a
+missing source is never an exception — but the results *change*, so do not
 mistake an empty result list for a bug.
 
 ## 4. Data-safety rules — do not break these
@@ -166,8 +177,8 @@ Nothing is half-finished; these are decisions waiting on the user.
 | # | Item | State |
 |---|---|---|
 | 1 | **Cloud persistence check (Q1)** | Unverified whether the Streamlit Cloud deployment can persist anything. Nothing depends on the answer (`runtime_paths.py` handles all three cases) but it is untested in anger. *How to check:* edit a destination comment on the phone, reload, confirm it survived. |
-| 2 | **Weekend finder flight data** | Both boards are unreachable from plain HTTP (verified, see `WEEKEND_FINDER_PLAN.md`): Fraport's page is a JavaScript shell with no public JSON endpoint; FlightStats sits behind AWS WAF + captcha. The CSV upload/paste path works. **Needs a user decision:** a Lufthansa Developer API key (covers exactly the benefit carriers, any date) or another source. |
-| 3 | **Airline benefits file is 7/597 filled** | The finder shows few destinations until the user fills in the file. Not a bug. `python airline_benefits.py` reports the current state. |
+| 2 | **Weekend finder flight data** | The Fraport JSON endpoint was **found and verified** on 2026-10-07 — my earlier "blocked" was wrong (see `WEEKEND_FINDER_PLAN.md` §"Fraport endpoint"). The provider is ordinary pending work, no credentials needed. CSV upload/paste remains the fallback. |
+| 3 | **Airline benefits: token needed** | The Turso reader is implemented, wired in and tested (`benefits_turso.py`, 50 tests). The access contract is verified. **One thing is missing: `TURSO_AUTH_TOKEN`** — until it is set, the app silently uses the legacy Excel file or the workbook sheet. Create one with `turso db tokens create flightconnections-tz123` (read-only), then either export it or put it in `.streamlit/secrets.toml`. Verify with `python benefits_turso.py`. See `TURSO_PLAN.md`. |
 | 4 | **7 rainy-day rows use the old definition** | They hold trace-precipitation values instead of the project's ≥ 1 mm. Deliberately not regenerated (costs API calls). `python write_climate_data.py --list-legacy-rainy-days` is the worklist: Thessaloniki, Ubud, Ulaanbaatar, Valencia, Valparaiso, Vientiane, Vung Tau. |
 | 5 | **`open_destinations.json` on Cloud** | Synced across devices now; still lost on a Cloud *redeploy* because the repo is remounted. Accepted. |
 

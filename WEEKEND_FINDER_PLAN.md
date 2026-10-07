@@ -26,49 +26,93 @@ Exact filter rules:
 - One result row per **city**; each row expands to its viable (out, back) flight pairs.
 - Times are Europe/Berlin; all six bounds are UI inputs with the defaults above.
 
-## STATUS 2026-10-05: built, with one part blocked
+## STATUS 2026-10-07: built and verified against live data; Fraport provider pending
 
-Steps 1-3 and 6-7 are done and tested (339 tests). **Step 4/5 (scraping) failed**
-and step 2's sheet is created but needs your ticks. Details below.
+Steps 1-3 and 6-7 are done and tested (355 tests). **Step 4 was wrongly declared
+blocked and is in fact available** — the endpoint was found and verified on
+2026-10-07 (see below). Step 5 (a *timetable* source for arbitrary dates) is
+moot for now: the Fraport endpoint answers any date, ±60 days and beyond.
+`csv` stays as the fallback that keeps the page usable with no network.
 
 | Step | State |
 |---|---|
 | 1. Airport -> city -> country | **done** — `airport_city.py` + `data/airports.csv` (4568 airports, built by `build_airport_table.py` from OurAirports) |
 | 2. Airline Benefits | **done, reads your real file** — `airline_benefits.py` imports `airlines_benefits.xlsx` from the other project (IATA-keyed, `Yes`/`No`/`Unknown` per benefit column) and mirrors it into the workbook |
 | 3. Matcher | **done** — `weekend_match.py`, 37 tests |
-| 4. Fraport live board | **BLOCKED** — see below |
-| 5. Timetable scrape | **BLOCKED** — same cause; `csv` is the shipped fallback |
+| 4. Fraport board | **endpoint verified, provider not yet implemented** — see "Fraport endpoint (verified)" |
+| 5. Timetable scrape | **not needed** — the Fraport endpoint answers any date |
 | 6. Page | **done** — `pages/weekend_finder.py`, in the sidebar as "Weekend Finder" |
 | 7. Docs/CI | **done** |
 
-### Why the scraping is blocked (verified, not assumed)
+### Fraport endpoint (verified 2026-10-07 — and my earlier "blocked" was wrong)
 
-* **Fraport**: `frankfurt-airport.com/en/flights-and-transfer/departures.html`
-  returns an HTML shell containing **no flight rows at all** — the table is built
-  client-side. No public JSON endpoint: `/api/flight/*`, `/api/flights/*`,
-  `/_api/flights/*` all return 404. Rendering it needs a browser, which Streamlit
-  Cloud does not have.
-* **FlightStats**: the v2 board is Next.js behind AWS WAF with a captcha
-  challenge; the JSON routes 404 without a WAF cookie.
+I previously concluded Fraport could not be scraped. **That was a mistake**, and
+the cause is worth recording: I inspected only the *rendered HTML* (which really
+does contain zero flight rows) and then *guessed* endpoint paths under `/api`.
+The endpoint is not under `/api` at all — it is advertised in the page's own
+markup. Reading `data-*` attributes first would have found it immediately.
 
-Both are registered in `timetable.PROVIDERS` as unavailable with the reason
-recorded, so the finding is testable and not repeated. `timetable.provider_status()`
-returns it machine-readably and the page shows it in the sidebar.
+**The homepage I read:**
 
-**What works now:** upload or paste a CSV of flights and the finder does
-everything else. `csv` is a first-class provider, not a placeholder.
+| | |
+|---|---|
+| Departures page | `https://www.frankfurt-airport.com/en/flights-and-transfer/departures.html` |
+| Arrivals page | `https://www.frankfurt-airport.com/en/flights-and-transfer/arrivals.html` |
+| JSON endpoint | `https://www.frankfurt-airport.com/en/_jcr_content.flights.json/filter` |
+| Where it comes from | a `data-api-url` attribute on the board component in that page's markup |
+| German locale | `https://www.frankfurt-airport.com/de/_jcr_content.flights.json/filter` (also works) |
 
-**What would unblock it:** either an API key you are willing to hold (Lufthansa
-Developer covers exactly the benefit carriers, and would give *any* date rather
-than only a live board), or a data source that permits plain HTTP. Both are
-your call; say the word and I will wire it up.
+Evidence: both pages return **HTTP 200, ~122 KB**, containing **0** flight
+numbers and 3 layout `<tr>`s — which is why the HTML looks empty. The same pages
+contain `<fra-m-flights-search … data-api-url="…/_jcr_content.flights.json/filter">`.
+
+**Request shape** (recovered from the site's own JS: `requestData()` builds
+`{perpage, lang, page, ...formData}` and the search form's `formData` is
+`{flighttype, q, time, key, type}`):
+
+```
+GET …/en/_jcr_content.flights.json/filter
+      ?flighttype=departures|arrivals
+      &time=2026-10-09T00:00:00+02:00      # full ISO datetime WITH tz offset
+      &perpage=50                          # server caps at 50
+      &page=1..N
+      &lang=en
+```
+
+* **`time` is a full ISO datetime with a timezone offset.** `?date=2026-10-09`,
+  `?time=2026-10-09` and `?time=09.10.2026` are all silently **ignored**;
+  `?time=2026-10-09T00:00:00+02:00` works. Europe/Berlin is +01:00 in summer,
+  +02:00 in winter — getting this wrong returns the wrong day.
+* **`time` is a cursor, not a filter.** Paging walks *forward through the whole
+  archive* from that instant (≈88 600 records). There is no `date=` filter and no
+  backwards cursor (`page=-1` walks back one page from page 1).
+* Any date works: verified from −7 to **+60 days**.
+* One day ≈ **751 departures** (16 pages). A whole weekend costs **≈39 requests**
+  if the cursor is aimed at the first moment actually needed — 14 for the
+  outbound windows (start Fri 14:00) and 25 for the returns (start Sat 12:00).
+
+**Record fields** (everything the finder needs): `fnr` flight number, `al`
+airline IATA code, `alname` airline name, `iata` the *other* airport, `apname`
+its city name, `sched` the relevant local time (departure, or arrival on the
+arrivals board), `schedArr` scheduled arrival, `stops`, `terminal`, `ac`
+aircraft type, `reg` registration, `typ`. `cs` (codeshare) appears on some
+records and not others, so it cannot be relied on — which matters, because
+benefits follow the operator.
+
+**Verified end-to-end**: for Friday 2026-10-09 → Monday 2026-10-12, 700 outbound
+and 1250 inbound flights scanned, 399/683 on benefit airlines, **123 cities
+reachable both ways**. That is the feature working with real data.
+
+**What remains:** implement `FraportBoardProvider` (page the cursor, normalise
+the fields, feed `weekend_match`). ~39 rate-limited requests per weekend, cached
+6 h. FlightStats remains blocked (Next.js + AWS WAF captcha), and stays registered
+as such.
 
 ## Architecture
 
 ```
 pages/weekend_finder.py   UI: date pickers (Friday date), 6 time inputs, results
-fraport_live.py           live departures + arrivals from fraport.com
-timetable.py              timetable scrape (FlightStats/FR24 schedule pages) by date
+timetable.py              flight providers: fraport JSON board, csv fallback
 airline_benefits.py       reads the Airline Benefits sheet (flag per airline)
 airport_city.py           static airport→city→country map + multi-airport merge
 weekend_match.py          pure, tested matcher: flights × windows → city list
@@ -130,18 +174,19 @@ weekend_match.py          pure, tested matcher: flights × windows → city list
 
 - Timetable sites actively resist scraping (blocks, markup churn). Mitigations:
   cache + rate limit, parser fixtures that fail loudly in CI, CSV fallback.
-- Fraport may have no reachable JSON endpoint from a requests-only client
-  (Cloud has no browser). Then live = timetable scraper on near dates; the
-  matcher doesn't care where flights came from.
+- **Fraport's endpoint is undocumented and could change or disappear.** It is a
+  `data-api-url` in their markup, not a public API contract. Mitigations: keep the
+  CSV fallback, record one real response as a fixture so a markup change fails a
+  test loudly instead of silently returning zero flights, and cache hard so a
+  breakage costs one bad page load rather than the feature.
 - Benefit list correctness is on the user: an unticked airline silently removes
   destinations. Mitigation: the results header states how many airlines are
   flagged, linking to the sheet.
 
 ## Still needs from the user
 
-1. **A flight data source** if you want the finder to fetch its own data: either
-   a Lufthansa Developer API key (best fit — exactly the benefit carriers, any
-   date) or approval of another source. Until then, upload/paste CSV.
+1. **Go-ahead to implement `FraportBoardProvider`** — the endpoint is verified, so
+   this is now ordinary work rather than an open question. No credentials needed.
 2. Confirm the Monday-return reading is right: *land Monday before 09:00*
    (i.e. Sunday-night/Monday-early flights home), Sunday itself unbounded.
 

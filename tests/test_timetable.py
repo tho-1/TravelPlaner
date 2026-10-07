@@ -128,12 +128,28 @@ def test_csv_is_the_one_usable_provider():
     assert usable == ["csv"], usable
 
 
-def test_the_blocked_providers_document_why():
+def test_the_unavailable_providers_document_why():
     rows = {row["name"]: row for row in tt.provider_status()}
+    # Fraport is NOT unreachable: the JSON endpoint was verified working on
+    # 2026-10-07 and the provider is simply not written yet. The wording has to
+    # say which of the two it is, or the next agent repeats the false "blocked"
+    # conclusion this replaced.
     assert rows["fraport"]["usable"] is False
-    assert "JavaScript" in rows["fraport"]["reason"]
+    assert "verified working" in rows["fraport"]["reason"]
+    assert "not implemented" in rows["fraport"]["reason"]
+    assert "JavaScript shell" not in rows["fraport"]["reason"]
+
     assert rows["flightstats"]["usable"] is False
     assert "WAF" in rows["flightstats"]["reason"]
+
+
+def test_the_fraport_endpoint_is_pinned_in_the_code():
+    """The endpoint is undocumented, so its shape lives in code as well as in
+    the plan: if Fraport changes it, the diff is visible."""
+    provider = tt.FraportBoardProvider()
+    assert provider.endpoint.endswith("/_jcr_content.flights.json/filter")
+    assert "flights-and-transfer/departures.html" in provider.page_departures
+    assert "flights-and-transfer/arrivals.html" in provider.page_arrivals
 
 
 def test_a_blocked_provider_raises_rather_than_returning_nothing():
@@ -309,7 +325,8 @@ if __name__ == "__main__":
         test_a_header_only_file_yields_no_flights_and_no_complaint,
         test_operator_and_terminal_are_read,
         test_csv_is_the_one_usable_provider,
-        test_the_blocked_providers_document_why,
+        test_the_unavailable_providers_document_why,
+        test_the_fraport_endpoint_is_pinned_in_the_code,
         test_a_blocked_provider_raises_rather_than_returning_nothing,
         test_only_csv_supports_dates_further_out,
         test_results_are_cached_and_reused,
