@@ -17,10 +17,11 @@ from datetime import date, timedelta
 import pandas as pd
 import streamlit as st
 
-from data_utils import DATA_PATH, load_destinations
+from data_utils import DATA_PATH
 from itinerary import geo, geocode, models, storage
 from itinerary import itinerary as ops
 from itinerary import map as itmap
+from repository import load_destinations
 
 MONTHS = ops.MONTHS
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")

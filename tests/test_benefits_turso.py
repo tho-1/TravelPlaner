@@ -8,6 +8,7 @@ Turso outage must degrade to the workbook, never silently empty the airline list
 
 from __future__ import annotations
 
+import base64
 import json
 import sqlite3
 
@@ -267,6 +268,70 @@ def test_a_table_name_that_is_not_an_identifier_is_refused(monkeypatch):
                                      "airlines; DROP TABLE x")
     assert rows == []
     assert problems and "not a usable table name" in problems[0]
+
+
+# ── typed pipeline cells (the real API shape) ─────────────────────────────────
+
+def _typed(cell):
+    """Wrap a plain value the way the pipeline API actually returns it.
+
+    The API sends every cell as ``{"type": ..., "value": ...}``. The fixtures
+    above use bare strings, which is why the typed-cell bug below could pass
+    every other test here and still empty the finder in production.
+    """
+    if cell is None:
+        return {"type": "null"}
+    if isinstance(cell, bool):
+        return {"type": "integer", "value": int(cell)}
+    if isinstance(cell, int):
+        return {"type": "integer", "value": cell}
+    if isinstance(cell, float):
+        return {"type": "real", "value": cell}
+    return {"type": "text", "value": str(cell)}
+
+
+@pytest.mark.parametrize("cell,expected", [
+    ({"type": "text", "value": "yes"}, "yes"),
+    ({"type": "text", "value": ""}, ""),
+    ({"type": "integer", "value": "1"}, 1),
+    ({"type": "real", "value": "7.5"}, 7.5),
+    ({"type": "null", "value": None}, None),
+    ({"type": "text", "value": None}, None),
+    ({"type": "blob", "value": base64.b64encode(b"hi").decode()}, b"hi"),
+    ("already plain", "already plain"),
+    (None, None),
+])
+def test_cell_value_normalises_pipeline_cells(cell, expected):
+    """Every pipeline cell arrives as ``{type, value}``. Reading it raw hands
+    the caller dicts, so no benefit column ever equals ``yes``."""
+    assert bt._cell_value(cell) == expected
+
+
+def test_a_typed_pipeline_response_still_qualifies(monkeypatch):
+    """The real API returns typed cells, not bare strings.
+
+    Before ``fetch_remote`` normalised them, ``str(cell)`` produced the dict's
+    repr, so ``is_yes`` never matched and the remote source silently read as
+    "nobody qualifies" -- an empty flag map, which the finder treats as a
+    failure. This is the regression test for that.
+    """
+    typed_rows = [[_typed(c) for c in row] for row in [
+        ("LH", "Lufthansa", "yes", "yes", "yes"),
+        ("XX", "Nope", "unknown", "unknown", "unknown"),
+    ]]
+
+    def fake_post(url, **kw):
+        return _Response(payload=json.loads(_pipeline_response(typed_rows)))
+
+    monkeypatch.setattr("requests.post", fake_post)
+    rows, problems = bt.fetch_remote(bt.DEFAULT_REMOTE, "secret-token")
+    assert problems == []
+    assert [r["code"] for r in rows] == ["LH", "XX"]
+    assert rows[0]["name"] == "Lufthansa"
+    assert rows[0]["benefits"] is True
+    assert rows[0]["which"] == ["discount_eligible", "business_class",
+                                "confirmed_booking"]
+    assert rows[1]["benefits"] is False
 
 
 # ── the local SQLite fallback ────────────────────────────────────────────────

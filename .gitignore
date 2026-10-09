@@ -19,6 +19,9 @@ ENV/
 scratch/
 check_rows.py
 inspect_workbook.py
+inspect_workbook_headers.py
+probe_turso.py
+probe_cell_shape.py
 tmp_inspect_destinations.py
 scratch_*.py
 

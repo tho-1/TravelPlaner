@@ -427,7 +427,16 @@ def _load_destinations_cached(path: Path, modified_ns: int) -> Tuple[pd.DataFram
     df = discover_destination_sheet(path)
     df = df.copy()
     df.columns = [str(col) for col in df.columns]
+    return _prepare_dataframe(df)
 
+
+def _prepare_dataframe(df: pd.DataFrame) -> Tuple[pd.DataFrame, dict]:
+    """Resolve columns, coerce types, and build the metadata dict.
+
+    Shared by the workbook reader and the Turso repository so both
+    paths produce an identical ``(DataFrame, metadata)`` pair — the
+    pages cannot tell which source supplied the data.
+    """
     destination_col = find_column(df.columns, ["destination", "destinations", "city", "place", "name"])
     country_col = find_column(df.columns, ["country", "land", "nation", "state"])
     continent_col = find_column(df.columns, ["continent", "region"])

@@ -130,6 +130,28 @@ def _isolate_external_benefits_file(monkeypatch):
     airline_benefits._EXTERNAL_CACHE = None
 
 
+@pytest.fixture(autouse=True)
+def _isolate_turso(monkeypatch):
+    """Force the repository onto the workbook branch.
+
+    The repository routes through Turso whenever
+    ``turso_db.is_configured()`` is true, and the local
+    ``.streamlit/secrets.toml`` holds a live token. A test that
+    renders a page would then make a *real* network call on every
+    write -- the page-smoke tests render 144 destinations, each of
+    which persists its open-tabs list -- and from a machine that
+    cannot reach Turso every call burns the 15-second HTTP timeout
+    until the suite times out. Tests that exercise the Turso branch
+    patch ``is_configured`` / ``use_turso`` (or ``run_pipeline``)
+    themselves; their patches are applied after this one, so this
+    never masks a real code path.
+    """
+    import turso_db
+
+    monkeypatch.setattr(turso_db, "is_configured", lambda: False)
+    yield
+
+
 @pytest.fixture()
 def workbook_copy(tmp_path, workbook_source):
     """A writable copy of the real destinations workbook."""

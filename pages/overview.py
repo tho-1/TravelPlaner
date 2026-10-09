@@ -7,11 +7,13 @@ import filters
 from data_utils import (
     DATA_PATH,
     WorkbookLockedError,
+)
+from deepseek_populator import add_destination_with_deepseek
+from repository import (
     add_new_destination,
     load_destinations,
     save_open_destinations,
 )
-from deepseek_populator import add_destination_with_deepseek
 
 
 @st.dialog("➕ Add New Destination")

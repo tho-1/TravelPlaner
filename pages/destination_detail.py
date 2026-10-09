@@ -15,6 +15,15 @@ import filters
 from data_utils import (
     DATA_PATH,
     WorkbookLockedError,
+)
+from ddg_gallery import (
+    build_ddg_gallery,
+    refresh_single_ddg_image,
+)
+from deepseek_client import generate_food_profile
+from deepseek_populator import populate_existing_destination_with_ai
+from flight_routes import render_flight_routes_section
+from repository import (
     load_destinations,
     save_open_destinations,
     update_comment,
@@ -24,13 +33,6 @@ from data_utils import (
     update_to_be_researched_status,
     update_visited_status,
 )
-from ddg_gallery import (
-    build_ddg_gallery,
-    refresh_single_ddg_image,
-)
-from deepseek_client import generate_food_profile
-from deepseek_populator import populate_existing_destination_with_ai
-from flight_routes import render_flight_routes_section
 from unsplash_gallery import (
     build_destination_gallery,
     get_access_key,

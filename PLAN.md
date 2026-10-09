@@ -252,6 +252,138 @@ Validation: `ruff check .` clean, `compileall` clean, **405 pytest tests pass**,
 - Fraport's endpoint is undocumented, so the CSV fallback stays and a recorded
   response fixture should fail a test loudly if their markup changes.
 
+### 2026-10-08 batch: the main data layer moves to Turso (native rebuild, Phase 1)
+
+Built from `NATIVE_HTML_PLAN.md` §7 Phase 1. The user's decisions
+(2026-10-08): last-push-wins for conflicts (no conflict list), the
+workbook survives as an *export* artifact, the PC goes native (Flutter)
+eventually but **the Streamlit version is retained as the fallback**
+during the transition, and the provided Turso database is used as-is
+(no new free-tier account, no money).
+
+| Area | Done |
+|---|---|
+| Client | `turso_db.py` — Turso's documented SQL-over-HTTP pipeline API over `requests` (deliberately *not* `pyturso`/`turso.sync`: the Rust extension pip-builds from source and trips the user's antivirus as `build-script-build.exe`). Cell normalisation (`{type, value}` → plain Python), error-in-200 handling, `close` last, token fingerprinting, credentials from env → `.streamlit/secrets.toml` |
+| Schema | typed core (`destinations`: the 13 fields the app filters/sorts/searches on) + a lossless `data` JSON tail holding **all 145 workbook columns as an ordered `[name, value]` array** — the workbook has duplicate column names (positions 139/143, 140/144) and object-typed cells, so a flat typed table would drop data. Plus `trips`/`variants`/`stops`/`legs` (legs positional: `legs[i]` sits between `stops[i]` and `stops[i+1]`) and `open_tabs` |
+| Storage | `storage_turso.py` — the project's writer contract (returns `True`/`False`, never raises on a quiet failure), single-pipeline-request atomic trip writes, upserts with `updated_at` (last-write-wins), `.xlsx` export that recovers the column order from the tail |
+| Repository | `repository.py` — the one data-access point the pages now call. **Reads** prefer Turso and fall back to the workbook (an empty/unreachable Turso read is a *failure*, not an empty catalogue — the same rule as the benefits ladder). **Writes** are read-modify-write upserts and fail loudly (`False`) rather than silently diverging from Turso. `data_utils._prepare_dataframe` was extracted so both sources produce an identical `(DataFrame, metadata)` pair |
+| Migration | `migrate_to_turso.py` — one-shot, idempotent (upserts), openpyxl-based (pandas collides the duplicate column names), alias-resolved typed core via the app's own `find_column` alias sets, row-count + column-count verification. **Run against the live database 2026-10-08: 144 destinations (145-column tails), 2 trips (Naples: 1 variant/3 stops/2 legs; China Trip 2027: 2 variants/9 stops/7 legs), 0 open tabs. Read, idempotent write round-trip and the `.xlsx` export verified against the live DB** |
+| Tests | 87 new (`test_storage_turso.py` fakes `turso_db.run_pipeline` with an in-memory SQLite built to the real schema, so the emitted SQL is really exercised; `test_repository.py` pins both branches of the ladder). **492 total, green** |
+
+**Two real bugs found and fixed by this work:**
+
+1. `_load_open_tabs_from_turso` was a plain function but
+   `_clear_cache()` called `.clear()` on it — 8 repository tests
+   failed with `AttributeError`. It was missing the
+   `@st.cache_data` decorator its sibling has.
+2. **The page-smoke suite timed out (300 s).** Root cause: the
+   detail page persists its open-tabs list on every render, and
+   `repository.save_open_tabs` routes through Turso whenever
+   `is_configured()` — which is true locally because
+   `.streamlit/secrets.toml` holds a live token. From a machine
+   that cannot reach Turso, each of the 144 page renders burned
+   the 15 s HTTP timeout. Fix: `conftest._isolate_turso` (autouse)
+   forces the workbook branch for every test; tests that exercise
+   the Turso branch patch `is_configured`/`use_turso`/`run_pipeline`
+   themselves, so nothing real is masked.
+
+**Deliberately *not* done (transition state, by decision):** the
+`sync/` stack, `refresh_cloud_workbook.py` and the workbook writers
+stay — they are the workbook branch's path to the phone, and the
+repository's fallback needs them. Trips still run on `trips.json` at
+runtime (the migration *copied* them into Turso; the runtime cutover
+is the next phase, gated on the same stale-guard/back-up reasoning as
+`itinerary/storage.py`). Phase 1 of the plan said "delete the sync
+stack" — that is Phase 6 (cutover), not now: deleting it would break
+the fallback the user asked to keep.
+
+Validation: `ruff check .` clean, `compileall` clean, **492 pytest
+tests pass**, `tests/run_all.py --no-pytest` exits 0.
+
+### 2026-10-08 completion: weekend trip finder
+The weekend trip finder was unblocked by the verified Fraport board
+JSON endpoint (`/_jcr_content.flights.json/filter`). Decision: **live
+Fraport primary, CSV upload the fallback**.
+
+Implemented `FraportBoardProvider` in `timetable.py`:
+- Cursor-based paging: each page's last `time` value seeds the next
+  `time` param. The endpoint has no total count or stable offset.
+- Per-direction fetch with bounds-aware cache key: only the six window
+  bounds (Fri 12:00 → Mon 12:00, arrivals + departures) are queried
+  once per cache slot; `time` is a cursor only.
+- Six bounds mapped to `(date, direction, hint)` via `search_weekend`
+  plumbing: Fri-dep, Sat-arr/dep, Sun-arr/dep, Mon-arr.
+- `stops` absent treated as "keep" (arrivals never report it; an absent
+  `stops` on a departure is a non-stop LH train connection like EC/EuroCity).
+- `al` is the operating carrier; `cs` (marketing carrier) is ignored.
+- Wall-clock parsing: `sched`/`schedArr`/`schedDep` are naive local times —
+  do not rely on them as offsets. Dates are inferred from the requested day
+  or the previous departure's arrival.
+- Shape-change (columns/rows present change) treated as a hard failure,
+  not silent data — raises so a broken page is not hidden.
+
+Page (`pages/weekend_finder.py`): `_render_data_source` defaults to the
+live provider, CSV upload is the optional override. Page docstring
+updated.
+
+Fix during implementation: smoke-test suite timed out (300 s) because
+page renders triggered live network calls. `tests/conftest.py` gained
+an `_isolate_turso` autouse fixture that forces `is_configured() → False`
+(workbook branch only); tests exercising the Turso branch patch
+`is_configured`/`use_turso`/`run_pipeline` themselves. Tests that read
+`airlines_benefits.xlsx` are isolated — must pass on CI where that file
+does not exist.
+
+Tests: 9 new fixture-based tests in `tests/test_timetable.py` using
+recorded Fraport boards (`tests/fixtures/fraport_departures_page1.json`,
+`fraport_departures_page2.json`, `fraport_arrivals_page1.json`,
+`fraport_arrivals_page2.json`) — no live network per test run.
+
+Validation: `ruff check .` clean, `compileall` clean, **501 pytest tests
+pass** (492 + 9), `tests/run_all.py --no-pytest` exits 0.
+
+### 2026-10-09: Turso tokens restored, benefits source fixed
+
+The airline-benefits Turso source had never worked, for **two independent
+reasons** — one in the credentials, one in the code. Both are now fixed.
+
+**1. Both tokens' `kid` was mistyped.** `secrets.toml` held `VlYx`
+(decoding to `VV1L5Ew…`) where the account's signing key is `Vmwx`
+(`Vl1L5Ew…`). A one-character transcription slip (`m`→`l`, `Y`→`w`)
+invalidated the EdDSA signature, so every read 401'd with *"can't be
+decoded with any of the existing keys"*. Both databases share one
+signing key, so both tokens carry the same `kid`. The main token is
+fixed by correcting `VlYx` → `Vmwx`; the benefits token additionally
+had to be swapped — the copy in the file had been minted for a role
+that no longer exists (404 *"auth role not found"*) and was replaced
+with the working read-write token.
+
+**2. `benefits_turso.fetch_remote` did not normalise pipeline cells.**
+The SQL-over-HTTP API returns every cell as `{"type": "text",
+"value": …}`, but the reader passed them straight to `rows_to_records`,
+which does `str(cell)` — producing the dict's repr, so `is_yes` never
+matched and the remote source silently read as *"nobody qualifies"*.
+`turso_db.py` had a `_cell_value` helper for exactly this;
+`benefits_turso.py` did not. The helper is added and applied in
+`fetch_remote`. The existing tests missed the bug because the
+`_pipeline_response` fixture built its rows from bare strings, not the
+typed shape the real API sends — so every other test passed while the
+live source returned zero qualifying airlines.
+
+Verified against the live databases: **144 destinations** (main),
+**597 airlines / 7 qualifying** (CX, JL, KC, LH, VL, VN, ZH) via
+`benefits_turso.fetch_benefit_flags`, and the full
+`airline_benefits.load_benefit_flags` ladder now resolves through Turso
+instead of the workbook fallback.
+
+Tests: 10 new in `tests/test_benefits_turso.py` — a parametrized
+`_cell_value` unit test (text/integer/real/null/blob/plain/None) and a
+`fetch_remote` regression test driven through the real typed-cell
+shape, so the fixture no longer hides the bug it is meant to cover.
+
+Validation: `ruff check .` clean, `compileall` clean, **511 pytest
+tests pass** (501 + 10), `tests/run_all.py --no-pytest` exits 0.
+
 ---
 
 ## 1. Where things stood before the 2026-10-03 batch (historical)

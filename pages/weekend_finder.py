@@ -5,12 +5,14 @@ per city, each expandable to the flight pairs that work.
 
 What it needs from the outside world
 ------------------------------------
-Only flights. Which source provides them is decided at runtime and shown in the
-sidebar: today that is the CSV upload, because both live boards we tried are
-unreachable from plain HTTP (see ``timetable`` for the evidence and
-``timetable.provider_status()`` for the machine-readable version). Everything
-else — the time windows, the airline filter, the city list — works the same
-whichever source answered.
+Only flights. Which source provides them is decided at runtime and shown
+in the sidebar: the **live Fraport board** is the primary source (its
+undocumented JSON endpoint answers any date ±60 days out), and the CSV
+upload is the escape hatch that keeps the feature usable with no network
+or when the board changes under us (see ``timetable`` for the evidence
+and ``timetable.provider_status()`` for the machine-readable version).
+Everything else — the time windows, the airline filter, the city list —
+works the same whichever source answered.
 
 The logic lives in ``weekend_match`` and is tested without a browser; this file
 is only the Streamlit surface.
@@ -127,7 +129,8 @@ def render_weekend_finder() -> None:
 def _render_data_source():
     """Pick a provider. Returns ``None`` when there is nothing to search."""
     usable = timetable.available_providers()
-    csv_only = [p for p in usable if p.name == "csv"]
+    live = [p for p in usable if p.name != "csv"]
+    has_csv = any(p.name == "csv" for p in usable)
 
     if not usable:
         st.error("No flight data source is available. See `timetable.py`.")
@@ -135,18 +138,23 @@ def _render_data_source():
 
     with st.expander("Flight data source", expanded=len(usable) < 2):
         st.caption(
-            "Only airlines you have marked as having benefits count. Data "
-            "source currently in use: **"
-            + ", ".join(p.name for p in usable) + "**."
+            "Only airlines you have marked as having benefits count. "
+            "Source: **"
+            + (", ".join(p.name for p in live) if live else "CSV upload")
+            + "**"
+            + (" — upload CSV below to override it."
+               if live and has_csv else "")
         )
         _render_blocked_sources()
 
-        departures_csv = ""
-        arrivals_csv = ""
-        if csv_only:
+        # The CSV upload is the escape hatch: it needs no network and
+        # is the only source when every live board is unreachable. An
+        # explicit upload always wins over the live board.
+        if has_csv:
             st.markdown("**Upload your flight data (CSV)**")
             st.caption(
-                "Two files, or leave one empty. Columns: "
+                "Optional — overrides the live board. Two files, or "
+                "leave one empty. Columns: "
                 "`flight_no, airline, origin, destination, departure, arrival` "
                 "— `operated_by` is used when present, because benefits follow "
                 "the operating carrier. Times may be `15:05` or "
@@ -161,8 +169,12 @@ def _render_data_source():
                                           key="weekend_arr_csv")
             if up_dep is not None:
                 departures_csv = up_dep.getvalue().decode("utf-8", "replace")
+            else:
+                departures_csv = ""
             if up_arr is not None:
                 arrivals_csv = up_arr.getvalue().decode("utf-8", "replace")
+            else:
+                arrivals_csv = ""
             if departures_csv.strip() or arrivals_csv.strip():
                 return timetable.CsvProvider(departures_csv, arrivals_csv)
             with st.expander("Or paste CSV", expanded=False):
@@ -172,15 +184,19 @@ def _render_data_source():
                                           height=120)
                 if pasted_dep.strip() or pasted_arr.strip():
                     return timetable.CsvProvider(pasted_dep, pasted_arr)
-            st.info(
-                "Upload or paste flight data to search. The template below is "
-                "a working example — edit it with your own flights."
-            )
-            with st.expander("CSV template", expanded=False):
-                st.code(CSV_TEMPLATE, language="csv")
-            return None
+            if not live:
+                st.info(
+                    "Upload or paste flight data to search. The template below is "
+                    "a working example — edit it with your own flights."
+                )
+                with st.expander("CSV template", expanded=False):
+                    st.code(CSV_TEMPLATE, language="csv")
+                return None
 
-    return usable[0]
+    # No CSV supplied: the live board answers (the weekend-finder
+    # plan's decision 1 — live board for the upcoming weekend, CSV
+    # as the fallback).
+    return (live or usable)[0]
 
 
 def _render_blocked_sources() -> None:

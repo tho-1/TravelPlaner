@@ -71,11 +71,38 @@ the gallery/flight/AQI caches — and, **on Cloud only**, an editable copy of
 The sidebar shows the resolved path; if it is not writable the app says so
 instead of silently forgetting your changes.
 
+## The data layer: Turso first, workbook fallback
+
+Destinations and open tabs live in the **Turso database
+`travel-tz123`** (migrated 2026-10-08; `NATIVE_HTML_PLAN.md`
+Phase 1). Every page reads through `repository.py`:
+
+* **Reads** prefer Turso (`TRAVEL_PLANNER_TURSO_URL` +
+  `TRAVEL_PLANNER_TURSO_TOKEN`, read from the environment or
+  `.streamlit/secrets.toml`) and fall back to the workbook when
+  Turso is unreachable or unconfigured — an outage degrades to
+  the old behaviour instead of an empty catalogue.
+* **Writes** go to Turso as a read-modify-write and return
+  `True`/`False`; a failed write is *surfaced*, never silently
+  redirected to the workbook (that would diverge from Turso).
+* Each destination row keeps a typed core (the fields the app
+  filters/sorts on) plus a lossless JSON tail with all 145
+  workbook columns in order — duplicate column names included.
+* `python migrate_to_turso.py` (re-runnable, idempotent upserts)
+  copies the workbook + `trips.json` + open tabs into Turso;
+  `storage_turso.export_workbook()` writes the data back to an
+  openable `.xlsx`, so the Excel artifact survives.
+
+Trips still run on `trips.json` at runtime (the migration copied
+them into Turso; the runtime cutover is the next phase), so the
+`sync/` stack and `refresh_cloud_workbook.py` remain the workbook
+branch's path to the phone until then.
+
 ## Tests, lint, build
 
 ```powershell
 python -m pip install -r requirements.txt -r requirements-dev.txt
-python -m pytest                  # full suite (355 tests, ~2 min; the 144-page render dominates)
+python -m pytest                  # full suite (511 tests, ~3 min; the 144-page render dominates)
 python tests/run_all.py           # same, with a fallback for no-pytest setups
 python tests/run_all.py --no-pytest   # only the dependency-free script runners
 python -m ruff check .            # lint
@@ -139,6 +166,10 @@ benefits_turso.py      the benefits database reader (Turso over HTTP, local .db 
 filters.py             shared, tested filter primitives (blank values never filter out)
 rainy_days.py          the one definition of a rainy day (>= 1 mm/day)
 data_utils.py          workbook I/O: atomic saves, stale-write detection, writers
+repository.py          the one data-access point: Turso first, workbook fallback
+storage_turso.py       destinations / trips / open tabs on the Turso database
+turso_db.py            Turso SQL-over-HTTP client + the app schema
+migrate_to_turso.py    one-shot workbook + trips.json -> Turso migration
 itinerary/             pure, Streamlit-free trip logic + persistence (tests/geo/map)
 sync/                  journal → merge → GitHub transport → sidebar UI
 runtime_paths.py       where runtime state is written
@@ -179,7 +210,7 @@ the results. Airlines are matched by IATA code first, then by name.
 
 | Variable | Purpose |
 |---|---|
-| `TURSO_AUTH_TOKEN` | **required** — read-only bearer token for the database |
+| `TURSO_AUTH_TOKEN` | **required** — read-only bearer token; set in `.streamlit/secrets.toml`, live source verified 2026-10-09 (597 rows, 7 qualifying) |
 | `TURSO_DATABASE_URL` | override the host (defaults to the one above) |
 | `TURSO_AIRLINE_TABLE` | override the table name (default `airlines`) |
 | `TRAVEL_PLANNER_FLIGHTROUTES_DB` | local `flightroutes.db`, used offline if the remote is unavailable |
@@ -196,10 +227,11 @@ the access contract: `TURSO_PLAN.md`.
 * `Destinations-cloud.xlsx` is committed, so Cloud edits are lost on redeploy
   unless they have been synced or downloaded first.
 * The weekend trip finder fetches flights from **Fraport's own JSON endpoint**,
-  which was verified working on 2026-10-07 and covers any date. The provider is
-  not implemented yet, so the finder currently reads a CSV you upload or paste.
-  `python timetable.py` prints the status of every provider. An earlier note in
-  this file claimed the endpoint did not exist — that was wrong; see
+  which was verified working on 2026-10-07 and covers any date. The
+  `FraportBoardProvider` (in `timetable.py`) is implemented and is the live
+  default; you can still upload or paste a CSV as a fallback/escape hatch.
+  Recorded board fixtures cover the test suite (no network per run). An earlier
+  note in this file claimed the endpoint did not exist — that was wrong; see
   `WEEKEND_FINDER_PLAN.md` §"Fraport endpoint" for the evidence and the request
   shape.
 * Seven destinations still hold `{Mon} Rainy Days` values transcribed from

@@ -10,6 +10,8 @@ break, and what is still open. Read it before touching code.
 | `README.md` | how to run it, data locations, architecture, data-safety rules |
 | `PLAN.md` | the full history: every review finding, every fix, every decision, with dates and commit hashes |
 | `WEEKEND_FINDER_PLAN.md` | the weekend trip finder: spec, status, what is blocked and why |
+| `TURSO_PLAN.md` | the airline-benefits Turso database: access contract, fallback ladder, open items |
+| `NATIVE_HTML_PLAN.md` | proposal: dump Streamlit for native HTML, an Android version, Turso storage/sync — pros/cons and implementation plan |
 
 ---
 
@@ -33,7 +35,7 @@ python -m streamlit run app.py --server.port 8507
 ## 2. Verify your work before saying it works
 
 ```powershell
-python -m pytest                    # 355 tests, ~2 min (the 144-page render dominates)
+python -m pytest                    # 511 tests, ~3 min (the 144-page render dominates)
 python -m ruff check .              # lint, must be clean
 python -m compileall -q . -x '(^|/)(\.venv|archive|Pictures|__pycache__)(/|$)'
 python tests/run_all.py --no-pytest # dependency-free path, must exit 0
@@ -89,12 +91,12 @@ folder.
 | Remote | `https://flightconnections-tz123.aws-eu-north-1.turso.io` |
 | Table | `airlines(iata, name, discount_eligible, business_class, confirmed_booking, comments, updated_at)` |
 | Values | lowercase `yes` / `no` / `unknown` |
-| Token | `TURSO_AUTH_TOKEN` — **not yet set**; until it is, the source is inert |
+| Token | `TURSO_AUTH_TOKEN` — set in `.streamlit/secrets.toml`; live source verified 2026-10-09: 597 rows, 7 qualifying |
 | Offline copy | `flightroutes-app/data/flightroutes.db` via `TRAVEL_PLANNER_FLIGHTROUTES_DB` |
 
 **`unknown` must never count as a yes**, and an **empty read is a failure**, not
 "nobody qualifies" — an empty flag map removes every destination from the finder
-with no visible cause. Verified against the local `.db`: 597 rows, 7 qualifying
+with no visible cause. Verified against the live database: 597 rows, 7 qualifying
 (CX, JL, KC, LH, VL, VN, ZH). Full contract in `TURSO_PLAN.md`.
 
 **Legacy:** `airlines_benefits.xlsx` in the user's other project is still read,
@@ -129,11 +131,19 @@ These exist because breaking them lost or corrupted the user's data.
 ### Test hygiene
 
 `tests/conftest.py` redirects *all* runtime state into a temporary directory:
-the workbook (`DATA_PATH`), `trips.json`, the journal dir, the tabs file. Two
-tests assert the real files are unchanged afterwards. A full run must leave the
-repository untouched — if a test writes to the live workbook, journals or tabs
-file, that is a bug in the fixture, not in the test. It happened once: a
-page-render test journalled 10k entries into the real `sync_journals/`.
+the workbook (`DATA_PATH`), `trips.json`, the journal dir, the tabs file.
+It also forces the **workbook branch** of the repository
+(`_isolate_turso`: `turso_db.is_configured()` → `False`), because the
+local `.streamlit/secrets.toml` holds a live Turso token and a page
+render would otherwise make a real network call per write (the smoke
+tests render 144 destinations — each burned the 15 s HTTP timeout and
+the suite timed out). Tests that exercise the Turso branch patch
+`is_configured`/`use_turso`/`run_pipeline` themselves. Two
+tests assert the real files are unchanged afterwards. A full run must
+leave the repository untouched — if a test writes to the live workbook,
+journals or tabs file, that is a bug in the fixture, not in the test.
+It happened once: a page-render test journalled 10k entries into the
+real `sync_journals/`.
 
 When adding a test that reads a file outside the repo (like
 `airlines_benefits.xlsx`), isolate it — the suite must give the same result on
@@ -157,10 +167,25 @@ airline_benefits.py       benefits, read from airlines_benefits.xlsx
 filters.py                shared filter primitives
 rainy_days.py             the one rainy-day definition (≥ 1 mm/day)
 data_utils.py             workbook I/O: atomic saves, stale detection, writers
+repository.py             the one data-access point: Turso first, workbook fallback
+storage_turso.py          destinations/trips/tabs on the Turso database
+turso_db.py               Turso SQL-over-HTTP client + the app schema
+migrate_to_turso.py       one-shot workbook + trips.json -> Turso migration
 itinerary/                pure, Streamlit-free trip logic + persistence
 sync/                     journal → merge → GitHub transport → sidebar UI
 runtime_paths.py          where runtime state is written
 ```
+
+**The main database is Turso now** (`travel-tz123`, migrated
+2026-10-08 — see `NATIVE_HTML_PLAN.md` Phase 1). The pages call
+`repository.py`, which reads destinations and open tabs from Turso
+when `TRAVEL_PLANNER_TURSO_URL` + `TRAVEL_PLANNER_TURSO_TOKEN` are
+set, and falls back to the workbook otherwise. Reads fall through on
+failure; **writes fail loudly** (return `False`) rather than silently
+diverging from Turso. Trips still run on `trips.json` at runtime —
+the migration copied them into Turso, and the runtime cutover is the
+next phase. The `sync/` stack and `refresh_cloud_workbook.py` stay
+until the cutover: they are the workbook branch's path to the phone.
 
 **Workbook facts that keep biting:** 144 destinations × 145 columns. The data
 sheet is `Result sheet`; `wb.active` is the **`Airlines`** sheet, so never write
@@ -178,9 +203,8 @@ Nothing is half-finished; these are decisions waiting on the user.
 |---|---|---|
 | 1 | **Cloud persistence check (Q1)** | Unverified whether the Streamlit Cloud deployment can persist anything. Nothing depends on the answer (`runtime_paths.py` handles all three cases) but it is untested in anger. *How to check:* edit a destination comment on the phone, reload, confirm it survived. |
 | 2 | **Weekend finder flight data** | The Fraport JSON endpoint was **found and verified** on 2026-10-07 — my earlier "blocked" was wrong (see `WEEKEND_FINDER_PLAN.md` §"Fraport endpoint"). The provider is ordinary pending work, no credentials needed. CSV upload/paste remains the fallback. |
-| 3 | **Airline benefits: token needed** | The Turso reader is implemented, wired in and tested (`benefits_turso.py`, 50 tests). The access contract is verified. **One thing is missing: `TURSO_AUTH_TOKEN`** — until it is set, the app silently uses the legacy Excel file or the workbook sheet. Create one with `turso db tokens create flightconnections-tz123` (read-only), then either export it or put it in `.streamlit/secrets.toml`. Verify with `python benefits_turso.py`. See `TURSO_PLAN.md`. |
-| 4 | **7 rainy-day rows use the old definition** | They hold trace-precipitation values instead of the project's ≥ 1 mm. Deliberately not regenerated (costs API calls). `python write_climate_data.py --list-legacy-rainy-days` is the worklist: Thessaloniki, Ubud, Ulaanbaatar, Valencia, Valparaiso, Vientiane, Vung Tau. |
-| 5 | **`open_destinations.json` on Cloud** | Synced across devices now; still lost on a Cloud *redeploy* because the repo is remounted. Accepted. |
+| 3 | **7 rainy-day rows use the old definition** | They hold trace-precipitation values instead of the project's ≥ 1 mm. Deliberately not regenerated (costs API calls). `python write_climate_data.py --list-legacy-rainy-days` is the worklist: Thessaloniki, Ubud, Ulaanbaatar, Valencia, Valparaiso, Vientiane, Vung Tau. |
+| 4 | **`open_destinations.json` on Cloud** | Synced across devices now; still lost on a Cloud *redeploy* because the repo is remounted. Accepted. |
 
 ### House rules learned the hard way
 

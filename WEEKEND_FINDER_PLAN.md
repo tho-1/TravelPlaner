@@ -26,22 +26,20 @@ Exact filter rules:
 - One result row per **city**; each row expands to its viable (out, back) flight pairs.
 - Times are Europe/Berlin; all six bounds are UI inputs with the defaults above.
 
-## STATUS 2026-10-07: built and verified against live data; Fraport provider pending
+## STATUS 2026-10-08: complete — Fraport provider implemented and tested
 
-Steps 1-3 and 6-7 are done and tested (355 tests). **Step 4 was wrongly declared
-blocked and is in fact available** — the endpoint was found and verified on
-2026-10-07 (see below). Step 5 (a *timetable* source for arbitrary dates) is
-moot for now: the Fraport endpoint answers any date, ±60 days and beyond.
-`csv` stays as the fallback that keeps the page usable with no network.
+All seven steps are done and tested. Step 4 (the Fraport board provider) was
+implemented on 2026-10-07 after the endpoint was verified; `csv` upload stays
+as the fallback/escape hatch that keeps the page usable with no network.
 
 | Step | State |
 |---|---|
-| 1. Airport -> city -> country | **done** — `airport_city.py` + `data/airports.csv` (4568 airports, built by `build_airport_table.py` from OurAirports) |
-| 2. Airline Benefits | **done, reads your real file** — `airline_benefits.py` imports `airlines_benefits.xlsx` from the other project (IATA-keyed, `Yes`/`No`/`Unknown` per benefit column) and mirrors it into the workbook |
+| 1. Airport -> city -> country | **done** — `airport_city.py` + `data/airports.csv` (4568 airports) |
+| 2. Airline Benefits | **done, reads your real file** — `airline_benefits.py` imports `airlines_benefits.xlsx` and mirrors it into the workbook |
 | 3. Matcher | **done** — `weekend_match.py`, 37 tests |
-| 4. Fraport board | **endpoint verified, provider not yet implemented** — see "Fraport endpoint (verified)" |
+| 4. Frapart board | **done, implemented** — `FraportBoardProvider` in `timetable.py` |
 | 5. Timetable scrape | **not needed** — the Fraport endpoint answers any date |
-| 6. Page | **done** — `pages/weekend_finder.py`, in the sidebar as "Weekend Finder" |
+| 6. Page | **done** — `pages/weekend_finder.py`, defaults to the live provider, CSV upload as optional override |
 | 7. Docs/CI | **done** |
 
 ### Fraport endpoint (verified 2026-10-07 — and my earlier "blocked" was wrong)
@@ -103,10 +101,10 @@ benefits follow the operator.
 and 1250 inbound flights scanned, 399/683 on benefit airlines, **123 cities
 reachable both ways**. That is the feature working with real data.
 
-**What remains:** implement `FraportBoardProvider` (page the cursor, normalise
-the fields, feed `weekend_match`). ~39 rate-limited requests per weekend, cached
-6 h. FlightStats remains blocked (Next.js + AWS WAF captcha), and stays registered
-as such.
+**What remains:** nothing. The `FraportBoardProvider` is implemented in
+`timetable.py` (cursor paging, wall-clock parsing, stops filter, shape-change
+loud-fail), and `weekend_match.py` consumes its output. FlightStats stays
+blocked (Next.js + AWS WAF captcha) and does not need to be unblocked.
 
 ## Architecture
 

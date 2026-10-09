@@ -2,18 +2,18 @@ import re
 
 import streamlit as st
 
-from data_utils import (
-    DATA_PATH,
-    load_destinations,
-    load_open_destinations,
-    save_open_destinations,
-)
+from data_utils import DATA_PATH
 from environment import is_cloud_mode, is_local_mode
 from pages.destination_detail import render_destination
 from pages.itinerary import render_itinerary, render_sidebar_trips
 from pages.overview import render_overview
 from pages.weekend_finder import render_weekend_finder
 from pages.world_map import render_world_map
+from repository import (
+    load_destinations,
+    load_open_destinations,
+    save_open_destinations,
+)
 
 
 def slugify(value: str) -> str:

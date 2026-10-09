@@ -88,7 +88,7 @@ this module cannot take the page down.
 | Variable | Meaning | Default |
 |---|---|---|
 | `TURSO_DATABASE_URL` | database host | the `flightconnections-tz123` host above |
-| `TURSO_AUTH_TOKEN` | read-only bearer token | none — **must be set** |
+| `TURSO_AUTH_TOKEN` | read-only bearer token | none; set in `.streamlit/secrets.toml`, live source verified 2026-10-09 |
 | `TURSO_AIRLINE_TABLE` | table name | `airlines` |
 | `TRAVEL_PLANNER_FLIGHTROUTES_DB` | local `.db` used offline, when the remote is unavailable | unset |
 
@@ -135,19 +135,18 @@ different database.
 
 ## Remaining
 
-1. **The token.** `turso db tokens create flightconnections-tz123` (read-only
-   group token). Then either export it locally:
-
-   ```powershell
-   $env:TURSO_AUTH_TOKEN = "..."
-   ```
-
-   or add it to `.streamlit/secrets.toml` so Streamlit Cloud can read it too.
-2. **Confirm the Excel file can be retired.** It is currently still the fallback
+1. **Confirm the Excel file can be retired.** It is currently still the fallback
    for unconfigured machines. Say the word and I will remove it and the
    `TRAVEL_PLANNER_AIRLINE_BENEFITS` handling with it.
-3. Optional: point `TRAVEL_PLANNER_FLIGHTROUTES_DB` at the local
+2. Optional: point `TRAVEL_PLANNER_FLIGHTROUTES_DB` at the local
    `flightroutes.db` so the finder keeps working with no network at all.
+
+Done 2026-10-09: the token is in `.streamlit/secrets.toml` and the live
+source returns 597 rows / 7 qualifying (CX, JL, KC, LH, VL, VN, ZH). Two
+gotchas worth remembering: the token's `kid` is `Vl1L5Ew…` (base64
+`Vmwx`, not `VlYx` — a one-character slip 401s the whole source), and
+`fetch_remote` must normalise the API's `{type, value}` cells or every
+benefit column reads as "unknown".
 
 Verify with `python benefits_turso.py`, which prints the source, the count and
 the qualifying carriers.

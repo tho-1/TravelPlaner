@@ -79,6 +79,40 @@ def is_yes(value: object) -> bool:
     return str(value).strip().lower() in YES_VALUES
 
 
+def _cell_value(cell: object) -> object:
+    """Normalise one pipeline-API cell to a plain Python value.
+
+    The pipeline API returns each cell as
+    ``{"type": "text"|"integer"|"real"|"null"|"blob", "value": ...}``.
+    Without this, every read would hand the caller a dict of
+    ``{type, value}`` objects instead of strings/ints, and no
+    benefit column would ever compare equal to ``yes`` -- the
+    remote source would silently read as "nobody qualifies".
+    """
+    if cell is None:
+        return None
+    if isinstance(cell, dict):
+        kind = cell.get("type")
+        value = cell.get("value")
+        if kind == "null" or value is None:
+            return None
+        if kind == "integer":
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return value
+        if kind == "real":
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return value
+        if kind == "blob":
+            import base64
+            return base64.b64decode(value) if isinstance(value, str) else value
+        return value
+    return cell
+
+
 def _normalise_header(name: object) -> str:
     return "".join(str(name or "").lower().split()).replace("_", "").replace(" ", "")
 
@@ -253,7 +287,8 @@ def fetch_remote(url: str, token: str, table: str = DEFAULT_TABLE,
         return [], [f"query error: {str(message)[:160]}"]
     result = ((first.get("response") or {}).get("result")) or {}
     columns = [column.get("name") for column in (result.get("cols") or [])]
-    rows = result.get("rows") or []
+    rows = [[_cell_value(cell) for cell in row]
+            for row in (result.get("rows") or [])]
     if not rows:
         return [], [f"the table '{table}' is empty — treated as a failure so the "
                     f"airline list cannot silently become empty"]
