@@ -219,6 +219,26 @@ EXTRA_OVERRIDES: dict[str, tuple[str, str]] = {
 }
 
 
+#: Railway stations on Fraport's board. The airport lists Lufthansa's AIRail
+#: ICE connections to German and Swiss main stations, which carry an LH flight
+#: number and are bookable on the benefit programme -- so the finder keeps them
+#: (see ``FraportBoardProvider._flight_from_record``) -- but their codes are DB
+#: station codes, not IATA, so the airport table does not know them. Without
+#: this they render as "?QDU" in the result list. Names are ASCII, matching the
+#: rest of the tables (Dusseldorf, not Düsseldorf).
+RAIL_STATIONS: dict[str, tuple[str, str]] = {
+    "DHC": ("Bremen", "DE"),
+    "DTZ": ("Dortmund", "DE"),
+    "QDU": ("Dusseldorf", "DE"),
+    "XHJ": ("Aachen", "DE"),
+    "XIR": ("Dresden", "DE"),
+    "ZBA": ("Basel", "CH"),
+    "ZEU": ("Goettingen", "DE"),
+    "ZMB": ("Hamburg", "DE"),
+    "ZMU": ("Munich", "DE"),
+}
+
+
 def normalize_key(value: object) -> str:
     """Lowercase alphanumeric key used for city-name matching."""
     if value is None:
@@ -254,6 +274,7 @@ def _code_to_city() -> dict[str, tuple[str, str]]:
     airports = _load_airports()
     code_to_city: dict[str, tuple[str, str]] = dict(CITY_OVERRIDES)
     code_to_city.update(EXTRA_OVERRIDES)
+    code_to_city.update(RAIL_STATIONS)
     for label, (country, codes) in METRO_GROUPS.items():
         canonical = _ALIAS_TO_CANONICAL.get(label, label)
         for code in codes:

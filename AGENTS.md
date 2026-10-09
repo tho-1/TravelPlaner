@@ -202,7 +202,7 @@ Nothing is half-finished; these are decisions waiting on the user.
 | # | Item | State |
 |---|---|---|
 | 1 | **Cloud persistence check (Q1)** | Unverified whether the Streamlit Cloud deployment can persist anything. Nothing depends on the answer (`runtime_paths.py` handles all three cases) but it is untested in anger. *How to check:* edit a destination comment on the phone, reload, confirm it survived. |
-| 2 | **Weekend finder flight data** | The Fraport JSON endpoint was **found and verified** on 2026-10-07 — my earlier "blocked" was wrong (see `WEEKEND_FINDER_PLAN.md` §"Fraport endpoint"). The provider is ordinary pending work, no credentials needed. CSV upload/paste remains the fallback. |
+| 2 | **Weekend finder flight data** | **Done 2026-10-09.** The Fraport JSON endpoint is live in `timetable.py` (cursor paging, wall-clock parsing, stops filter, shape-change loud-fail); CSV upload is the optional override. The provider depends on the airline benefits, which now resolve correctly via Turso (7 qualifying airlines: CX, JL, KC, LH, VL, VN, ZH). |
 | 3 | **7 rainy-day rows use the old definition** | They hold trace-precipitation values instead of the project's ≥ 1 mm. Deliberately not regenerated (costs API calls). `python write_climate_data.py --list-legacy-rainy-days` is the worklist: Thessaloniki, Ubud, Ulaanbaatar, Valencia, Valparaiso, Vientiane, Vung Tau. |
 | 4 | **`open_destinations.json` on Cloud** | Synced across devices now; still lost on a Cloud *redeploy* because the repo is remounted. Accepted. |
 
