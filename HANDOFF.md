@@ -67,6 +67,17 @@ Verified this session: `flutter pub get`, `flutter analyze` (**no issues**),
 * **Connection failures mirror `turso_db.py`'s wording**: `could not reach
   Turso: <ExceptionType>` — the type only, never the full text (a URL could
   leak into it).
+* **Import-time default paths defeated the sandbox (CI run #14).** The
+  `repository.update_*` helpers captured `data_utils.DATA_PATH` as a
+  def-time default, so the API's PATCH wrote the real workbook while the
+  read-back used the sandbox copy: CI failed loudly; a dev machine passed
+  falsely and rewrote the real file (cell-identically — verified against
+  the pre-write backup and restored). All eight helpers now resolve the
+  path at call time; `test_patch_writes_sandbox_only` hashes the source
+  seed around a round-trip. Lesson: a targeted run must include the
+  real-file guard tests (`test_real_workbook_is_untouched_by_the_suite`,
+  `test_real_workbook_metadata_is_unaffected`) whenever writes are
+  involved — they are the only witnesses on a dev machine.
 * Earlier session bugs (Phases 2–4) are recorded in `PLAN.md` and stay
   fixed: the benefits secrets-file fallback, the `_clear_cache` guard, the
   FastAPI background import, the NaN JSON sanitiser.

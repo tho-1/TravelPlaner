@@ -181,15 +181,23 @@ def _modify_destination(name: str, field: str, value) -> bool:
     return ok
 
 
+# Every write helper resolves its workbook path at CALL time, never as a
+# def-time default: `path: Path = data_utils.DATA_PATH` would capture the
+# real workbook at import, and conftest's sandbox rebind (and any runtime
+# retarget) could not reach it — a CI test then silently wrote the repo's
+# committed cloud seed while reading back the sandbox copy.
+
 def update_favorite_status(destination_name: str, add: bool,
-                           path: Path = data_utils.DATA_PATH) -> bool:
+                           path: Path | None = None) -> bool:
+    path = path or data_utils.DATA_PATH
     if use_turso():
         return _modify_destination(destination_name, "favourite", add)
     return data_utils.update_favorite_status(destination_name, add, path)
 
 
 def update_visited_status(destination_name: str, visited: bool,
-                          path: Path = data_utils.DATA_PATH) -> bool:
+                          path: Path | None = None) -> bool:
+    path = path or data_utils.DATA_PATH
     if use_turso():
         return _modify_destination(destination_name, "visited", visited)
     return data_utils.update_visited_status(destination_name, visited, path)
@@ -197,7 +205,8 @@ def update_visited_status(destination_name: str, visited: bool,
 
 def update_to_be_researched_status(destination_name: str,
                                    to_be_researched: bool,
-                                   path: Path = data_utils.DATA_PATH) -> bool:
+                                   path: Path | None = None) -> bool:
+    path = path or data_utils.DATA_PATH
     if use_turso():
         return _modify_destination(destination_name, "to_be_researched",
                                    to_be_researched)
@@ -206,14 +215,16 @@ def update_to_be_researched_status(destination_name: str,
 
 
 def update_prio_thorsten(destination_name: str, value: int,
-                         path: Path = data_utils.DATA_PATH) -> bool:
+                         path: Path | None = None) -> bool:
+    path = path or data_utils.DATA_PATH
     if use_turso():
         return _modify_destination(destination_name, "prio", value)
     return data_utils.update_prio_thorsten(destination_name, value, path)
 
 
 def update_comment(destination_name: str, value: str,
-                   path: Path = data_utils.DATA_PATH) -> bool:
+                   path: Path | None = None) -> bool:
+    path = path or data_utils.DATA_PATH
     if use_turso():
         return _modify_destination(destination_name, "comment", value)
     return data_utils.update_comment(destination_name, value, path)
@@ -221,8 +232,9 @@ def update_comment(destination_name: str, value: str,
 
 def update_reviews(destination_name: str, review_score: float,
                    tourist_reviews: str, praise: str, dislikes: str,
-                   path: Path = data_utils.DATA_PATH) -> bool:
+                   path: Path | None = None) -> bool:
     """Write the review fields. Turso path updates the tail columns."""
+    path = path or data_utils.DATA_PATH
     if use_turso():
         dest, problems = storage_turso.get_destination(destination_name)
         if problems or dest is None:
@@ -252,8 +264,9 @@ def update_reviews(destination_name: str, review_score: float,
 
 
 def update_food(destination_name: str, spiciness: float, description: str,
-                dishes=None, path: Path = data_utils.DATA_PATH) -> bool:
+                dishes=None, path: Path | None = None) -> bool:
     """Write the food fields. Turso path updates the tail columns."""
+    path = path or data_utils.DATA_PATH
     if use_turso():
         dest, problems = storage_turso.get_destination(destination_name)
         if problems or dest is None:
@@ -289,8 +302,9 @@ def update_food(destination_name: str, spiciness: float, description: str,
 
 def add_new_destination(destination_name: str, country: str = "Unknown",
                         continent: str = "Unknown",
-                        path: Path = data_utils.DATA_PATH) -> tuple[bool, str]:
+                        path: Path | None = None) -> tuple[bool, str]:
     """Append a new destination. Turso path inserts a new row."""
+    path = path or data_utils.DATA_PATH
     if use_turso():
         name = str(destination_name).strip()
         if not name:

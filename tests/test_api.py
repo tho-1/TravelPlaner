@@ -10,8 +10,10 @@ sync transport are patched out.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -134,6 +136,28 @@ def test_patch_favourite_roundtrip(client, sandbox):
                              params={"favourite": True})
     assert name in [row["destination"]
                     for row in favourited.json()["destinations"]]
+
+
+def test_patch_writes_sandbox_only(client, sandbox, workbook_source):
+    """A PATCH round-trip writes the sandbox copy -- never the source
+    seed. A def-time default path (`path: Path = data_utils.DATA_PATH`)
+    captured the real workbook at import, so the write landed on the
+    repo's seed while the read-back used the sandbox: the test passed
+    on machines where the destination was already favourited and
+    silently dirtied the real file, and failed on CI, where the seed
+    is the committed cloud workbook.
+    """
+    def seed_digest() -> str:
+        return hashlib.sha256(Path(workbook_source).read_bytes()).hexdigest()
+
+    before = seed_digest()
+    listing = client.get("/api/destinations").json()
+    name = listing["destinations"][0]["destination"]
+    response = client.patch(f"/api/destinations/{name}",
+                             json={"favourite": True})
+    assert response.status_code == 200
+    assert response.json()["written"] is True
+    assert seed_digest() == before
 
 
 def test_patch_nothing_to_write(client):

@@ -101,6 +101,24 @@ Not yet done: `flutter create` platform folders (android/, windows/ —
 `flutter build apk` untried, no `JAVA_HOME` on this machine) and a real
 device run.
 
+**CI's first verdict caught a real data-safety bug (2026-10-11, fixed in
+the next commit).** Every `repository.update_*` write helper declared its
+workbook path as a def-time default (`path: Path = data_utils.DATA_PATH`),
+which captures the *real* workbook at import — conftest's sandbox rebind
+could not reach it. The API's PATCH round-trip test therefore wrote the
+repo's real workbook while reading back the sandbox copy: on CI it failed
+loudly (the committed cloud seed doesn't already agree with the write);
+on a dev machine it **passed falsely** and silently rewrote the real
+`Destinations-local.xlsx` (cell-identical in this case — verified against
+the pre-write backup and restored — but the breach was real, and the
+targeted run that caused it skipped the real-file guard tests). Fixed by
+resolving the path at call time (`path: Path | None = None` →
+`path or data_utils.DATA_PATH`) in all eight write helpers, mirroring
+`load_destinations`; `test_patch_writes_sandbox_only` pins the contract by
+hashing the source seed around a round-trip. Reproduced first in a fresh
+clone (the AGENTS.md fresh-checkout discipline), fixed, re-verified in the
+clone and locally with the guard tests.
+
 **Phase 6 is deliberately deferred**: deleting the Streamlit pages, the
 workbook writers and the sync stack would delete the fallback the user
 decided to keep (2026-10-10).
