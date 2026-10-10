@@ -31,10 +31,60 @@ station codes to city names" — a weekend-finder improvement
 since the plan contradicts it or changes its assumptions; the working
 tree was clean apart from the untracked `.kilo/` tooling directory.
 
-Documentation updated to match: `AGENTS.md` (the entry point now
-states the legacy status and the target architecture), `README.md`
-(intro and "Running it" marked legacy), `NATIVE_HTML_PLAN.md` (status
-block: decided, Phase 1 done, Phases 2–6 not started).
+Documentation updated to match: `AGENTS.md` (the entry point now states the
+legacy status and the target architecture), `README.md` (intro and
+"Running it" marked legacy), `NATIVE_HTML_PLAN.md` (status block: decided,
+Phase 1 done, Phases 2–6 not started).
+
+---
+
+## Native rebuild 2026-10-10 — Phases 2 to 5 in flight
+
+Work continues on `NATIVE_HTML_PLAN.md` §7 (the user asked for it
+autonomously; the full record lives in `HANDOFF.md` while the work is
+in flight).
+
+**Phase 2 — backend API** (`2a066fb`). `api.py`: a FastAPI app over the
+repository layer — destinations (list with the shared filters, detail with
+the lossless column tail, PATCH of the editable flags), trips CRUD, open
+tabs, the weekend finder (live Fraport), provider status, the workbook
+export, and the legacy journal-sync trigger. It is the first Streamlit-free
+entry point: it sets `TRAVEL_PLANNER_API` before importing the repository,
+which turns the repository's `st.cache_data` into a passthrough so every
+request reads fresh data. The workbook's NaN cells needed
+`_jsonable()` — JSON refuses them, the Streamlit UI hid the problem.
+`tests/test_api.py` (23 tests).
+
+**Phase 3 — native HTML frontend** (`2a066fb`). `web/`: hash-routed
+catalogue / destination / trips / weekend-finder views in vanilla JS over
+the API, a PWA manifest and a service worker that caches the shell but
+never an API response. Filters are applied server-side, so the filter
+semantics stay in `filters.py`.
+
+**Benefits credentials bug** (`2a066fb`). `benefits_turso` read the token
+from `os.environ` only, while `turso_db` and ` GitHub transport` fall back to
+`.streamlit/secrets.toml`. Any non-Streamlit process therefore read the seed
+list instead of the database, and the weekend finder emptied itself
+silently: 260 LH flights rejected, 0 cities. Fixed with the same env→file
+fallback, an autouse conftest fixture that keeps the suite hermetic on a
+machine with the real secrets file, and a test.
+
+**Phase 4 — trips runtime cutover** (`7fadbbc`). `itinerary/storage.py` now
+loads from Turso and falls back to `trips.json`; `save_trips` upserts every
+trip and deletes the ones the structure no longer lists, returning True/False
+(the empty flag map stays a failure, never a silent success). The ladder
+lives in the storage module — not in `repository.py` — so the legacy
+Streamlit app and the API share one data path and the fallback story holds.
+Verified live: an API create+delete round-tripped through Turso while
+`trips.json` was never touched.
+
+**Phase 5 — Flutter app** (in progress). `mobile/`: the Turso pipeline
+client, the destination and trip models, and the UI shell are written;
+`flutter analyze` / `flutter test` have not been run yet. See `HANDOFF.md`.
+
+**Phase 6 is deliberately deferred**: deleting the Streamlit pages, the
+workbook writers and the sync stack would delete the fallback the user
+decided to keep (2026-10-10).
 
 ---
 

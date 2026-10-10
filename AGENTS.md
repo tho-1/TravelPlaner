@@ -13,6 +13,7 @@ code.
 | Document | What it is for |
 |---|---|
 | **`AGENTS.md`** (this file) | orientation, invariants, open items |
+| `HANDOFF.md` | in-flight native-rebuild work and next steps (delete when the native phases are done) |
 | `README.md` | how to run it, data locations, architecture, data-safety rules |
 | `PLAN.md` | the full history: every review finding, every fix, every decision, with dates and commit hashes |
 | `WEEKEND_FINDER_PLAN.md` | the weekend trip finder: spec, status, what is blocked and why |

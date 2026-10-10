@@ -70,3 +70,11 @@ sync_journals/
 
 # DDG photo cache (large, refetchable)
 Pictures/gallery_ddg/
+
+# Flutter (the native app, mobile/)
+mobile/build/
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+# The app's Turso credentials (never commit secrets)
+mobile/assets/turso_config.json
