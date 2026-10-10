@@ -178,6 +178,49 @@ def test_trips_unknown_id(client, sandbox):
                       json={"name": "x"}).status_code == 404
 
 
+def test_trips_crud_on_the_turso_branch(client, monkeypatch):
+    """With Turso configured, the API reads and writes
+    the database -- the same trips the phone sees.
+    The file branch is forced by the suite's autouse
+    fixture, so this test patches ``is_configured``
+    itself (its patch applies after the fixture's)."""
+    import turso_db
+
+    trips: dict[str, dict] = {}
+
+    def fake_load():
+        return {"schema_version": 1,
+                "trips": list(trips.values())}, []
+
+    monkeypatch.setattr(turso_db, "is_configured", lambda: True)
+    monkeypatch.setattr(storage_turso, "load_trips", fake_load)
+    monkeypatch.setattr(
+        storage_turso, "save_trip",
+        lambda trip: trips.update({trip["id"]: trip})
+        or (True, []))
+    monkeypatch.setattr(
+        storage_turso, "delete_trip",
+        lambda trip_id: (trips.pop(trip_id, None) is not None,
+                           []))
+
+    created = client.post("/api/trips", json={"name": "Turso trip"})
+    assert created.status_code == 201
+    trip_id = created.json()["id"]
+
+    listed = client.get("/api/trips").json()["trips"]
+    assert "Turso trip" in [t["name"] for t in listed]
+    assert client.get(f"/api/trips/{trip_id}").json()["id"] == trip_id
+
+    renamed = client.get(f"/api/trips/{trip_id}").json()
+    renamed["name"] = "Turso trip (renamed)"
+    assert client.put(f"/api/trips/{trip_id}",
+                        json=renamed).json()["name"] == \
+        "Turso trip (renamed)"
+
+    assert client.delete(f"/api/trips/{trip_id}").status_code == 200
+    assert client.get(f"/api/trips/{trip_id}").status_code == 404
+
+
 # ── open tabs ────────────────────────────────────────────
 
 def test_tabs_roundtrip(client, sandbox):

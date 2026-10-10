@@ -1,11 +1,21 @@
-"""Atomic trips.json persistence + rolling backups + ui state.
+"""Trips persistence: Turso first, trips.json as the fallback.
 
-The file lives next to app.py. Every save is atomic (unique tmp file + retry +
-replace), so an interruption, a crash or two browser tabs saving at the same
-time can never leave a half-written trips.json behind — and can never
-silently overwrite an edit made by another session (see ``TripsFileChanged``).
-Before each save the previous content is kept as a timestamped snapshot so an
-accidental deletion can be undone (see ``list_backups`` / ``restore_backup``).
+Phase 4 of the native rebuild (``NATIVE_HTML_PLAN.md``):
+the trips live in the Turso database, so the PC and the
+phone read and write the same trips. The file path is the
+fallback when Turso is not configured or unreachable -- an
+outage degrades to the old behaviour instead of an empty
+trip list.
+
+The file path keeps its full safety machinery: every save
+is atomic (unique tmp file + retry + replace), so an
+interruption, a crash or two browser tabs saving at the
+same time can never leave a half-written trips.json behind
+— and can never silently overwrite an edit made by another
+session (see ``TripsFileChanged``). Before each save the
+previous content is kept as a timestamped snapshot so an
+accidental deletion can be undone (see ``list_backups`` /
+``restore_backup``).
 """
 
 from __future__ import annotations
@@ -18,6 +28,8 @@ import uuid
 from pathlib import Path
 
 import runtime_paths
+import storage_turso
+import turso_db
 
 from . import models, sample
 
@@ -299,12 +311,83 @@ def _journal_trips_safe(path: Path, diffs: list[tuple]) -> None:
         pass
 
 
+def _use_turso() -> bool:
+    """True when the trips live in the Turso database.
+
+    The tests force the file branch (the suite's autouse
+    fixture patches ``turso_db.is_configured`` to False),
+    which keeps every existing trips.json test on the code
+    path it was written against. Tests that exercise the
+    Turso branch patch it themselves.
+    """
+    return turso_db.is_configured()
+
+
 def load_trips(path: Path | None = None) -> dict:
+    """The trips structure (``{"schema_version": 1,
+    "trips": [...]}``).
+
+    Turso first; the file is the fallback when Turso is
+    not configured or unreachable, so an outage degrades
+    to the old behaviour instead of an empty trip list.
+    An explicit ``path`` always means *that file* -- tests
+    point the loader at a disposable copy.
+    """
+    if path is None and _use_turso():
+        trips, problems = storage_turso.load_trips()
+        if not problems:
+            return trips
     return load_from(path or TRIPS_PATH)
 
 
-def save_trips(data: dict, path: Path | None = None) -> None:
+def save_trips(data: dict, path: Path | None = None) -> bool:
+    """Write the trips structure. Returns True when
+    written; False means nothing was written (see
+    ``last_write_error``).
+
+    The Turso path upserts every trip and deletes the
+    ones the structure no longer lists, so a full save
+    round-trips. It is last-write-wins (the user's
+    decision, 2026-10-08) and never journals -- the
+    database *is* the sync. The file path keeps the
+    atomic write, the stale guard (``TripsFileChanged``)
+    and the journal contract.
+    """
+    if path is None and _use_turso():
+        return _save_trips_to_turso(data)
     save_to(data, path or TRIPS_PATH)
+    return True
+
+
+def _save_trips_to_turso(data: dict) -> bool:
+    """Full-structure save against Turso.
+
+    A failed write is noted (``last_write_error``) and
+    reported as False -- the same contract the file
+    path uses for a failed save -- never raised, so a
+    caller that ignores the return value keeps the old
+    behaviour.
+    """
+    remote, problems = storage_turso.load_trips()
+    if problems:
+        _note_write_error("; ".join(problems[:2]))
+        return False
+    wanted = {str(trip.get("id"))
+              for trip in data.get("trips") or []}
+    for trip in data.get("trips") or []:
+        ok, problems = storage_turso.save_trip(trip)
+        if not ok:
+            _note_write_error("; ".join(problems[:2]))
+            return False
+    for trip_id in ({str(trip.get("id"))
+                     for trip in remote.get("trips") or []}
+                    - wanted):
+        ok, problems = storage_turso.delete_trip(trip_id)
+        if not ok:
+            _note_write_error("; ".join(problems[:2]))
+            return False
+    _note_write_error(None)
+    return True
 
 
 # ── backups ─────────────────────────────────────────────────────────────────
@@ -433,7 +516,22 @@ def save_ui_state(state: dict) -> bool:
 
 
 def ensure_seed(path: Path | None = None) -> dict:
-    """First run: create trips.json with the bundled sample trip."""
+    """First run: create the trips store with the bundled
+    sample trip.
+
+    On the Turso path the database is the store, so it
+    is seeded only when it holds no trips yet -- the
+    file is never touched (the phone and the PC share
+    the database, not the file).
+    """
+    if path is None and _use_turso():
+        data = load_trips()
+        if data.get("trips"):
+            return data
+        data = {"schema_version": models.SCHEMA_VERSION,
+                "trips": [sample.make_sample_trip()]}
+        _save_trips_to_turso(data)
+        return data
     target = path or TRIPS_PATH
     if target.exists():
         return load_trips(target)

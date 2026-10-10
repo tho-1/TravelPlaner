@@ -283,14 +283,20 @@ class TripCreate(BaseModel):
 
 
 def _save_trips(data: dict) -> None:
-    """Save, mapping the stale-file guard to a 409 the client
-    can act on (reload and retry)."""
+    """Save, mapping the stale-file guard to a 409 the
+    client can act on (reload and retry) and a failed
+    write to a 500 -- a write that was not made is
+    never reported as success."""
     try:
-        trip_storage.save_trips(data)
+        written = trip_storage.save_trips(data)
     except trip_storage.TripsFileChanged as exc:
         raise HTTPException(
             409, "trips.json changed on disk -- reload and retry"
         ) from exc
+    error = trip_storage.last_write_error()
+    if not written or error:
+        raise HTTPException(
+            500, f"the trips were not written: {error}")
 
 
 @app.post("/api/trips", status_code=201)
