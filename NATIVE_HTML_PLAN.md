@@ -27,24 +27,26 @@ The app was green and pushed at the time (`00cb16f`, CI run
 | 3 — native HTML frontend | done 2026-10-10 (`2a066fb`): `web/` PWA served by the API on the PC; "[needs a host]" became moot because the phone went native instead |
 | 4 — sync on Turso | **half-done, by a different route**: every surface (Streamlit, API, Flutter) talks to the same database directly, last-write-wins via `updated_at` (the trips runtime cutover is `7fadbbc`). The offline-first push/pull layer was consciously traded away and is this plan's biggest open gap |
 | 5 — Android/desktop native | **code complete, not yet runnable**: `mobile/` (`accd28f` scaffold, `573f235` repositories, UI, tests — analyze clean, 31/31 pass). Missing: platform folders (`flutter create`), a JDK for `flutter build apk`, a first live run, and feature parity — map, galleries, AQI and AI populate are still PC-side only |
-| 6 — cutover/cleanup | **deferred by decision (2026-10-10)** — Streamlit stays green as the fallback; do not delete |
+| 6 — cutover/cleanup | **deferred with a trigger** (decision 2026-10-10, trigger set 2026-10-11): retire the Streamlit fallback when the Flutter app reaches **full parity** and has been used daily without falling back |
 
 The immediate next steps live in `HANDOFF.md`. The remaining work beyond
 them is decision-shaped, not volume-shaped:
 
 1. **Make Phase 5 runnable.** Platform folders, JDK, `flutter run -d
    windows`, one live edit round-trip against Turso, then the sideloaded APK.
-2. **Decide Flutter feature parity.** The app currently covers catalogue,
-   trips and the flag edits. The weekend finder is key-free and the natural
-   next feature; the map, galleries, AQI and DeepSeek populate each need
-   keys in the APK or charting work — decide per feature, not all at once.
+2. **Build toward full parity.** Parity with the legacy app is the declared
+   end goal (user, 2026-10-11), not a scoping choice — the only open
+   question is order. Agreed order: destination detail richness first
+   (map, galleries, climate, reviews), then the weekend finder (key-free),
+   then the key-gated features (AI populate, keys in the APK per sec. 6
+   Q8), until nothing is PC-side only.
 3. **Decide the offline-first story.** Staying online-only is defensible
    for one user with two devices and a free-tier database; if offline
    matters, sec. 10's local file + `push()`/`pull()` is the design to pick
    up (in Flutter: `@tursodatabase/sync`, not `libsql_dart`).
-4. **Set the Phase 6 trigger.** The condition under which the Streamlit
-   fallback is actually retired (for example: a month of daily native use
-   without falling back).
+4. **Phase 6 trigger — set (2026-10-11).** Full parity of the Flutter app
+   (item 2) plus a period of daily native use without falling back. No
+   further decision needed; revisit when item 2 completes.
 
 This document evaluates the three-part proposal:
 
@@ -296,11 +298,13 @@ Streamlit, the Android app shares only the data layer; if the PC goes native
 (Flutter), share the UI too. In Flutter use `@tursodatabase/sync` push/pull,
 not a native libsql bridge (Q8 answered: keys in APK are fine).
 
-**Phase 6 -- Cutover and cleanup. — DEFERRED by decision (2026-10-10).**
+**Phase 6 -- Cutover and cleanup. — DEFERRED, with a trigger.**
 Do not run while the Streamlit version is the fallback: deleting the
 Streamlit pages, workbook writers, and the sync stack would delete the
-fallback the user decided to keep. Set a trigger (see the status block's
-remaining-work list, item 4) before revisiting.
+fallback the user decided to keep. **The trigger is full parity** of the
+Flutter app with the legacy app (user, 2026-10-11) plus a period of daily
+native use without falling back; only then delete, update the docs, and
+re-plumb CI.
 
 ## 8. The pending question from the previous session, answered
 

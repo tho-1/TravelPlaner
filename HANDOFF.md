@@ -110,8 +110,12 @@ Binding for any session working without the user present:
 4. **Small real writes to the live Turso database are permitted** for
    verification (toggle a favourite, edit a comment) — that is the app's
    purpose; last-write-wins is the accepted semantics. Never bulk-write.
-5. **Feature priority after the app runs**: destination detail richness
-   first (map, galleries, climate, reviews), then everything else.
+5. **Feature parity is the end goal (user, 2026-10-11)**: the Flutter app
+   must reach full parity with the legacy app — map, galleries, climate,
+   reviews, weekend finder, AI populate, all of it. Order after the app
+   runs: destination detail richness first (map, galleries, climate,
+   reviews), then the weekend finder, then the key-gated features
+   (AI populate), until nothing is PC-side only.
 6. **Online-only stays**: no offline-first work; revisit only if the user
    reports it biting.
 7. **Test policy**: targeted test files during work; the full pytest suite
