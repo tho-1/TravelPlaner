@@ -62,6 +62,9 @@ ENV_TOKEN = "TURSO_AUTH_TOKEN"
 ENV_TABLE = "TURSO_AIRLINE_TABLE"
 ENV_LOCAL_DB = "TRAVEL_PLANNER_FLIGHTROUTES_DB"
 
+ROOT = Path(__file__).resolve().parent
+SECRETS_PATH = ROOT / ".streamlit" / "secrets.toml"
+
 #: Seconds. The data changes when the user edits it, which is rare, so this is
 #: generous: a page rerun should never touch the network.
 CACHE_TTL_S = 3600.0
@@ -214,11 +217,38 @@ def fetch_local(db_path: Path | str, table: str = DEFAULT_TABLE
 
 # ── remote Turso over SQL-over-HTTP ──────────────────────────────────────────
 
+def _read_secret(name: str) -> str:
+    """Read a secret from the environment, then
+    ``.streamlit/secrets.toml``.
+
+    Streamlit injects the file into the environment, so the
+    env lookup covers the app; the file lookup covers every
+    other process (the API server, a script) -- the same
+    fallback ``turso_db`` and the GitHub transport use.
+    Without it, a non-Streamlit process reads an empty flag
+    map, which the resolver reports as a failure and falls
+    through to the seed list, silently emptying the finder.
+    """
+    value = os.environ.get(name, "").strip()
+    if value:
+        return value
+    try:
+        for line in SECRETS_PATH.read_text(
+                encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith(name):
+                _, _, value = stripped.partition("=")
+                return value.strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return ""
+
+
 def config_from_env() -> dict:
     return {
-        "url": (os.environ.get(ENV_URL) or DEFAULT_REMOTE).strip(),
-        "token": (os.environ.get(ENV_TOKEN) or "").strip(),
-        "table": (os.environ.get(ENV_TABLE) or DEFAULT_TABLE).strip(),
+        "url": (_read_secret(ENV_URL) or DEFAULT_REMOTE).strip(),
+        "token": _read_secret(ENV_TOKEN),
+        "table": (_read_secret(ENV_TABLE) or DEFAULT_TABLE).strip(),
     }
 
 

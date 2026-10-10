@@ -431,6 +431,33 @@ def test_nothing_configured_reports_why(monkeypatch):
     assert "Falling back" in bt.summary(use_cache=False)
 
 
+def test_the_secret_file_is_the_fallback(monkeypatch, tmp_path):
+    """A non-Streamlit process (the API server, a script)
+    has no injected environment, so the secrets file is
+    the same fallback ``turso_db`` and the GitHub transport
+    use. Without it the finder empties itself silently:
+    every airline is rejected and no city is left."""
+    secrets = tmp_path / "secrets.toml"
+    secrets.write_text(f'{bt.ENV_TOKEN} = "file-token"\n',
+                       encoding="utf-8")
+    monkeypatch.delenv(bt.ENV_TOKEN, raising=False)
+    monkeypatch.delenv(bt.ENV_LOCAL_DB, raising=False)
+    monkeypatch.setattr(bt, "SECRETS_PATH", secrets)
+    seen = {}
+
+    def fake_post(url, **kw):
+        seen["auth"] = kw["headers"]["Authorization"]
+        return _Response(payload=json.loads(_pipeline_response(
+            [("LH", "Lufthansa", "yes", "", "")])))
+
+    monkeypatch.setattr("requests.post", fake_post)
+    bt.clear_cache()
+    flags, _problems = bt.fetch_benefit_flags(use_cache=False)
+    assert flags["LH"] is True
+    assert seen["auth"] == "Bearer file-token"
+    bt.clear_cache()
+
+
 def test_results_are_cached_so_a_rerun_makes_no_request(monkeypatch):
     monkeypatch.setenv(bt.ENV_TOKEN, "tok")
     monkeypatch.delenv(bt.ENV_LOCAL_DB, raising=False)

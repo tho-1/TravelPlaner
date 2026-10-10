@@ -1,0 +1,172 @@
+/* Travel Planner — the native HTML frontend (no build step). */
+
+:root {
+  --accent: #1f6feb;
+  --text: #1f2328;
+  --muted: #66707b;
+  --line: #d8dee4;
+  --bg: #ffffff;
+  --bg-soft: #f6f8fa;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+}
+
+.topbar h1 { font-size: 1.15rem; margin: 0; }
+
+.topbar nav { display: flex; gap: 0.9rem; }
+.topbar nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+.topbar nav a.active { color: var(--accent); }
+
+.source {
+  font-size: 0.75rem;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+}
+
+.view { padding: 1.25rem; max-width: 72rem; margin: 0 auto; }
+
+.loading, .empty { color: var(--muted); }
+
+/* Filter form */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  align-items: end;
+  padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  margin-bottom: 1rem;
+}
+.filters label { display: flex; flex-direction: column; gap: 0.25rem;
+  font-size: 0.8rem; color: var(--muted); }
+.filters input, .filters select {
+  font: inherit;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.filters .check { flex-direction: row; align-items: center; gap: 0.35rem; }
+.filters button {
+  font: inherit;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+}
+.filters button.secondary {
+  background: var(--bg);
+  color: var(--accent);
+}
+
+.count { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.6rem; }
+
+/* Tables */
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+table.data th, table.data td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+table.data th { color: var(--muted); font-weight: 600; font-size: 0.78rem;
+  text-transform: uppercase; letter-spacing: 0.03em; }
+table.data tbody tr { cursor: pointer; }
+table.data tbody tr:hover { background: var(--bg-soft); }
+
+.pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  font-size: 0.75rem;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.pill.on { border-color: var(--accent); color: var(--accent); }
+
+/* Destination detail */
+.destination h2 { margin: 0 0 0.25rem; }
+.metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  margin: 0.75rem 0 1.25rem;
+}
+.metrics .metric { display: flex; flex-direction: column; }
+.metrics .metric b { font-size: 1.05rem; }
+.metrics .metric span { color: var(--muted); font-size: 0.78rem; }
+
+.fields { font-size: 0.88rem; }
+.fields dt { color: var(--muted); font-weight: 600; margin-top: 0.5rem; }
+.fields dd { margin: 0.1rem 0 0; }
+
+.editrow { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem;
+  align-items: center; margin: 1rem 0; }
+.editrow label { display: flex; gap: 0.35rem; align-items: center;
+  font-size: 0.9rem; }
+.editrow input[type="number"], .editrow input[type="text"] {
+  font: inherit; padding: 0.3rem 0.5rem;
+  border: 1px solid var(--line); border-radius: 6px;
+}
+
+/* Trips */
+.trip { border: 1px solid var(--line); border-radius: 8px;
+  padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+.trip h3 { margin: 0; }
+.trip .meta { color: var(--muted); font-size: 0.8rem; }
+.stop { padding: 0.35rem 0; border-bottom: 1px dashed var(--line); }
+.stop:last-child { border-bottom: 0; }
+.leg { color: var(--muted); font-size: 0.85rem; padding-left: 1.25rem; }
+
+/* Weekend finder */
+.weekend-city { border: 1px solid var(--line); border-radius: 8px;
+  padding: 0.75rem 1rem; margin-bottom: 0.75rem; }
+.weekend-city h3 { margin: 0 0 0.35rem; }
+.flight { font-size: 0.88rem; color: var(--muted); }
+.notes { color: var(--muted); font-size: 0.85rem; }
+
+.error {
+  border: 1px solid #d73a49;
+  color: #b4232f;
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  background: #fff5f5;
+}
+
+.foot { padding: 0.5rem 1.25rem; color: var(--muted); font-size: 0.8rem;
+  border-top: 1px solid var(--line); }
+
+@media (max-width: 40rem) {
+  table.data th:nth-child(n+5), table.data td:nth-child(n+5) { display: none; }
+}

@@ -27,14 +27,32 @@ destination/tab round-trip is proven. See ``NATIVE_HTML_PLAN.md`` §7.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pandas as pd
-import streamlit as st
 
 import data_utils
 import storage_turso
 import turso_db
+
+try:
+    import streamlit as st
+except ImportError:  # the API server runs without Streamlit
+    st = None
+
+
+def _cache_data(func):
+    """``st.cache_data`` in the Streamlit app, a passthrough elsewhere.
+
+    The backend API (``api.py``) sets ``TRAVEL_PLANNER_API`` and
+    imports this module in its own process: there the decorator must
+    not cache, so every request reads fresh data. In the Streamlit
+    app the caching behaviour is unchanged.
+    """
+    if st is None or os.environ.get("TRAVEL_PLANNER_API"):
+        return func
+    return st.cache_data(show_spinner=False)(func)
 
 # ── source selection ───────────────────────────────────────────────────
 
@@ -44,8 +62,14 @@ def use_turso() -> bool:
 
 
 def _clear_cache() -> None:
-    _load_destinations_from_turso.clear()
-    _load_open_tabs_from_turso.clear()
+    for cached in (_load_destinations_from_turso,
+                   _load_open_tabs_from_turso):
+        # A cached function carries .clear(); the API
+        # process's passthrough does not (and needs
+        # nothing cleared).
+        clear = getattr(cached, "clear", None)
+        if clear is not None:
+            clear()
     data_utils._clear_destination_cache()
 
 
@@ -71,7 +95,7 @@ def _destinations_to_dataframe(dests: list[dict]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=columns)
 
 
-@st.cache_data(show_spinner=False)
+@_cache_data
 def _load_destinations_from_turso() -> tuple[pd.DataFrame, dict] | None:
     """Read all destinations from Turso.
 
@@ -309,7 +333,7 @@ def add_new_destination(destination_name: str, country: str = "Unknown",
 
 # ── open tabs ──────────────────────────────────────────────────────────
 
-@st.cache_data(show_spinner=False)
+@_cache_data
 def _load_open_tabs_from_turso() -> list[str] | None:
     """Read the open-tabs list from Turso, or ``None`` on failure."""
     tabs, problems = storage_turso.load_open_tabs()

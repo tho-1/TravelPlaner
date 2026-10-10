@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Travel Planner</title>
+<meta name="description" content="Personal travel catalogue and trip planner">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <h1>Travel Planner</h1>
+    <span id="source" class="source" title="Where the data is read from"></span>
+  </div>
+  <nav>
+    <a href="#/" data-nav="catalogue">Catalogue</a>
+    <a href="#/trips" data-nav="trips">Trips</a>
+    <a href="#/weekend" data-nav="weekend">Weekend finder</a>
+  </nav>
+</header>
+<main id="view" class="view">
+  <p class="loading">Loading…</p>
+</main>
+<footer class="foot">
+  <span id="status" role="status"></span>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>

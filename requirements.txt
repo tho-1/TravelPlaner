@@ -12,3 +12,6 @@ plotly>=5.20
 requests>=2.31
 Pillow>=10.0
 ddgs>=9.0
+# The backend API (api.py, NATIVE_HTML_PLAN.md Phase 2)
+fastapi>=0.110
+uvicorn>=0.29

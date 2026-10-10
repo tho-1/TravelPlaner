@@ -1,0 +1,10 @@
+{
+  "name": "Travel Planner",
+  "short_name": "Travel Planner",
+  "description": "Personal travel catalogue and trip planner",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1f6feb",
+  "icons": []
+}

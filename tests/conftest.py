@@ -179,6 +179,26 @@ def no_network(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_benefits_turso_secrets(monkeypatch):
+    """Keep the benefits Turso reader off the real secrets file.
+
+    ``benefits_turso`` reads ``TURSO_AUTH_TOKEN`` from the
+    environment and then ``.streamlit/secrets.toml`` (the
+    same fallback ``turso_db`` and the GitHub transport
+    use). The local file holds a live token: a test that
+    deletes the env var would then read the real one and
+    make a real network call, which CI -- where the file
+    does not exist -- never does. Tests that exercise the
+    file fallback patch ``SECRETS_PATH`` themselves.
+    """
+    import benefits_turso
+
+    monkeypatch.setattr(benefits_turso, "SECRETS_PATH",
+                        ROOT / "tests" / "_no_secrets.toml")
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _no_streamlit_runtime_leaks():
     """Keep Streamlit's cache from leaking state between tests."""
     yield
