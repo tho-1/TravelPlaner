@@ -95,6 +95,34 @@ Verified this session: `flutter pub get`, `flutter analyze` (**no issues**),
    `NATIVE_HTML_PLAN.md` Phase 5 (offline-first sync is unimplemented — the
    Flutter app is online-only over the pipeline API).
 
+## Autonomous working agreements (decided by the user, 2026-10-11)
+
+Binding for any session working without the user present:
+
+1. **Push after every verified commit** to `origin/main` (CI is part of
+   verification). `data-sync` stays untouched.
+2. **Platform folders**: generate `android/` + `windows/` for `mobile/` and
+   commit them (the target is a sideloaded APK plus a desktop run).
+3. **Toolchain installs are allowed** (JDK etc.) — **prefer the E: drive
+   over C:**; redirect tool caches (`GRADLE_USER_HOME`, JDK home) to E:
+   where the tool supports it. Ask the user only for heavyweight installs
+   (for example Visual Studio for the Windows desktop build).
+4. **Small real writes to the live Turso database are permitted** for
+   verification (toggle a favourite, edit a comment) — that is the app's
+   purpose; last-write-wins is the accepted semantics. Never bulk-write.
+5. **Feature priority after the app runs**: destination detail richness
+   first (map, galleries, climate, reviews), then everything else.
+6. **Online-only stays**: no offline-first work; revisit only if the user
+   reports it biting.
+7. **Test policy**: targeted test files during work; the full pytest suite
+   only when a change touches Python runtime code (CI re-runs it on push
+   regardless; doc- and Dart-only changes go straight to CI). Conserve RAM.
+
+Everything else defaults to the docs: work top-down through
+`HANDOFF.md` → the plan's remaining-work list, commit + push when green,
+and **stop and report** at anything that would need a new user decision
+rather than improvising one.
+
 ## Machine notes (this machine, Windows)
 
 * Run the API: `& ".\.venv\Scripts\python.exe" -m uvicorn api:app --host
