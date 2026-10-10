@@ -78,9 +78,28 @@ Streamlit app and the API share one data path and the fallback story holds.
 Verified live: an API create+delete round-tripped through Turso while
 `trips.json` was never touched.
 
-**Phase 5 — Flutter app** (in progress). `mobile/`: the Turso pipeline
-client, the destination and trip models, and the UI shell are written;
-`flutter analyze` / `flutter test` have not been run yet. See `HANDOFF.md`.
+**Phase 5 — Flutter app** (`accd28f` scaffold + this commit). `mobile/`:
+the Turso pipeline client (`pipeline_client.dart` — one pipeline request
+per operation, errors-inside-200 and `close`-last handled, typed cells
+decoded), `Destination` (raw typed-core map + lossless tail, so the
+mixed-type `Prio Thorsten` values — ints, a float, strings like "n/a" —
+survive a round trip) and the trip models, the repositories
+(`destination_repository.dart`: `loadDestinations` / `getDestination` /
+`updateField` as the read-modify-write of `repository._set_field`;
+`trip_repository.dart`: `loadTrips` grouped in Dart from one four-statement
+pipeline, `saveTrip` atomic per trip with stops/legs delete+re-insert and
+generated stop ids, `deleteTrip`), and a thin UI shell (bottom nav:
+catalogue with search, destination page with flag editors, trips list).
+`flutter analyze` clean, 31 `flutter test` tests pass (fake pipeline
+endpoint: typed cells, error-inside-200, 401, connection failures, SQL
+shape of every write). Two bugs found on the way, both guarded by tests:
+the model must keep the *raw* core (parsing prio to `int?` would have
+overwritten "n/a" with NULL on the next save), and response bodies must
+be decoded as UTF-8 explicitly — the http package's latin1 default
+mangles the non-ASCII column names ("In näherer Auswahl 2025?").
+Not yet done: `flutter create` platform folders (android/, windows/ —
+`flutter build apk` untried, no `JAVA_HOME` on this machine) and a real
+device run.
 
 **Phase 6 is deliberately deferred**: deleting the Streamlit pages, the
 workbook writers and the sync stack would delete the fallback the user

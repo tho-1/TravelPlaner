@@ -1,55 +1,42 @@
-/// One destination: the typed core the app filters and
-/// sorts on, plus the lossless column tail.
+/// One destination: the raw typed core the app filters
+/// and sorts on, plus the lossless column tail.
 ///
 /// The workbook has 145 columns including duplicate
 /// names and object-typed cells, so a flat typed model
-/// would be brittle and would drop data; the tail
-/// preserves every column exactly, the same contract
+/// would be brittle and would drop data; the raw core
+/// map keeps every typed field exactly as the row
+/// carries it -- `Prio Thorsten` really holds ints, a
+/// float and strings like "n/a" -- and the tail
+/// preserves every column. Typed getters parse only
+/// for display. This is the same lossless contract
 /// `storage_turso.py` keeps on the Python side.
 library;
 
 import 'dart:convert';
 
 class Destination {
-  final String name;
-  final String? continent;
-  final String? country;
-  final bool visited;
-  final bool favourite;
-  final bool toBeResearched;
-  final int? prio;
-  final double? safetyRating;
-  final double? avgCostDay;
-  final double? flightTimeFra;
-  final String? comment;
+  /// Raw typed-core values keyed by the CORE_COLUMNS
+  /// field names ('destination', 'continent', ...),
+  /// exactly as the row carries them.
+  final Map<String, Object?> core;
 
   /// Every workbook column as an ordered
   /// `(column, value)` list -- lossless.
-  final List<(String, dynamic)> columns;
+  final List<(String, Object?)> columns;
 
-  const Destination({
-    required this.name,
-    this.continent,
-    this.country,
-    this.visited = false,
-    this.favourite = false,
-    this.toBeResearched = false,
-    this.prio,
-    this.safetyRating,
-    this.avgCostDay,
-    this.flightTimeFra,
-    this.comment,
-    this.columns = const [],
-  });
+  const Destination({required this.core, this.columns = const []});
 
   /// A `destinations` table row (typed core + `data`
   /// JSON tail), the shape `storage_turso.load_destinations`
   /// returns.
-  factory Destination.fromRow(Map<String, dynamic> row) {
-    final columns = <(String, dynamic)>[];
+  factory Destination.fromRow(Map<String, Object?> row) {
+    final core = <String, Object?>{
+      for (final field in coreColumns.keys) field: row[field],
+    };
+    final columns = <(String, Object?)>[];
     final raw = row['data'];
     if (raw is String && raw.isNotEmpty) {
-      final decoded = jsonDecode(raw);
+      final decoded = _decodeMayFail(raw);
       if (decoded is List) {
         for (final pair in decoded) {
           if (pair is List && pair.length >= 2) {
@@ -58,84 +45,72 @@ class Destination {
         }
       }
     }
-    return Destination(
-      name: (row['destination'] as String?) ?? '',
-      continent: row['continent'] as String?,
-      country: row['country'] as String?,
-      visited: _truthy(row['visited']),
-      favourite: _truthy(row['favourite']),
-      toBeResearched: _truthy(row['to_be_researched']),
-      prio: _toInt(row['prio']),
-      safetyRating: _toDouble(row['safety_rating']),
-      avgCostDay: _toDouble(row['avg_cost_day']),
-      flightTimeFra: _toDouble(row['flight_time_fra']),
-      comment: row['comment'] as String?,
-      columns: columns,
-    );
+    return Destination(core: core, columns: columns);
   }
+
+  static Object? _decodeMayFail(String raw) {
+    try {
+      return jsonDecode(raw);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String get name => text(core['destination']) ?? '';
+  String? get continent => text(core['continent']);
+  String? get country => text(core['country']);
+  bool get visited => truthy(core['visited']);
+  bool get favourite => truthy(core['favourite']);
+  bool get toBeResearched => truthy(core['to_be_researched']);
+
+  /// The raw prio. Never normalise it into the field:
+  /// a read-modify-write that parses "n/a" to null
+  /// would write NULL over the real value.
+  Object? get prio => core['prio'];
+
+  /// Prio as a number, for display and sorting only.
+  int? get prioInt => toInt(core['prio']);
+  double? get safetyRating => toDouble(core['safety_rating']);
+  double? get avgCostDay => toDouble(core['avg_cost_day']);
+  double? get flightTimeFra => toDouble(core['flight_time_fra']);
+  bool get malariaRisk => truthy(core['malaria_risk']);
+  String? get dataStatus => text(core['data_status']);
+  String? get comment => text(core['comment']);
 
   /// The value of one tail column (null when the
   /// destination has no such column).
-  dynamic column(String name) {
-    for (final (column, value) in columns) {
-      if (column == name) return value;
+  Object? column(String name) {
+    for (final (entry, value) in columns) {
+      if (entry == name) return value;
     }
     return null;
   }
 
-  /// A copy with one typed field and its tail entry
-  /// replaced -- the read-modify-write the flag
+  /// A copy with one typed-core field and its tail
+  /// entry replaced -- the read-modify-write the flag
   /// editors use, so the typed core and the tail
-  /// never diverge.
-  Destination withField(String field, dynamic value) {
-    final columns = [
-      for (final (column, old) in columns)
-        (column, column == _coreColumn(field) ? value : old),
-    ];
-    return switch (field) {
-      'favourite' => Destination(
-          name: name, continent: continent, country: country,
-          visited: visited, favourite: value as bool,
-          toBeResearched: toBeResearched, prio: prio,
-          safetyRating: safetyRating, avgCostDay: avgCostDay,
-          flightTimeFra: flightTimeFra, comment: comment,
-          columns: columns),
-      'visited' => Destination(
-          name: name, continent: continent, country: country,
-          visited: value as bool, favourite: favourite,
-          toBeResearched: toBeResearched, prio: prio,
-          safetyRating: safetyRating, avgCostDay: avgCostDay,
-          flightTimeFra: flightTimeFra, comment: comment,
-          columns: columns),
-      'to_be_researched' => Destination(
-          name: name, continent: continent, country: country,
-          visited: visited, favourite: favourite,
-          toBeResearched: value as bool, prio: prio,
-          safetyRating: safetyRating, avgCostDay: avgCostDay,
-          flightTimeFra: flightTimeFra, comment: comment,
-          columns: columns),
-      'prio' => Destination(
-          name: name, continent: continent, country: country,
-          visited: visited, favourite: favourite,
-          toBeResearched: toBeResearched, prio: value as int?,
-          safetyRating: safetyRating, avgCostDay: avgCostDay,
-          flightTimeFra: flightTimeFra, comment: comment,
-          columns: columns),
-      'comment' => Destination(
-          name: name, continent: continent, country: country,
-          visited: visited, favourite: favourite,
-          toBeResearched: toBeResearched, prio: prio,
-          safetyRating: safetyRating, avgCostDay: avgCostDay,
-          flightTimeFra: flightTimeFra, comment: value as String?,
-          columns: columns),
-      _ => this,
-    };
+  /// never diverge. A missing tail entry is appended,
+  /// exactly what `repository._set_field` does. Unknown
+  /// fields are ignored -- the same strictness
+  /// `storage_turso.CORE_COLUMNS` has.
+  Destination withField(String field, Object? value) {
+    final column = coreColumns[field];
+    if (column == null) return this;
+    final core = {...this.core, field: value};
+    final columns = [...this.columns];
+    final index = columns.indexWhere((entry) => entry.$1 == column);
+    if (index >= 0) {
+      columns[index] = (column, value);
+    } else {
+      columns.add((column, value));
+    }
+    return Destination(core: core, columns: columns);
   }
 
   /// The typed-core field -> workbook column map,
   /// the same map `storage_turso.CORE_COLUMNS`
   /// keeps on the Python side.
-  static const coreColumns = {
+  static const Map<String, String> coreColumns = {
     'destination': 'Destination',
     'continent': 'Continent',
     'country': 'Country',
@@ -151,39 +126,42 @@ class Destination {
     'comment': 'Comment',
   };
 
-  static String _coreColumn(String field) =>
-      coreColumns[field] ?? field;
-
   /// The app's truthiness convention (True / "x" /
   /// "yes" / ...), stored as 0/1 in the database.
-  static bool _truthy(dynamic value) {
+  static bool truthy(Object? value) {
     if (value is bool) return value;
-    if (value is int) return value == 1;
-    if (value is double) return value == 1;
-    final text = value?.toString().trim().toLowerCase() ?? '';
-    return text == 'x' ||
-        text == 'yes' ||
-        text == 'y' ||
-        text == 'ja' ||
-        text == 'j' ||
-        text == 'true' ||
-        text == '1' ||
-        text.contains('x');
+    if (value is num) return value == 1;
+    final raw = value?.toString().trim().toLowerCase() ?? '';
+    return raw == 'x' ||
+        raw == 'yes' ||
+        raw == 'y' ||
+        raw == 'ja' ||
+        raw == 'j' ||
+        raw == 'true' ||
+        raw == '1' ||
+        raw.contains('x');
   }
 
-  static int? _toInt(dynamic value) {
+  /// The text convention: null when blank, otherwise
+  /// the value as text (numbers occur in text columns).
+  static String? text(Object? value) {
+    if (value == null) return null;
+    final raw = value.toString();
+    return raw.isEmpty ? null : raw;
+  }
+
+  static int? toInt(Object? value) {
     if (value is int) return value;
     if (value is double) return value.toInt();
     if (value == null) return null;
     return int.tryParse(value.toString());
   }
 
-  static double? _toDouble(dynamic value) {
-    if (value is double) return value;
-    if (value is int) return value.toDouble();
+  static double? toDouble(Object? value) {
+    if (value is num) return value.toDouble();
     if (value == null) return null;
-    final text = value.toString().trim().replaceAll(',', '.');
-    if (text.isEmpty) return null;
-    return double.tryParse(text);
+    final raw = value.toString().trim().replaceAll(',', '.');
+    if (raw.isEmpty) return null;
+    return double.tryParse(raw);
   }
 }

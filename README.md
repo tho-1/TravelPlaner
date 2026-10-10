@@ -100,10 +100,35 @@ Phase 1). Every page reads through `repository.py`:
   `storage_turso.export_workbook()` writes the data back to an
   openable `.xlsx`, so the Excel artifact survives.
 
-Trips still run on `trips.json` at runtime (the migration copied
-them into Turso; the runtime cutover is the next phase), so the
-`sync/` stack and `refresh_cloud_workbook.py` remain the workbook
-branch's path to the phone until then.
+Trips run on Turso at runtime too (the 2026-10-10 cutover:
+`itinerary/storage.py` loads Turso-first and falls back to
+`trips.json`), so the database now serves every surface — the
+Streamlit app, the API, and the native app. The `sync/` stack and
+`refresh_cloud_workbook.py` stay until the legacy version is retired:
+they are the workbook branch's path to the phone.
+
+## The native app (`mobile/`)
+
+The Flutter app (desktop + Android) talks to Turso directly over the
+SQL-over-HTTP pipeline API — no FastAPI backend in between, and the
+read-write token ships in the app bundle (the user's decision,
+2026-10-08, for a personal app). It is the Dart mirror of the same
+contracts the Python side keeps: a failed read returns an empty list
+*with* problems, a failed write returns `false`, and every field edit
+is a read-modify-write that updates the typed core **and** the
+lossless `data` tail.
+
+```powershell
+cd mobile
+& "C:\src\flutter\bin\flutter.bat" pub get
+& "C:\src\flutter\bin\flutter.bat" analyze
+& "C:\src\flutter\bin\flutter.bat" test
+```
+
+Credentials come from `mobile/assets/turso_config.json`
+(git-ignored; template `turso_config.example.json`, values from
+`.streamlit/secrets.toml`). Without the file the app runs
+unconfigured and explains itself instead of crashing.
 
 ## Tests, lint, build
 

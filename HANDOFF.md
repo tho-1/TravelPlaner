@@ -9,128 +9,105 @@ orientation. Delete this file when the native phases are done.
 | Phase | State | Where |
 |---|---|---|
 | 1 — Turso data layer | done before this session | `turso_db.py`, `storage_turso.py`, `repository.py` |
-| 2 — FastAPI backend | **done, committed `2a066fb`** | `api.py`, `tests/test_api.py` |
-| 3 — native HTML frontend | **done, committed `2a066fb`** | `web/` (index.html, app.js, styles.css, sw.js, manifest) |
-| — benefits credentials bug | **fixed, committed `2a066fb`** | `benefits_turso.py`, `tests/conftest.py` |
-| 4 — trips runtime cutover | **done, committed `7fadbbc`** | `itinerary/storage.py`, `tests/test_trips_turso.py` |
-| 5 — Flutter app (desktop + Android) | **in progress — scaffold written, NOT yet compiled** | `mobile/` (uncommitted) |
-| 6 — cutover/cleanup | **not started — see the decision below** | — |
+| 2 — FastAPI backend | done, committed `2a066fb` | `api.py`, `tests/test_api.py` |
+| 3 — native HTML frontend | done, committed `2a066fb` | `web/` (index.html, app.js, styles.css, sw.js, manifest) |
+| — benefits credentials bug | fixed, committed `2a066fb` | `benefits_turso.py`, `tests/conftest.py` |
+| 4 — trips runtime cutover | done, committed `7fadbbc` | `itinerary/storage.py`, `tests/test_trips_turso.py` |
+| 5 — Flutter app (desktop + Android) | **code complete and verified — repositories, UI and 31 tests, `flutter analyze` clean (`9693e28`)** | `mobile/` |
+| 6 — cutover/cleanup | **deferred — do not run** (it would delete the Streamlit fallback the user decided to keep, 2026-10-10) | — |
 
-Commits this session (all on `main`, pushed nowhere yet — the user was not
-asked to push):
+## What this session added (Phase 5 completion)
 
-```
-7fadbbc  Trips runtime cutover to Turso (Phase 4): storage ladder, Turso-first
-         with trips.json fallback
-2a066fb  Backend API and native HTML frontend (Phases 2-3); benefits secrets
-         file fallback
-301832b  Declare the Streamlit version legacy; target architecture is native
-```
+* `mobile/lib/data/destination_repository.dart` — `loadDestinations()`,
+  `getDestination()` (single-quote escaping, unknown ≠ failed),
+  `updateField()` as the read-modify-write that sets the typed column **and**
+  the matching entry of the lossless `data` tail (the Dart
+  `repository._set_field`), `saveDestination()` (the full
+  `storage_turso.save_destination` upsert).
+* `mobile/lib/data/trip_repository.dart` — `loadTrips()` (the four SELECTs in
+  **one** pipeline request, grouped in Dart), `saveTrip()` (one atomic
+  pipeline: upsert trip → upsert variants → delete + re-insert that
+  variant's stops/legs; stops without an id get one in the
+  `stop-<10 hex>` shape `itinerary.models.new_id` uses), `deleteTrip()`
+  (legs → stops → variants → trip, id escaped).
+* `mobile/lib/ui/` — `main.dart` (config load once, bottom nav
+  Catalogue/Trips, an explicit "not configured" screen),
+  `catalogue_page.dart` (list + text search; empty says whether the
+  database is empty or the search dropped everything),
+  `destination_page.dart` (metrics, visited/favourite/❔ switches, prio
+  dialog, comment editor; a `false` write is surfaced, never reported as
+  success), `trips_page.dart` (trips → variants → stops/legs, trip delete
+  with confirm).
+* `mobile/test/` — `fake_turso.dart` (a scripted pipeline endpoint that
+  captures SQL; built on `MockClient.streaming`, because the plain
+  `MockClient` finalizes the request and a second `finalize()` throws),
+  `pipeline_client_test.dart`, `models_test.dart`,
+  `destination_repository_test.dart`, `trip_repository_test.dart`.
 
-Working tree at handoff time: `mobile/` (untracked), `.gitignore` (modified:
-Flutter build artifacts + `mobile/assets/turso_config.json`). Waiting on the
-commit of Phase 5.
+Verified this session: `flutter pub get`, `flutter analyze` (**no issues**),
+`flutter test` (**31/31 pass**). `mobile/assets/turso_config.json` is written
+(git-ignored) from `.streamlit/secrets.toml` — it holds the live
+`libsql://travel-tz123...` URL and token; the client upgrades the scheme to
+`https://` and appends `/v2/pipeline`.
 
-## Next steps (Phase 5, in order)
+## Bugs found and fixed (Phase 5 completion; don't re-litigate)
 
-1. **`mobile/lib/data/destination_repository.dart`** — `loadDestinations()`,
-   `getDestination(name)`, `updateField(name, field, value)`. Mirror
-   `storage_turso.py`: the flag editors must do a read-modify-write that sets
-   the typed column **and** the matching entry of the lossless `data` tail
-   (this is exactly what `repository.py:_set_field` does; a targeted UPDATE
-   that only touches the typed column would leave the tail stale).
-2. **`mobile/lib/data/trip_repository.dart`** — port `storage_turso`:
-   `loadTrips()` (trips → variants → stops → legs, grouped in Dart),
-   `saveTrip(trip)` (one pipeline: upsert trip, upsert variants, delete +
-   re-insert that variant's stops/legs), `deleteTrip(id)`.
-3. **`mobile/lib/ui/main.dart`** — app shell, bottom nav (Catalogue, Trips),
-   loads `TursoConfig` once and hands the repositories down.
-4. **`mobile/lib/ui/catalogue_page.dart`** — list + text search.
-   **`destination_page.dart`** — metrics + the flag editors.
-   **`trips_page.dart`** — trips list with variants/stops/legs.
-5. **`mobile/test/*_test.dart`** — `pipeline_client_test.dart`
-   (fake `http.Client`: typed cells, error-inside-200, 401, timeout),
-   `models_test.dart`, one fake-client repository test each.
-6. Verify, in `mobile/`:
-   ```powershell
-   & "C:\src\flutter\bin\flutter.bat" pub get
-   & "C:\src\flutter\bin\flutter.bat" analyze
-   & "C:\src\flutter\bin\flutter.bat" test
-   ```
-7. Put the real credentials in **`mobile/assets/turso_config.json`**
-   (git-ignored; copy `TRAVEL_PLANNER_TURSO_URL` / `TRAVEL_PLANNER_TURSO_TOKEN`
-   from `.streamlit/secrets.toml`, template: `turso_config.example.json`).
-   `flutter analyze`/`test` work without it — the app runs unconfigured.
-8. Commit Phase 5.
+* **The `Destination` model must keep the *raw* typed core, not parsed
+  fields.** The live `Prio Thorsten` column holds ints, a float (0.5) and
+  strings (`"n/a"`, `"3 (Medellin seems better)"`); `Malaria risk?` holds
+  free text. A model with `int? prio` would have written NULL over `"n/a"`
+  on the next flag edit. The model now keeps the raw row values and parses
+  only for display (`prioInt`, `truthy`, `text`).
+* **Response bodies are decoded as UTF-8 explicitly.** The http package's
+  `Response(String, ...)` validates latin1, and `Response.body` decodes with
+  the header charset (latin1 default) — real JSON is UTF-8 by definition,
+  so non-ASCII column names ("In näherer Auswahl 2025?") would mangle.
+  `utf8.decode(bodyBytes)` in the client; the test fake builds
+  `Response.bytes` with a UTF-8 charset header.
+* **Connection failures mirror `turso_db.py`'s wording**: `could not reach
+  Turso: <ExceptionType>` — the type only, never the full text (a URL could
+  leak into it).
+* Earlier session bugs (Phases 2–4) are recorded in `PLAN.md` and stay
+  fixed: the benefits secrets-file fallback, the `_clear_cache` guard, the
+  FastAPI background import, the NaN JSON sanitiser.
 
-Then: Phase 6 (see below), the docs pass, and the full verification.
+## Next steps
 
-## Bugs found and fixed this session (don't re-litigate)
-
-* **`benefits_turso` ignored the secrets file.** It read `TURSO_AUTH_TOKEN`
-  from `os.environ` only, while `turso_db` and `sync/transport_github` both fall
-  back to `.streamlit/secrets.toml`. In any non-Streamlit process (the API, a
-  script) the benefits ladder therefore fell through to the seed list, LH was
-  rejected, and the weekend finder returned **0 cities from 556 outbound
-  flights** — silently. Fixed with the same env→file fallback, plus an autouse
-  conftest fixture (`_isolate_benefits_turso_secrets`) so the suite stays
-  hermetic on a machine that has the real secrets file, plus a test.
-* **`repository._clear_cache()` broke under the API's cache passthrough.**
-  `TRAVEL_PLANNER_API` makes `_cache_data` return the raw function, which has
-  no `.clear()`; `_clear_cache` now guards with `getattr`.
-* **`fastapi.background.BackgroundTask` no longer exists in FastAPI 0.143.**
-  Import the singular class from `starlette.background` instead.
-* **The workbook's empty cells read as `NaN`, which JSON refuses to
-  serialize.** `api._jsonable()` sanitises every cell (NaN/NaT → null, numpy
-  scalars → plain).
-
-## Decisions taken (and why)
-
-* **Streamlit is the legacy fallback; Phase 6 is deferred.** The user's decision
-  (2026-10-10): archive it as a source of knowledge and a fall-back. So the
-  "delete Streamlit pages + workbook writers + sync stack" phase of
-  `NATIVE_HTML_PLAN.md` §7 must **not** run yet — it would delete the fallback.
-  The journal sync stack and `refresh_cloud_workbook.py` stay.
-* **The trips cutover lives inside `itinerary/storage.py`, not in
-  `repository.py`.** Every consumer (legacy pages, the API, the tests) then
-  shares one path, so the legacy app stays a *true* fallback that sees the same
-  trips as the API. Verified live: an API create+delete round-tripped through
-  Turso while `trips.json`'s mtime stayed at 2026-09-20.
-* **The API is Streamlit-free.** `api.py` sets `TRAVEL_PLANNER_API=1` before
-  importing the repository, which turns the repository's `st.cache_data`
-  decorator into a passthrough (fresh data per request). `data_utils`' own
-  cache is mtime-keyed and cleared on every write, so it is safe as-is.
-* **The Flutter app talks to Turso directly** (pipeline API, per
-  `NATIVE_HTML_PLAN.md`), not through the FastAPI backend, and the read-write
-  token ships in the APK — the user's decision (2026-10-08), personal app.
-
-## Verified live (this session)
-
-* `uvicorn api:app --port 8508` reads Turso: 144 destinations, 2 trips, 10 open
-  tabs; `/api/weekend?friday=2026-10-16` returns **119 cities / 377 options**
-  from the live Fraport boards in 8.4 s (cold), ~1.3 s from cache.
-* Trips CRUD through the API writes Turso, not `trips.json`.
-* Python tests: `tests/test_api.py tests/test_trips_turso.py
-  tests/test_benefits_turso.py tests/test_repository.py tests/test_trips_safety.py
-  tests/test_itinerary.py tests/test_sync_*.py tests/test_storage_turso.py` all
-  pass. **The full suite has NOT been run since Phase 1 — run it once at the
-  end** (511+ tests, ~3 min).
+1. **Platform folders are missing.** `mobile/` has no `android/`, `windows/`,
+   `ios/` etc., so `flutter run` / `flutter build apk` cannot work yet. Run
+   `flutter create --platforms=android,windows .` inside `mobile/` (it only
+   writes missing files — check `git status` afterwards), then try
+   `flutter build apk`. **`flutter build apk` has never succeeded on this
+   machine: no `JAVA_HOME`.** Install a JDK or set it first.
+2. **Run the app on this PC** (`flutter run -d windows` after the platform
+   folders exist) and do one live edit round-trip against Turso: toggle a
+   favourite, check it appears on the legacy app / the API.
+3. **Phase 6 is deferred by decision** (2026-10-10): do not delete the
+   Streamlit pages, the workbook writers, the `sync/` stack or
+   `refresh_cloud_workbook.py` — they are the fallback and the workbook
+   branch's path to the phone.
+4. **Push.** The commits `301832b`, `2a066fb`, `7fadbbc`, `accd28f` and the
+   Phase 5 completion commit on top of it are on local `main`, pushed
+   nowhere yet — the user was not asked. The branch `data-sync` must not
+   be touched.
+5. Open items that stay open are in `AGENTS.md` §6 (Cloud persistence check,
+   legacy rainy-day rows, `open_destinations.json` on Cloud redeploys) and
+   `NATIVE_HTML_PLAN.md` Phase 5 (offline-first sync is unimplemented — the
+   Flutter app is online-only over the pipeline API).
 
 ## Machine notes (this machine, Windows)
 
 * Run the API: `& ".\.venv\Scripts\python.exe" -m uvicorn api:app --host
   127.0.0.1 --port 8508` (from the repo root). Frontend served at `/`.
-* RAM is tight (other agents on this machine) — prefer targeted test files over
-  the full suite, and stop background servers when done.
+* RAM is tight (other agents on this machine) — prefer targeted test files
+  over the full suite, and stop background servers when done.
 * `background_process` needs the quoted call operator (`& "path" -m ...`) on
   paths with spaces; "could not be verified" warnings still mean it ran; kill
-  via the `netstat -ano | findstr ":8508"` listener PID (uvicorn's real worker
-  PID differs from the reported one).
+  via the `netstat -ano | findstr ":8508"` listener PID.
 * PowerShell's console mangles UTF-8 in `Invoke-WebRequest` output — use
   `curl.exe` to check actual response bytes.
 * Credentials live in `.streamlit/secrets.toml` (git-ignored): `TURSO_*` for
-  the benefits DB, `TRAVEL_PLANNER_TURSO_*` for the app DB. Non-Streamlit
-  processes need the file fallback (see the bug above).
+  the benefits DB, `TRAVEL_PLANNER_TURSO_*` for the app DB — now also in
+  `mobile/assets/turso_config.json`.
 * Flutter/Dart: `C:\src\flutter\bin\flutter.bat` (3.47.2 / Dart 3.13.2). The
-  Android SDK exists (`%LOCALAPPDATA%\Android\Sdk`); **`flutter build apk` has
-  not been tried** (no `JAVA_HOME`; Gradle is heavy on this machine).
+  Android SDK exists (`%LOCALAPPDATA%\Android\Sdk`).

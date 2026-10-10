@@ -69,7 +69,7 @@ class TursoClient {
     List<String> statements,
   ) async {
     if (!config.isConfigured) {
-      return (const [], ['Turso URL or token is not set']);
+      return (<StatementResult>[], ['Turso URL or token is not set']);
     }
     final requests = [
       for (final sql in statements)
@@ -88,24 +88,36 @@ class TursoClient {
             body: jsonEncode({'requests': requests}),
           )
           .timeout(timeout);
-    } catch (_) {
-      return (const [], ['could not reach Turso']);
+    } catch (error) {
+      // Same wording as turso_db.py: the exception type, never
+      // the full text (a URL could leak into it).
+      return (<StatementResult>[], ['could not reach Turso: ${error.runtimeType}']);
     }
     if (response.statusCode == 401) {
-      return (const [], ['Turso rejected the token (401)']);
+      return (<StatementResult>[], ['Turso rejected the token (401)']);
     }
     if (response.statusCode == 403) {
-      return (const [],
-          ['Turso denied access (403) -- the token may be read-only for this database']);
+      return (<StatementResult>[], [
+        'Turso denied access (403) -- the token may be read-only for this database',
+      ]);
     }
     if (response.statusCode >= 500) {
-      return (const [], ['Turso is unavailable (${response.statusCode})']);
+      return (
+        <StatementResult>[],
+        ['Turso is unavailable (${response.statusCode})'],
+      );
     }
     if (response.statusCode != 200) {
-      return (const [],
-          ['Turso returned ${response.statusCode}: ${response.body.substring(0, min(response.body.length, 120))}']);
+      return (<StatementResult>[], [
+        'Turso returned ${response.statusCode}: '
+            '${utf8.decode(response.bodyBytes, allowMalformed: true).substring(0, min(response.bodyBytes.length, 120))}',
+      ]);
     }
-    final body = jsonDecode(response.body) as Map<String, dynamic>?;
+    // JSON is UTF-8 by definition (RFC 8259); decoding the
+    // bytes explicitly avoids the http package's latin1
+    // default, which would mangle non-ASCII city names.
+    final body = jsonDecode(utf8.decode(response.bodyBytes))
+        as Map<String, dynamic>?;
     return _parseResponse(body);
   }
 
@@ -117,9 +129,12 @@ class TursoClient {
   ) async {
     final (results, problems) = await runPipeline([sql]);
     if (problems.isNotEmpty || results.isEmpty) {
-      return (const [], problems.isEmpty ? ['no result'] : problems);
+      return (
+        <Map<String, dynamic>>[],
+        problems.isEmpty ? ['no result'] : problems,
+      );
     }
-    return (results.first.asMaps, const []);
+    return (results.first.asMaps, const <String>[]);
   }
 
   /// A write/DDL statement. An empty list means it worked.
