@@ -18,7 +18,7 @@ code.
 | `PLAN.md` | the full history: every review finding, every fix, every decision, with dates and commit hashes |
 | `WEEKEND_FINDER_PLAN.md` | the weekend trip finder: spec, status, what is blocked and why |
 | `TURSO_PLAN.md` | the airline-benefits Turso database: access contract, fallback ladder, open items |
-| `NATIVE_HTML_PLAN.md` | the target architecture: move off Streamlit to native desktop + Android on Turso — the decision, the phases, what is done (Phase 1) and what is open |
+| `NATIVE_HTML_PLAN.md` | the target architecture: move off Streamlit to native desktop + Android on Turso — the decision, the phases, their current status (1–3 done, 4–5 partially, 6 deferred) and the remaining work |
 
 ---
 

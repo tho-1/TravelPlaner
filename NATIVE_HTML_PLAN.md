@@ -14,10 +14,37 @@ idempotent). The live database holds all 144 destinations (145-column
 lossless tails), 2 trips and the open tabs; read, idempotent write
 round-trip and the `.xlsx` export were verified against it. 492 tests
 green (87 new), ruff/compileall/dependency-free path clean.
-Phases 2–6 (backend API, native HTML, Flutter Android/desktop, cutover)
-are not started; see §7. The current app is green and pushed
-(`00cb16f`, CI run 37658099197 passed on Linux and Windows: 405
-tests, ruff clean, compileall clean, dependency-free path exits 0).
+The app was green and pushed at the time (`00cb16f`, CI run
+37658099197 passed on Linux and Windows).
+
+**Status of §7 (updated 2026-10-11):**
+
+| Phase | State |
+|---|---|
+| 0 — spike & decisions | done — sec. 6 answered; the pipeline API was proven by `benefits_turso.py` before this plan was written |
+| 1 — data layer on Turso | done 2026-10-08, verified live (above). The "delete the sync stack" step was **superseded**: the stack stays as the legacy fallback per the 2026-10-10 decision |
+| 2 — backend API | done 2026-10-10 (`2a066fb`): `api.py`, Streamlit-free, 23 tests; runs locally via uvicorn — no external host needed for this use |
+| 3 — native HTML frontend | done 2026-10-10 (`2a066fb`): `web/` PWA served by the API on the PC; "[needs a host]" became moot because the phone went native instead |
+| 4 — sync on Turso | **half-done, by a different route**: every surface (Streamlit, API, Flutter) talks to the same database directly, last-write-wins via `updated_at` (the trips runtime cutover is `7fadbbc`). The offline-first push/pull layer was consciously traded away and is this plan's biggest open gap |
+| 5 — Android/desktop native | **code complete, not yet runnable**: `mobile/` (`accd28f` scaffold, `573f235` repositories, UI, tests — analyze clean, 31/31 pass). Missing: platform folders (`flutter create`), a JDK for `flutter build apk`, a first live run, and feature parity — map, galleries, AQI and AI populate are still PC-side only |
+| 6 — cutover/cleanup | **deferred by decision (2026-10-10)** — Streamlit stays green as the fallback; do not delete |
+
+The immediate next steps live in `HANDOFF.md`. The remaining work beyond
+them is decision-shaped, not volume-shaped:
+
+1. **Make Phase 5 runnable.** Platform folders, JDK, `flutter run -d
+   windows`, one live edit round-trip against Turso, then the sideloaded APK.
+2. **Decide Flutter feature parity.** The app currently covers catalogue,
+   trips and the flag edits. The weekend finder is key-free and the natural
+   next feature; the map, galleries, AQI and DeepSeek populate each need
+   keys in the APK or charting work — decide per feature, not all at once.
+3. **Decide the offline-first story.** Staying online-only is defensible
+   for one user with two devices and a free-tier database; if offline
+   matters, sec. 10's local file + `push()`/`pull()` is the design to pick
+   up (in Flutter: `@tursodatabase/sync`, not `libsql_dart`).
+4. **Set the Phase 6 trigger.** The condition under which the Streamlit
+   fallback is actually retired (for example: a month of daily native use
+   without falling back).
 
 This document evaluates the three-part proposal:
 
@@ -209,14 +236,16 @@ phone client with no host of its own (Turso free tier only). Phases 2-3
 and are marked **[needs a host]**. Under your answers they are the lowest
 priority, not the plan.
 
-**Phase 0 -- Spike and decisions (no production change).**
+**Phase 0 -- Spike and decisions (no production change). — DONE.**
 Answer the decisions in sec. 6. Spike `turso.sync` (`pyturso`) against a
 scratch Turso database: create the DB and a read-write token, push/pull from
 Windows, measure bootstrap time for a 144-row dataset, observe behaviour when
 the remote is unreachable, and document what a push conflict actually does.
 *Exit criteria:* push/pull verified, conflict behaviour documented.
+(The pipeline-API half of the spike was already proven by `benefits_turso.py`;
+the push/pull half was superseded by the direct-to-Turso route below.)
 
-**Phase 1 -- Data layer on Turso (behind the existing Streamlit UI). [no new host needed]**
+**Phase 1 -- Data layer on Turso (behind the existing Streamlit UI). [no new host needed] — DONE 2026-10-08, verified live.**
 Both the PC app and the Streamlit Cloud app get a `TURSO_AUTH_TOKEN` and sync
 the same Turso database. Design the schema: `destinations` (typed core + JSON
 tail for the long columns), `trips`/`variants`/`stops`/`legs`, open tabs,
@@ -230,7 +259,9 @@ GitHub transport (replaced by push/pull).
 *Tests:* migration round-trip, writer contract, schema drift. **This phase
 alone delivers the proposal's core benefit at zero hosting cost.**
 
-**Phase 2 -- Backend API. [needs a host]**
+**Phase 2 -- Backend API. [needs a host] — DONE 2026-10-10 (`2a066fb`).**
+The API runs locally (uvicorn) and, since the phone went native, no external
+host is needed; the bracketed caveat is obsolete for this use.
 FastAPI endpoints: destinations list/filter/detail, trips CRUD, tabs, sync
 trigger, weekend finder (server-side Fraport fetch), galleries, AI populate.
 All secrets stay server-side. Reuse every pure module; the API becomes the
@@ -238,7 +269,9 @@ new "session state".
 *Tests:* API tests replacing the page-smoke tests; contract tests pinning
 the `filters.py` semantics.
 
-**Phase 3 -- Native HTML frontend. [needs a host]**
+**Phase 3 -- Native HTML frontend. [needs a host] — DONE 2026-10-10 (`2a066fb`).**
+Served by the API on the PC; the phone went native (Phase 5) instead of
+needing a hosted frontend.
 Server-rendered HTML + vanilla JS -- no build step, matching the project's
 no-frills style; plotly.js for the map and climate charts. Feature-parity
 checklist from the five pages; the filter semantics must be preserved exactly.
@@ -246,10 +279,16 @@ PWA manifest + service worker for installability and offline reads.
 *Tests:* smoke-render every destination through the API (the analogue of the
 144-page test that caught the 112-page crash).
 
-**Phase 4 -- Sync on Turso.** (folds into Phase 1 above: both devices
-`push()`/`pull()` the same database; conflict policy per sec. 6 Q1.)
+**Phase 4 -- Sync on Turso. — SUPERSEDED IN PRACTICE.** (The plan folded this
+into Phase 1: both devices `push()`/`pull()` the same database; conflict
+policy per sec. 6 Q1.) What actually shipped is **direct-to-Turso with
+last-write-wins** (`updated_at`) from every surface — the Streamlit app, the
+API and the Flutter app — so the *shared database* half is real, but the
+offline-first local-file + push/pull half is **not implemented anywhere** and
+remains this plan's biggest open gap (see the status block's remaining-work
+list, item 3).
 
-**Phase 5 -- Android (native). [no host needed; Turso free tier only]**
+**Phase 5 -- Android (native). [no host needed; Turso free tier only] — IN PROGRESS: code complete and tested (`mobile/`, 2026-10-11), not yet runnable.**
 A native Android app with a local Turso file + `push()`/`pull()`. Offline
 first; sideloaded APK (no Play Store). With keys allowed in the APK, every
 feature works on the phone. Choose the PC side per Q7: if the PC stays
@@ -257,9 +296,11 @@ Streamlit, the Android app shares only the data layer; if the PC goes native
 (Flutter), share the UI too. In Flutter use `@tursodatabase/sync` push/pull,
 not a native libsql bridge (Q8 answered: keys in APK are fine).
 
-**Phase 6 -- Cutover and cleanup.**
-Delete the Streamlit pages, workbook writers, and the sync stack. Update
-`AGENTS.md`/`README.md`/`PLAN.md`; re-plumb CI.
+**Phase 6 -- Cutover and cleanup. — DEFERRED by decision (2026-10-10).**
+Do not run while the Streamlit version is the fallback: deleting the
+Streamlit pages, workbook writers, and the sync stack would delete the
+fallback the user decided to keep. Set a trigger (see the status block's
+remaining-work list, item 4) before revisiting.
 
 ## 8. The pending question from the previous session, answered
 
