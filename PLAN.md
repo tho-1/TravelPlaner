@@ -1,6 +1,6 @@
 # Travel Planner — Plan & Handoff
 
-Last updated: 2026-10-06.
+Last updated: 2026-10-10.
 
 **Read `AGENTS.md` first** (orientation, invariants, open items), then
 `README.md` (how to run it, where runtime data is written, the data-safety
@@ -10,6 +10,31 @@ decision, with dates and commit hashes.
 Sections §1–§4 below are historical (they describe the state *before* the
 2026-10-03 batches) and are superseded by §0. Where they disagree with §0 or
 `AGENTS.md`, believe those.
+
+---
+
+## Status 2026-10-10 — the Streamlit version is legacy
+
+Decision (user, 2026-10-10): the Streamlit app in this repository is
+**legacy**. It is archived as a **source of knowledge** (the reference
+implementation of the feature set and its data-safety rules) and as a
+**potential fall-back** in case the native development does not go as
+planned. The **target architecture moves away from Streamlit** — a
+native desktop + Android app on the Turso data layer, per
+`NATIVE_HTML_PLAN.md` (decision in §5–§6 there; Phase 1, the Turso
+data layer, is already done and verified).
+
+Post-plan audit (same day): the only commit after `NATIVE_HTML_PLAN.md`
+was created (`e3c4191`, 2026-10-09) is `a980690` "Map Fraport rail
+station codes to city names" — a weekend-finder improvement
+(`airport_city.py`, +21 lines) that the plan explicitly keeps. Nothing
+since the plan contradicts it or changes its assumptions; the working
+tree was clean apart from the untracked `.kilo/` tooling directory.
+
+Documentation updated to match: `AGENTS.md` (the entry point now
+states the legacy status and the target architecture), `README.md`
+(intro and "Running it" marked legacy), `NATIVE_HTML_PLAN.md` (status
+block: decided, Phase 1 done, Phases 2–6 not started).
 
 ---
 

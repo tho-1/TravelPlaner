@@ -1,8 +1,14 @@
 # AGENTS.md — start here
 
-**You are working on "Travel Planner", a private Streamlit app.** This file is
-the entry point: what the project is, where everything lives, what must not
-break, and what is still open. Read it before touching code.
+**You are working on "Travel Planner".** The Streamlit app in this
+repository is **legacy**: it is archived as a source of knowledge and
+as a potential fall-back in case the new development does not go as
+planned. The target architecture moves away from Streamlit — a native
+desktop + Android app on the Turso data layer (decided 2026-10-10;
+the decision, phases and status are in `NATIVE_HTML_PLAN.md`). This
+file is the entry point: what the project is, where everything lives,
+what must not break, and what is still open. Read it before touching
+code.
 
 | Document | What it is for |
 |---|---|
@@ -11,12 +17,18 @@ break, and what is still open. Read it before touching code.
 | `PLAN.md` | the full history: every review finding, every fix, every decision, with dates and commit hashes |
 | `WEEKEND_FINDER_PLAN.md` | the weekend trip finder: spec, status, what is blocked and why |
 | `TURSO_PLAN.md` | the airline-benefits Turso database: access contract, fallback ladder, open items |
-| `NATIVE_HTML_PLAN.md` | proposal: dump Streamlit for native HTML, an Android version, Turso storage/sync — pros/cons and implementation plan |
+| `NATIVE_HTML_PLAN.md` | the target architecture: move off Streamlit to native desktop + Android on Turso — the decision, the phases, what is done (Phase 1) and what is open |
 
 ---
 
 ## 1. Sixty-second orientation
 
+* **Status (2026-10-10): the Streamlit version is legacy.** It is
+  archived as a source of knowledge and as a potential fall-back in
+  case the native development does not go as planned. The target
+  architecture moves away from Streamlit — a native desktop + Android
+  app on the Turso data layer (`NATIVE_HTML_PLAN.md`; Phase 1, the
+  Turso data layer, is done).
 * A personal travel catalogue and trip planner. 144 destinations in an Excel
   workbook, one Streamlit page per destination, a multi-stop itinerary planner,
   and a PC↔phone (Streamlit Cloud) sync that merges instead of overwriting.

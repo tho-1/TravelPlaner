@@ -1,16 +1,23 @@
 # Travel Planner
 
-A Streamlit app for a personal travel catalogue: browse destinations on a world
-map, read a detail page per city, and plan multi-stop trips with variants,
-dates, transport legs and a route map. Edits made on the PC and on the phone
-(Streamlit Cloud) are merged through change journals instead of overwriting
-each other.
+> **Status (2026-10-10): the Streamlit version in this repository is
+> legacy.** It is archived as a source of knowledge and as a potential
+> fall-back in case the new development does not go as planned. The
+> target architecture moves away from Streamlit — a native desktop +
+> Android app on the Turso data layer. The decision, the phases and
+> the current status: `NATIVE_HTML_PLAN.md`.
+
+A personal travel catalogue: browse destinations on a world map, read a
+detail page per city, and plan multi-stop trips with variants, dates,
+transport legs and a route map. Edits made on the PC and on the phone
+(Streamlit Cloud) are merged through change journals instead of
+overwriting each other.
 
 > **Working on this codebase? Read [`AGENTS.md`](AGENTS.md) first** — it is the
 > entry point: where everything lives, the data-safety rules that must not break,
 > how to verify a change, and the open items.
 
-## Running it
+## Running it (the legacy Streamlit version)
 
 ```powershell
 # Local (workbook: Destinations-local.xlsx)

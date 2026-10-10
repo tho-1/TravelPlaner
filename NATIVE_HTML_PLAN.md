@@ -1,6 +1,11 @@
-# Proposal: dump Streamlit for native HTML, an Android version, and Turso storage/sync
+# Target architecture: move off Streamlit — native desktop + Android, Turso storage/sync
 
-**Status: Phase 1 implemented and verified (2026-10-08).** The data
+**Status (2026-10-10): decided — the Streamlit version is legacy.**
+It is archived as a source of knowledge and as a potential fall-back
+in case the native development does not go as planned; it stays green
+and runnable, and nothing in it is deleted.
+
+**Phase 1 implemented and verified (2026-10-08).** The data
 layer is on Turso behind the existing Streamlit UI: `turso_db.py`
 (SQL-over-HTTP client + schema), `storage_turso.py` (destinations /
 trips / tabs, writer contract), `repository.py` (Turso first, workbook
@@ -8,8 +13,7 @@ fallback — the pages call it), `migrate_to_turso.py` (one-shot,
 idempotent). The live database holds all 144 destinations (145-column
 lossless tails), 2 trips and the open tabs; read, idempotent write
 round-trip and the `.xlsx` export were verified against it. 492 tests
-green (87 new), ruff/compileall/dependency-free path clean. The
-Streamlit app is untouched in behaviour and remains the fallback.
+green (87 new), ruff/compileall/dependency-free path clean.
 Phases 2–6 (backend API, native HTML, Flutter Android/desktop, cutover)
 are not started; see §7. The current app is green and pushed
 (`00cb16f`, CI run 37658099197 passed on Linux and Windows: 405
