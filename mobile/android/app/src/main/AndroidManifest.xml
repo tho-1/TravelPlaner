@@ -1,4 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The app talks to Turso directly over https; without this the
+         release build fails every request with a socket exception
+         (the debug overlay grants it only for flutter run). -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="travel_planner"
         android:name="${applicationName}"

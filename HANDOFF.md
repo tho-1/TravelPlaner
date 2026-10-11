@@ -84,23 +84,26 @@ Verified this session: `flutter pub get`, `flutter analyze` (**no issues**),
 
 ## Next steps
 
-1. **Platform folders are missing.** `mobile/` has no `android/`, `windows/`,
-   `ios/` etc., so `flutter run` / `flutter build apk` cannot work yet. Run
-   `flutter create --platforms=android,windows .` inside `mobile/` (it only
-   writes missing files — check `git status` afterwards), then try
-   `flutter build apk`. **`flutter build apk` has never succeeded on this
-   machine: no `JAVA_HOME`.** Install a JDK or set it first.
-2. **Run the app on this PC** (`flutter run -d windows` after the platform
-   folders exist) and do one live edit round-trip against Turso: toggle a
-   favourite, check it appears on the legacy app / the API.
-3. **Phase 6 is deferred by decision** (2026-10-10): do not delete the
+1. **Windows desktop run — one decision open.** The Redmi Note 9S round-trip
+   is done (see the plan's status table), so the milestone is met on
+   Android. The Windows target needs the incomplete VS Build Tools 2026
+   completed with the C++ workload (several GB) — the user said to ask
+   before heavyweight installs. Alternative: keep driving the app on the
+   phone and skip Windows until asked.
+2. **Parity work starts: destination detail richness** (user's chosen
+   order): map, galleries, climate, reviews — one feature at a time,
+   each as repository + UI + tests, mirroring the legacy page's data
+   sources (`flight_routes.py`, galleries, `aqi_api.py`).
+3. **Release-signing note**: the release APK currently signs with the
+   debug key (fine for sideloading a personal app; a real keystore is an
+   open nicety, not a blocker).
+4. **Phase 6 is deferred by decision** (2026-10-10): do not delete the
    Streamlit pages, the workbook writers, the `sync/` stack or
    `refresh_cloud_workbook.py` — they are the fallback and the workbook
    branch's path to the phone.
-4. **Push.** The commits `301832b`, `2a066fb`, `7fadbbc`, `accd28f` and the
-   Phase 5 completion commit on top of it are on local `main`, pushed
-   nowhere yet — the user was not asked. The branch `data-sync` must not
-   be touched.
+5. **Push.** Everything through the runnable-milestone commits is pushed
+   to `origin/main`; keep pushing after every verified commit. The branch
+   `data-sync` must not be touched.
 5. Open items that stay open are in `AGENTS.md` §6 (Cloud persistence check,
    legacy rainy-day rows, `open_destinations.json` on Cloud redeploys) and
    `NATIVE_HTML_PLAN.md` Phase 5 (offline-first sync is unimplemented — the
@@ -132,6 +135,11 @@ Binding for any session working without the user present:
 7. **Test policy**: targeted test files during work; the full pytest suite
    only when a change touches Python runtime code (CI re-runs it on push
    regardless; doc- and Dart-only changes go straight to CI). Conserve RAM.
+8. **The phone is not an automation fixture**: it is in daily human use.
+   Never send `adb input` taps without the user confirming the device is
+   idle (2026-10-11: a restore tap landed in YouTube). Verify round-trips
+   with screencap/uiautomator dumps (read-only) and the Python read-back;
+   ask the user to do taps, or get an explicit go-ahead.
 
 Everything else defaults to the docs: work top-down through
 `HANDOFF.md` → the plan's remaining-work list, commit + push when green,
