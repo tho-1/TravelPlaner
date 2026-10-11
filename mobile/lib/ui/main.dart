@@ -1,18 +1,21 @@
 /// App shell: load the Turso config once, then a bottom
-/// nav with Catalogue and Trips. Unconfigured is a normal
-/// state -- the config file is git-ignored -- so the shell
-/// explains how to configure instead of crashing, the
-/// same state the Python side is in without a token.
+/// nav with Catalogue, Trips and the weekend Finder.
+/// Unconfigured is a normal state -- the config file is
+/// git-ignored -- so the shell explains how to configure
+/// instead of crashing, the same state the Python side is
+/// in without a token.
 library;
 
 import 'package:flutter/material.dart';
 
+import '../data/benefits_repository.dart';
 import '../data/destination_repository.dart';
 import '../data/trip_repository.dart';
 import '../turso/config.dart';
 import '../turso/pipeline_client.dart';
 import 'catalogue_page.dart';
 import 'trips_page.dart';
+import 'weekend_finder_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -85,6 +88,7 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   late final DestinationRepository destinations;
   late final TripRepository trips;
+  late final BenefitsRepository benefits;
   var _tab = 0;
 
   @override
@@ -93,6 +97,7 @@ class _HomeShellState extends State<HomeShell> {
     final client = TursoClient(widget.config);
     destinations = DestinationRepository(client);
     trips = TripRepository(client);
+    benefits = BenefitsRepository(widget.config);
   }
 
   @override
@@ -103,6 +108,7 @@ class _HomeShellState extends State<HomeShell> {
         children: [
           CataloguePage(repository: destinations),
           TripsPage(repository: trips),
+          WeekendFinderPage(benefits: benefits, destinations: destinations),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -118,6 +124,11 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icon(Icons.luggage_outlined),
             selectedIcon: Icon(Icons.luggage),
             label: 'Trips',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.travel_explore_outlined),
+            selectedIcon: Icon(Icons.travel_explore),
+            label: 'Finder',
           ),
         ],
       ),

@@ -7,6 +7,15 @@
 /// runs unconfigured -- the same state as the Python side
 /// without a token, never a crash.
 ///
+/// The weekend finder needs a *second* database: the
+/// airline-benefits database the legacy app reads via
+/// `benefits_turso.py` (`TURSO_DATABASE_URL` /
+/// `TURSO_AUTH_TOKEN`). Its credentials live in the same
+/// file under `benefits_url` / `benefits_token`, and are
+/// optional: without them the finder falls back to the
+/// built-in seed list -- the same fallback the Python
+/// ladder ends with.
+///
 /// The token ships in the APK: the user's decision
 /// (2026-10-08) for a personal app -- obfuscation is
 /// enough, and Turso's token can be revoked any time.
@@ -20,11 +29,29 @@ class TursoConfig {
   final String url;
   final String token;
 
-  const TursoConfig({required this.url, required this.token});
+  /// The airline-benefits database (optional; the finder's
+  /// seed list covers its absence).
+  final String benefitsUrl;
+  final String benefitsToken;
+
+  const TursoConfig({
+    required this.url,
+    required this.token,
+    this.benefitsUrl = '',
+    this.benefitsToken = '',
+  });
 
   bool get isConfigured => url.trim().isNotEmpty && token.trim().isNotEmpty;
 
+  bool get benefitsConfigured =>
+      benefitsUrl.trim().isNotEmpty && benefitsToken.trim().isNotEmpty;
+
   static const defaultUrl = 'https://travel-tz123.aws-eu-north-1.turso.io';
+
+  /// The documented benefits database, used when the config
+  /// file omits the URL but carries the token.
+  static const defaultBenefitsUrl =
+      'https://flightconnections-tz123.aws-eu-north-1.turso.io';
 
   /// Load the bundled config. A missing or malformed file
   /// leaves the app unconfigured rather than failing --
@@ -37,9 +64,16 @@ class TursoConfig {
       return TursoConfig(
         url: (map['url'] as String?)?.trim() ?? defaultUrl,
         token: (map['token'] as String?)?.trim() ?? '',
+        benefitsUrl: (map['benefits_url'] as String?)?.trim() ??
+            defaultBenefitsUrl,
+        benefitsToken: (map['benefits_token'] as String?)?.trim() ?? '',
       );
     } catch (_) {
-      return const TursoConfig(url: defaultUrl, token: '');
+      return const TursoConfig(
+        url: defaultUrl,
+        token: '',
+        benefitsUrl: defaultBenefitsUrl,
+      );
     }
   }
 }
