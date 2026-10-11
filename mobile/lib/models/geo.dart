@@ -85,6 +85,67 @@ double distanceKm(
   return earthRadiusKm * arc;
 }
 
+/// Whether a lon/lat point falls inside a country's outer
+/// rings — the even-odd ray-casting rule, run on the raw
+/// coordinates (the rings are lon/lat pairs; projecting
+/// first would only add rounding).
+///
+/// A country on the antimeridian (Fiji, Russia) has rings
+/// that straddle ±180°, so two things happen: the test is
+/// repeated with the point shifted by ±360°, and each ring
+/// is *unwrapped* — neighbour longitudes are kept within
+/// 180° of each other, which turns the seam-straddling ring
+/// `[170, -170]` into the strip it means (170..190) instead
+/// of the whole-world rectangle the raw numbers would draw.
+bool pointInCountry(
+    double longitude, double latitude, List<List<List<double>>> rings) {
+  if (pointInRings(longitude, latitude, rings)) return true;
+  if (pointInRings(longitude - 360.0, latitude, rings)) return true;
+  if (pointInRings(longitude + 360.0, latitude, rings)) return true;
+  return false;
+}
+
+bool pointInRings(double x, double y, List<List<List<double>>> rings) {
+  var inside = false;
+  for (final ring in rings) {
+    if (ring.length < 3) continue;
+    final unwrapped = unwrapRing(ring);
+    for (var i = 0, j = unwrapped.length - 1; i < unwrapped.length; j = i++) {
+      final xi = unwrapped[i][0];
+      final yi = unwrapped[i][1];
+      final xj = unwrapped[j][0];
+      final yj = unwrapped[j][1];
+      final intersects =
+          (yi > y) != (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi;
+      if (intersects) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/// A ring whose neighbour longitudes differ by at most
+/// 180°, by ±360° nudges left to right: a ring that crosses
+/// the antimeridian stays continuous, so both the tap hit
+/// test and the fill painter treat it as one shape instead
+/// of a rectangle around the planet.
+List<List<double>> unwrapRing(List<List<double>> ring) {
+  final out = <List<double>>[];
+  var previous = ring[0][0];
+  out.add([ring[0][0], ring[0][1]]);
+  for (var i = 1; i < ring.length; i++) {
+    var x = ring[i][0];
+    while (x - previous > 180.0) {
+      x -= 360.0;
+    }
+    while (x - previous < -180.0) {
+      x += 360.0;
+    }
+    out.add([x, ring[i][1]]);
+    previous = x;
+  }
+  return out;
+}
+
 /// The initial bearing from one point to another (degrees
 /// clockwise from north), for a route arrowhead.
 double bearingDegrees(

@@ -133,9 +133,15 @@ unconfigured and explains itself instead of crashing.
 Four tabs: **Catalogue** (search, filters, add destination, open a
 destination), **Trips** (read-only listing with delete), **Finder**
 (the weekend finder from FRA - the Fraport board plus the benefits
-database) and **Map** (every destination on OpenStreetMap tiles). A
-destination's detail page shows the profile sections the Streamlit
-page shows (overview, highlights, logistics, food, best months,
+database) and **Map** (every destination on OpenStreetMap tiles,
+with the legacy's month selector: pick a month and every country
+fills with its best condition that month, tap a country to list
+its cities). The catalogue and the map share one filter panel
+(`mobile/lib/models/catalogue_filters.dart`), ported rule for rule
+from `filters.py` - including the invariant that a filter only ever
+removes a row whose field is populated. A destination's detail page
+shows the profile sections the Streamlit page shows (overview,
+highlights, logistics, food, best months,
 climate) plus a mini-map; a placeholder can be filled with the **AI
 populate** (DeepSeek) once `deepseek_api_key` sits in the same config
 file - without the key the button is simply not offered, exactly like

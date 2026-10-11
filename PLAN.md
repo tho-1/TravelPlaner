@@ -548,6 +548,50 @@ Facts worth keeping:
 
 ---
 
+## 0c. Parity session 2026-10-11 (2) - the month choropleth and the shared filter model
+
+The gap review (chat2026-10-11.json) compared the legacy pages against the
+Flutter app and produced the plan in `NATIVE_HTML_PLAN.md` §8 (responsive
+shell, the month/condition map, the detail-page gaps, trips editing, the
+finder CSV override, export/backup). This batch is the map half of it:
+
+1. **The month choropleth** (in flight at handover, finished here). The
+   legacy world map's real feature: a month selector, and every country
+   filled with its **best** condition that month (legacy synonym sets and
+   the exact palette, `models/condition.dart`), painted from the bundled
+   `world_countries.geojson` (180 features, `data/country_geometry.dart`)
+   on top of the tile mosaic. A tap on a country selects it and lists its
+   cities with the condition, Prio, Reviews and Population — the legacy
+   drill-down line, including the fix for the caption that used to print
+   *today's* month instead of the selected one. Rings are unwrapped at
+   load (`geo.unwrapRing`) so a seam-straddling ring (Fiji, Chukotka)
+   paints and hit-tests as the strip it means, not a rectangle around the
+   planet.
+2. **The shared filter model** (`models/catalogue_filters.dart`,
+   `ui/filter_sheet.dart`). One pure model for the catalogue and the map,
+   ported rule for rule from `filters.py`: continent, the dependent
+   country, EU?, weather-at-least-ok-in (the shared synonym vocabulary,
+   checked on the raw cell), min-safety, min-reviews, requires-research,
+   only-unvisited (default **on**, like both legacy pages), and the map's
+   city-label toggle. The invariant is enforced once: **a filter only ever
+   removes a row whose field is populated** — the old map page re-implemented
+   the safety/review filters and silently hid every destination without a
+   rating. The sheet reports the missing-value counts, like the legacy
+   caption.
+3. **KPI cards and the unmapped warning.** Mapped countries / Ideal / Ok /
+   Bad for the selected month, and the legacy's "Some countries could not
+   be mapped" warning for catalogue countries the dataset does not know.
+   Two such spellings existed (`Tanzania`, `UAE` vs the dataset's
+   "United Republic of Tanzania" / "United Arab Emirates") — resolved with
+   an explicit alias table, not a fuzzy match (the house rule).
+
+Verified: `flutter analyze` clean; the mobile suite is 183 tests (the new
+`catalogue_filters_test.dart`, `country_geometry_test.dart`, and the map
+page test that opens the sheet and asserts the caption changes). Live data
+check: 62 catalogue countries, all 62 now resolve a fill.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

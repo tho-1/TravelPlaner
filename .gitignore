@@ -81,5 +81,6 @@ mobile/assets/turso_config.json
 
 # Local handover / review work artifacts, never repo content
 chat.json
+chat*.json
 chat_dump.txt
 codereview.md
