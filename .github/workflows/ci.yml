@@ -70,3 +70,34 @@ jobs:
 
       - name: Test suite (Windows file locking / atomic replace)
         run: python -m pytest -p no:cacheprovider
+
+  # The native app (mobile/): its suite is 158 tests + analyze, and until now
+  # CI gated only the Python side -- the app's primary code could regress
+  # without a red build. The app needs no credentials for these checks: the
+  # tests use a scripted Turso fake (test/fake_turso.dart), and an
+  # unconfigured app is a normal rendered state.
+  mobile-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: mobile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.2"
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Tests
+        run: flutter test

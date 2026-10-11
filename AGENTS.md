@@ -49,6 +49,16 @@ python -m pip install -r requirements.txt -r requirements-dev.txt
 python -m streamlit run app.py --server.port 8507
 ```
 
+The native app (`mobile/`) has its own checks — `flutter analyze` and
+`flutter test` (158 tests, no credentials needed: the suite uses a scripted
+Turso fake), and CI runs them too:
+
+```powershell
+cd mobile
+& "C:\src\flutter\bin\flutter.bat" analyze
+& "C:\src\flutter\bin\flutter.bat" test
+```
+
 ## 2. Verify your work before saying it works
 
 ```powershell
@@ -60,8 +70,9 @@ python tests/run_all.py --no-pytest # dependency-free path, must exit 0
 
 CI runs all four on every push to `main`, on Linux **and** Windows
 (`.github/workflows/ci.yml`); Windows is there because atomic file replace and
-file locking are platform specific. Check the result at **GitHub → Actions →
-CI** — it was green at the last commit.
+file locking are platform specific. A third job runs the Flutter app's
+`analyze` + `test`. Check the result at **GitHub → Actions → CI** — it was
+green at the last commit.
 
 A useful discipline: reproduce a fresh-checkout failure before assuming your
 change caused it. `git clone . <tmp> && cd <tmp> && python -m pytest` is what CI
