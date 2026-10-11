@@ -84,12 +84,15 @@ Verified this session: `flutter pub get`, `flutter analyze` (**no issues**),
 
 ## Next steps
 
-1. **Windows desktop run — one decision open.** The Redmi Note 9S round-trip
-   is done (see the plan's status table), so the milestone is met on
-   Android. The Windows target needs the incomplete VS Build Tools 2026
-   completed with the C++ workload (several GB) — the user said to ask
-   before heavyweight installs. Alternative: keep driving the app on the
-   phone and skip Windows until asked.
+1. **Milestone reached on both targets.** Android: release APK + live
+   round-trip on the Redmi Note 9S. Windows: `travel_planner.exe` builds
+   (VS Build Tools 2022 on `E:\tools\vs-buildtools`) and loads the
+   catalogue from Turso. Toolchain notes: JDK 21 at `E:\tools\jdk-21...`
+   (`flutter config --jdk-dir`), Gradle cache at `E:\tools\gradle-home`,
+   legacy `.gradle` moved to `E:\tools\gradle-legacy-home`, Developer Mode
+   enabled, `shared_preferences` removed (the one native plugin — it
+   forced the Developer-Mode/symlink requirement; re-add only with a
+   feature that needs it).
 2. **Parity work starts: destination detail richness** (user's chosen
    order): map, galleries, climate, reviews — one feature at a time,
    each as repository + UI + tests, mirroring the legacy page's data
