@@ -34,11 +34,19 @@ class TursoConfig {
   final String benefitsUrl;
   final String benefitsToken;
 
+  /// The local IQAir ranking snapshot
+  /// (`iqair_cache/world_cities.json`), read with
+  /// `dart:io` on the desktop. Optional: without it
+  /// the PM2.5 history table stays hidden — the
+  /// same per-device pattern as the banner photos.
+  final String iqairSnapshot;
+
   const TursoConfig({
     required this.url,
     required this.token,
     this.benefitsUrl = '',
     this.benefitsToken = '',
+    this.iqairSnapshot = '',
   });
 
   bool get isConfigured => url.trim().isNotEmpty && token.trim().isNotEmpty;
@@ -67,6 +75,8 @@ class TursoConfig {
         benefitsUrl: (map['benefits_url'] as String?)?.trim() ??
             defaultBenefitsUrl,
         benefitsToken: (map['benefits_token'] as String?)?.trim() ?? '',
+        iqairSnapshot:
+            (map['iqair_snapshot'] as String?)?.trim() ?? '',
       );
     } catch (_) {
       return const TursoConfig(

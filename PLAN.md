@@ -623,6 +623,49 @@ The mobile suite is 188 tests; `flutter analyze` clean.
 
 ---
 
+## 0e. Parity session 2026-10-11 (4) - climate completeness (D7–D9)
+
+The climate dashboard's three missing pieces — the data was already
+parsed, only the rendering was missing:
+
+* **Rainy-day labels** (`climate_chart.dart`). The rain bars now carry
+  the "Nd" count above them, the legacy chart's "outside" text
+  position. `ClimateData.rainyDays` was already parsed; the painter
+  just never drew it.
+* **The AQI profile chart** (`aqi_chart.dart`, new). The legacy's
+  four always-on series — Open-Meteo and OpenAQ ground, each as a
+  dotted rolling-12M line and a solid multi-year average — with the
+  severity bands (Good/Moderate/Unhealthy/Very Unhealthy) behind
+  them and the Dec→Jan wrap in the half-month edge slots (a series
+  with both endpoint months gets a stub at x=-0.5 and x=11.5, so a
+  lone December dot between two missing months does not float
+  unconnected). Replaces the single-series colour grid.
+* **The IQAir PM2.5 history table** (`iqair_ranking.dart`,
+  `iqair_repository.dart`, `iqair_table.dart`, all new). The pure
+  matcher is a faithful port of `iqair_ranking.py` — the NFKD
+  normalisation (a diacritic map covers Latin-1, Latin Extended-A
+  and the Vietnamese block, since Dart has no built-in NFKD), the
+  country filter (connector words and abbreviations ignored, token
+  sets must be **equal** so 'Guinea' never matches 'Equatorial
+  Guinea'), the alias table (Saigon→Ho Chi Minh City, …), the
+  capital fallback (Sri Lanka→Colombo) and the renamed-city prefix
+  match. The desktop reads the local snapshot
+  (`iqair_cache/world_cities.json`) via `dart:io`, the path from
+  `turso_config.json` (`iqair_snapshot`) — the same per-device
+  pattern as the banner photos; Android has no snapshot and the
+  table stays hidden. The snapshot is read once and cached.
+
+Verified live against the real snapshot (9,373 cities): Loni→rank 1,
+Saigon→Ho Chi Minh City, Bangalore→Bengaluru, Delhi→rank 4, and the
+Sri Lanka→Colombo capital fallback correctly picks the Sri Lanka
+Colombo over the snapshot's second Colombo (Brazil) — the country
+filter doing its job. The live test skips when the snapshot is
+absent (it is a git-ignored, rebuildable cache, so CI has none).
+
+The mobile suite is 210 tests; `flutter analyze` clean.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

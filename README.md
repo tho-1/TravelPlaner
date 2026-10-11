@@ -142,10 +142,17 @@ from `filters.py` - including the invariant that a filter only ever
 removes a row whose field is populated. A destination's detail page
 shows the profile sections the Streamlit page shows (overview,
 highlights, logistics, food, best months,
-climate) plus a mini-map; a placeholder can be filled with the **AI
-populate** (DeepSeek) once `deepseek_api_key` sits in the same config
+climate - the temperature/rainfall chart with the rainy-day
+counts, the four-series AQI profile with the severity bands,
+and the IQAir PM2.5 history table) plus a mini-map; a
+placeholder can be filled with the **AI populate** (DeepSeek)
+once `deepseek_api_key` sits in the same config
 file - without the key the button is simply not offered, exactly like
-the legacy pages behave.
+the legacy pages behave. The IQAir table reads the local
+ranking snapshot (`iqair_cache/world_cities.json`, the path
+from `iqair_snapshot` in the config) - a per-device file like
+the banner photos, so the table stays hidden where there is no
+snapshot.
 
 The keys inside that config file (Turso tokens and the DeepSeek key)
 ship inside the app bundle - a decision, not an oversight (2026-10-11):

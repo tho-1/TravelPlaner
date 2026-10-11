@@ -41,6 +41,7 @@ class ClimateChart extends StatelessWidget {
               highs: data.highs,
               lows: data.lows,
               rain: data.rainMm,
+              rainyDays: data.rainyDays,
               highColor: scheme.error,
               lowColor: scheme.primary,
               rainColor: Colors.lightBlue.withValues(alpha: 0.55),
@@ -82,6 +83,7 @@ class _ClimateChartPainter extends CustomPainter {
   final List<double?> highs;
   final List<double?> lows;
   final List<double?> rain;
+  final List<double?> rainyDays;
   final Color highColor;
   final Color lowColor;
   final Color rainColor;
@@ -92,6 +94,7 @@ class _ClimateChartPainter extends CustomPainter {
     required this.highs,
     required this.lows,
     required this.rain,
+    required this.rainyDays,
     required this.highColor,
     required this.lowColor,
     required this.rainColor,
@@ -136,6 +139,7 @@ class _ClimateChartPainter extends CustomPainter {
 
     // Rain bars first, so the temperature lines sit on top.
     final rainPaint = Paint()..color = rainColor;
+    final labelPainter = TextPainter(textDirection: TextDirection.ltr);
     for (var i = 0; i < rain.length; i++) {
       final value = rain[i];
       if (value == null || value <= 0) continue;
@@ -149,6 +153,24 @@ class _ClimateChartPainter extends CustomPainter {
         ),
         rainPaint,
       );
+      // The rainy-day count, above the bar — the legacy's
+      // "outside" text position. Only months with a
+      // positive count carry a label.
+      final days = i < rainyDays.length ? rainyDays[i] : null;
+      if (days != null && days > 0) {
+        labelPainter.text = TextSpan(
+          text: '${days.round()}d',
+          style: TextStyle(
+            color: const Color(0xFF0369A1),
+            fontSize: 9,
+          ),
+        );
+        labelPainter.layout();
+        labelPainter.paint(
+          canvas,
+          Offset(columnX(i) - labelPainter.width / 2, y - 12),
+        );
+      }
     }
 
     // The low-high band per month, then the connecting lines.
@@ -280,6 +302,7 @@ class _ClimateChartPainter extends CustomPainter {
       !_sameSeries(old.highs, highs) ||
       !_sameSeries(old.lows, lows) ||
       !_sameSeries(old.rain, rain) ||
+      !_sameSeries(old.rainyDays, rainyDays) ||
       old.highColor != highColor ||
       old.lowColor != lowColor ||
       old.rainColor != rainColor;

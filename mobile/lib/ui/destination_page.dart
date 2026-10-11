@@ -19,6 +19,8 @@ import '../data/destination_repository.dart';
 import '../models/destination.dart';
 import '../models/destination_profile.dart';
 import 'climate_chart.dart';
+import 'aqi_chart.dart';
+import 'iqair_table.dart';
 import 'world_map_page.dart';
 
 class DestinationPage extends StatefulWidget {
@@ -705,12 +707,17 @@ class _ClimateSection extends StatelessWidget {
         const SizedBox(height: 16),
         Text('Air quality by month', style: theme.textTheme.titleSmall),
         const SizedBox(height: 8),
-        _AqiRow(values: climate.aqi),
+        AqiChart(data: climate),
         if (profile.aqiSource != null)
           Padding(
             padding: const EdgeInsets.only(top: 6),
             child: Text(profile.aqiSource!, style: theme.textTheme.bodySmall),
           ),
+        const SizedBox(height: 16),
+        IqairPm25Table(
+          destinationName: profile.destination.name,
+          country: profile.destination.country,
+        ),
       ],
     );
   }
@@ -756,63 +763,6 @@ class _KpiCard extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _AqiRow extends StatelessWidget {
-  final List<double?> values;
-
-  const _AqiRow({required this.values});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        for (var row = 0; row < 3; row++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Row(
-              children: [
-                for (var i = row * 4; i < row * 4 + 4 && i < values.length; i++)
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 4),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _bandColor(values[i]),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          children: [
-                            Text(monthAbbreviations[i],
-                                style: theme.textTheme.labelSmall),
-                            Text(
-                              values[i] == null
-                                  ? '—'
-                                  : values[i]!.round().toString(),
-                              style: theme.textTheme.labelMedium,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-      ],
-    );
-  }
-
-  static Color _bandColor(double? value) {
-    if (value == null) return const Color(0x1F94A3B8);
-    if (value <= 50) return Colors.green.withValues(alpha: 0.35);
-    if (value <= 100) return Colors.amber.withValues(alpha: 0.35);
-    if (value <= 150) return Colors.orange.withValues(alpha: 0.35);
-    return Colors.red.withValues(alpha: 0.35);
   }
 }
 

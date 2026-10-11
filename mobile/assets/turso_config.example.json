@@ -4,5 +4,6 @@
   "benefits_url": "https://flightconnections-tz123.aws-eu-north-1.turso.io",
   "benefits_token": "PASTE_THE_BENEFITS_TOKEN_HERE",
   "deepseek_api_key": "PASTE_THE_DEEPSEEK_KEY_HERE",
-  "deepseek_model": "deepseek-chat"
+  "deepseek_model": "deepseek-chat",
+  "iqair_snapshot": "C:\\PATH\\TO\\iqair_cache\\world_cities.json"
 }
