@@ -16,6 +16,7 @@ import '../turso/pipeline_client.dart';
 import 'catalogue_page.dart';
 import 'trips_page.dart';
 import 'weekend_finder_page.dart';
+import 'world_map_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -109,6 +110,7 @@ class _HomeShellState extends State<HomeShell> {
           CataloguePage(repository: destinations),
           TripsPage(repository: trips),
           WeekendFinderPage(benefits: benefits, destinations: destinations),
+          WorldMapPage(repository: destinations),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -129,6 +131,11 @@ class _HomeShellState extends State<HomeShell> {
             icon: Icon(Icons.travel_explore_outlined),
             selectedIcon: Icon(Icons.travel_explore),
             label: 'Finder',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.map_outlined),
+            selectedIcon: Icon(Icons.map),
+            label: 'Map',
           ),
         ],
       ),

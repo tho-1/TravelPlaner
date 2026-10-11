@@ -11,10 +11,12 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../data/city_coordinates.dart';
 import '../data/destination_repository.dart';
 import '../models/destination.dart';
 import '../models/destination_profile.dart';
 import 'climate_chart.dart';
+import 'world_map_page.dart';
 
 class DestinationPage extends StatefulWidget {
   final DestinationRepository repository;
@@ -40,6 +42,7 @@ class _DestinationPageState extends State<DestinationPage> {
   late Destination _dest;
   late DestinationProfile _profile;
   late TextEditingController _comment;
+  CityCoordinate? _coordinate;
   var _busy = false;
 
   @override
@@ -48,6 +51,13 @@ class _DestinationPageState extends State<DestinationPage> {
     _dest = widget.destination;
     _profile = DestinationProfile.from(_dest);
     _comment = TextEditingController(text: _dest.comment ?? '');
+    _loadCoordinate();
+  }
+
+  Future<void> _loadCoordinate() async {
+    final index = await CoordinateIndex.load();
+    if (!mounted) return;
+    setState(() => _coordinate = index.lookup(_dest.name));
   }
 
   @override
@@ -205,6 +215,10 @@ class _DestinationPageState extends State<DestinationPage> {
               ),
             ),
             const _SectionTitle('Overview'),
+            if (_coordinate != null) ...[
+              DestinationMiniMap(coordinate: _coordinate!),
+              const SizedBox(height: 12),
+            ],
             if (profile.hasOverviewText) ...[
               if (profile.introduction != null)
                 Padding(
