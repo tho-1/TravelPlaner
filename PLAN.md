@@ -703,6 +703,25 @@ The mobile suite is 214 tests; `flutter analyze` clean.
 
 ---
 
+## 0g. Parity session 2026-10-11 (6) - shared text normalisation
+
+The diacritic stripping the IQAir matcher needs is now
+a shared module (`data/text_norm.dart`). Dart has no
+built-in NFKD normalisation, so the accented Latin and
+Vietnamese letters the destination and city names carry
+(Cancún, Montréal, Đà Nẵng) are decomposed with an
+explicit map. The IQAir matcher's private copy moved
+there because the picture search (F2/F4) needs the same
+normalisation to match a dish name to a search query;
+`iqair_ranking.dart` now imports it, and `norm()` uses
+the `\u2019` escape instead of the literal right-quote
+so the source survives a Windows-1252 round-trip.
+`text_norm_test.dart` (4 tests) covers the module
+directly. The mobile suite is 218 tests; `flutter
+analyze` clean.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)
