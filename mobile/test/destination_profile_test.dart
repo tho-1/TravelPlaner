@@ -228,4 +228,34 @@ void main() {
       expect(empty.hasOverviewText, isFalse);
     });
   });
+
+  group('food', () {
+    test('the dishes split on commas, semicolons and newlines', () {
+      final profile = _profile({
+        'Food - Main Dishes': 'Koshari, Molokhia; Fatta\nTaameya',
+      });
+      expect(profile.foodDishList,
+          ['Koshari', 'Molokhia', 'Fatta', 'Taameya']);
+    });
+
+    test('blank dishes are an empty list', () {
+      expect(_profile({}).foodDishList, isEmpty);
+      expect(
+          _profile({'Food - Main Dishes': '  '}).foodDishList,
+          isEmpty);
+    });
+
+    test('the spiciness shows as a fraction of ten', () {
+      expect(
+          _profile({'Food - Spicyness': '6'}).foodSpicinessText,
+          '6/10');
+      expect(
+          _profile({'Food - Spicyness': '6.5'}).foodSpicinessText,
+          '6.5/10');
+      expect(
+          _profile({'Food - Spicyness': 'n/a'}).foodSpicinessText,
+          '—');
+      expect(_profile({}).foodSpicinessText, '—');
+    });
+  });
 }

@@ -315,6 +315,34 @@ class DestinationProfile {
   bool get hasFood => [foodSpiciness, foodDescription, foodDishes]
       .any((value) => value != null && value.isNotEmpty);
 
+  /// The main dishes, split the way the legacy
+  /// page splits them: on commas, semicolons
+  /// and newlines.
+  List<String> get foodDishList {
+    final raw = foodDishes;
+    if (raw == null || raw.trim().isEmpty) {
+      return const [];
+    }
+    return [
+      for (final part in raw.split(RegExp(r'[,;\n]+')))
+        if (part.trim().isNotEmpty) part.trim(),
+    ];
+  }
+
+  /// "6/10" — the legacy's `{num:g}/10`
+  /// spiciness display, or "—" when the cell
+  /// holds no number.
+  String get foodSpicinessText {
+    final value =
+        foodSpiciness == null ? null : coerceNumber(foodSpiciness);
+    if (value == null) return '—';
+    final asInt = value.roundToDouble();
+    final text = (value == asInt)
+        ? asInt.round().toString()
+        : value.toString();
+    return '$text/10';
+  }
+
   // ── climate KPIs ─────────────────────────────────────────────────────────
 
   /// "35 °C (Jul)" — the hottest month's high.

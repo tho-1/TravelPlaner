@@ -10,6 +10,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data/ai_config.dart';
 import '../data/ai_populator.dart';
@@ -354,11 +355,9 @@ class _DestinationPageState extends State<DestinationPage> {
             const _SectionTitle('Logistics'),
             _LogisticsGrid(profile: profile),
             const _SectionTitle('Food'),
-            if (profile.hasFood) ...[
-              _LabelledText('Spiciness', profile.foodSpiciness),
-              _LabelledText('Description', profile.foodDescription),
-              _LabelledText('Main dishes', profile.foodDishes),
-            ] else
+            if (profile.hasFood)
+              _FoodSection(profile: profile)
+            else
               const Text('No food notes yet.'),
             const _SectionTitle('Best months'),
             _BestMonths(profile: profile),
@@ -408,6 +407,112 @@ class _LabelledText extends StatelessWidget {
           const SizedBox(height: 2),
           Text(value!, style: theme.textTheme.bodyMedium),
         ],
+      ),
+    );
+  }
+}
+
+/// The food section: the spiciness and the main
+/// dishes side by side, the description below —
+/// the legacy's flex layout. Each dish is a link
+/// to a Google Images search for the dish in this
+/// destination, the legacy's `tbm=isch` link.
+class _FoodSection extends StatelessWidget {
+  final DestinationProfile profile;
+
+  const _FoodSection({required this.profile});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final dishes = profile.foodDishList;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Spiciness', style: theme.textTheme.labelLarge),
+                const SizedBox(height: 2),
+                Text(profile.foodSpicinessText,
+                    style: theme.textTheme.bodyMedium),
+              ],
+            ),
+            const SizedBox(width: 40),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Main dishes (in local language)',
+                      style: theme.textTheme.labelLarge),
+                  const SizedBox(height: 2),
+                  if (dishes.isEmpty)
+                    const Text('—')
+                  else
+                    Wrap(
+                      spacing: 0,
+                      runSpacing: 2,
+                      children: [
+                        for (var i = 0; i < dishes.length; i++) ...[
+                          _DishLink(
+                            dish: dishes[i],
+                            destination: profile.name,
+                          ),
+                          if (i < dishes.length - 1)
+                            const Text(', '),
+                        ],
+                      ],
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _LabelledText('Description', profile.foodDescription),
+      ],
+    );
+  }
+}
+
+/// One dish, underlined, opening a Google Images
+/// search for the dish in this destination — the
+/// legacy's `tbm=isch` link.
+class _DishLink extends StatelessWidget {
+  final String dish;
+  final String destination;
+
+  const _DishLink({required this.dish, required this.destination});
+
+  Future<void> _launch(BuildContext context) async {
+    final url = Uri.https('www.google.com', '/search', {
+      'tbm': 'isch',
+      'q': '$dish $destination',
+    });
+    final launched =
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+    if (!launched && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open the image search.')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return GestureDetector(
+      onTap: () => _launch(context),
+      child: Text(
+        dish,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: theme.colorScheme.primary,
+          decoration: TextDecoration.underline,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }

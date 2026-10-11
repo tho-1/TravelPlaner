@@ -618,6 +618,16 @@ The next batch from the gap plan, each verified before the commit:
 * **The benefits re-read** (`weekend_finder_page.dart`). The legacy's
   "Re-read the benefits database" button: the Dart side holds no cache,
   so a re-read is a fresh fetch of the same query.
+* **The food dish links** (`destination_page.dart`,
+  `destination_profile.dart`). The "Main dishes" cell was plain text;
+  each dish is now an underlined link to a Google Images search for
+  the dish in that destination (the legacy's `tbm=isch` link), via
+  `url_launcher` — the first plugin the app carries, recorded per the
+  house rule: it opens the default browser (Win32 `ShellExecute` /
+  an Android intent), so it needs neither Developer Mode nor the file
+  pickers. The spiciness now shows as the legacy's `{num}/10`, and
+  the dish splitting (commas, semicolons, newlines) and the
+  spiciness formatting live on the profile model, tested.
 
 The mobile suite is 188 tests; `flutter analyze` clean.
 
