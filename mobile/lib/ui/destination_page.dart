@@ -11,7 +11,10 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../data/ai_config.dart';
+import '../data/ai_populator.dart';
 import '../data/city_coordinates.dart';
+import '../data/deepseek_client.dart';
 import '../data/destination_repository.dart';
 import '../models/destination.dart';
 import '../models/destination_profile.dart';
@@ -27,11 +30,18 @@ class DestinationPage extends StatefulWidget {
   /// stale row.
   final void Function()? onChanged;
 
+  /// Test seam: the AI client and config. Null loads the
+  /// bundled one, exactly like the running app.
+  final DeepSeekClient? aiClient;
+  final AiConfig? aiConfig;
+
   const DestinationPage({
     super.key,
     required this.repository,
     required this.destination,
     this.onChanged,
+    this.aiClient,
+    this.aiConfig,
   });
 
   @override
@@ -44,6 +54,8 @@ class _DestinationPageState extends State<DestinationPage> {
   late TextEditingController _comment;
   CityCoordinate? _coordinate;
   var _busy = false;
+  var _populating = false;
+  var _aiConfigured = false;
 
   @override
   void initState() {
@@ -52,12 +64,58 @@ class _DestinationPageState extends State<DestinationPage> {
     _profile = DestinationProfile.from(_dest);
     _comment = TextEditingController(text: _dest.comment ?? '');
     _loadCoordinate();
+    _loadAiConfig();
+  }
+
+  Future<void> _loadAiConfig() async {
+    final config = widget.aiConfig ?? await AiConfig.load();
+    if (!mounted) return;
+    setState(() => _aiConfigured = config.isConfigured);
   }
 
   Future<void> _loadCoordinate() async {
     final index = await CoordinateIndex.load();
     if (!mounted) return;
     setState(() => _coordinate = index.lookup(_dest.name));
+  }
+
+  /// The AI populate: ask DeepSeek, apply the profile, save
+  /// once. Failure is a message, never a crash -- the same
+  /// contract the legacy `populate_existing_destination_
+  /// with_ai` has.
+  Future<void> _populateWithAi() async {
+    setState(() => _populating = true);
+    final client = widget.aiClient ??
+        DeepSeekClient(widget.aiConfig ?? await AiConfig.load());
+    try {
+      final profile = await client.generateDestinationProfile(
+        destination: _dest.name,
+        country: _dest.country ?? '',
+        continent: _dest.continent ?? '',
+      );
+      final updated = AiPopulator(_dest).apply(profile);
+      final ok = await widget.repository.saveDestination(updated);
+      if (!mounted) return;
+      setState(() {
+        _populating = false;
+        if (ok) {
+          _dest = updated;
+          _profile = DestinationProfile.from(updated);
+        }
+      });
+      if (ok) widget.onChanged?.call();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(ok
+            ? 'Populated with DeepSeek AI'
+            : 'The profile was generated but nothing was written.'),
+      ));
+    } on DeepSeekError catch (error) {
+      if (!mounted) return;
+      setState(() => _populating = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(error.message),
+      ));
+    }
   }
 
   @override
@@ -165,9 +223,33 @@ class _DestinationPageState extends State<DestinationPage> {
                   color: Theme.of(context).colorScheme.errorContainer,
                   child: Padding(
                     padding: const EdgeInsets.all(12),
-                    child: Text(
-                      '${profile.dataStatus}. The details below are incomplete '
-                      'until this destination is researched.',
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${profile.dataStatus}. The details below are '
+                          'incomplete until this destination is researched.',
+                        ),
+                        if (_aiConfigured) ...[
+                          const SizedBox(height: 8),
+                          OutlinedButton.icon(
+                            icon: _populating
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child:
+                                        CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.auto_awesome_outlined),
+                            label: Text(_populating
+                                ? 'Asking DeepSeek…'
+                                : 'Populate with AI'),
+                            onPressed: _populating || _busy
+                                ? null
+                                : _populateWithAi,
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ),

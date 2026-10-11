@@ -107,6 +107,21 @@ class Destination {
     return Destination(core: core, columns: columns);
   }
 
+  /// A copy with one **tail** column replaced, leaving the
+  /// typed core alone -- the write the AI populator needs
+  /// for the workbook's free-text columns. A missing entry
+  /// is appended in place, exactly like `withField`.
+  Destination withTail(String column, Object? value) {
+    final columns = [...this.columns];
+    final index = columns.indexWhere((entry) => entry.$1 == column);
+    if (index >= 0) {
+      columns[index] = (column, value);
+    } else {
+      columns.add((column, value));
+    }
+    return Destination(core: core, columns: columns);
+  }
+
   /// The typed-core field -> workbook column map,
   /// the same map `storage_turso.CORE_COLUMNS`
   /// keeps on the Python side.

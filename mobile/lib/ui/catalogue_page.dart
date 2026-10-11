@@ -6,7 +6,10 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../data/ai_config.dart';
+import '../data/deepseek_client.dart';
 import '../data/destination_repository.dart';
+import '../data/ai_populator.dart';
 import '../models/destination.dart';
 import 'destination_page.dart';
 
@@ -35,12 +38,131 @@ class _CataloguePageState extends State<CataloguePage> {
     });
   }
 
+  /// Add a new destination: a placeholder, optionally
+  /// populated with DeepSeek in the same step -- the two
+  /// options the legacy world-map dialog offers. Key-gated:
+  /// without a key the second option is not offered, and
+  /// the placeholder is still added.
+  Future<void> _addDestination() async {
+    final nameController = TextEditingController();
+    final countryController = TextEditingController(text: 'Unknown');
+    final continentController = TextEditingController(text: 'Unknown');
+    final ai = await AiConfig.load();
+    if (!mounted) return;
+
+    final choice = await showDialog<(String, bool)>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add a destination'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Name'),
+            ),
+            TextField(
+              controller: countryController,
+              decoration: const InputDecoration(labelText: 'Country'),
+            ),
+            TextField(
+              controller: continentController,
+              decoration: const InputDecoration(labelText: 'Continent'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          if (ai.isConfigured)
+            TextButton(
+              onPressed: () => Navigator.pop(context, ('withAi', true)),
+              child: const Text('Add & populate with AI'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, ('placeholder', false)),
+            child: const Text('Add placeholder'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null) return;
+    final (mode, withAi) = choice;
+    final name = nameController.text.trim();
+    if (name.isEmpty) return;
+    final country = countryController.text.trim().isEmpty
+        ? 'Unknown'
+        : countryController.text.trim();
+    final continent = continentController.text.trim().isEmpty
+        ? 'Unknown'
+        : continentController.text.trim();
+
+    final added = await widget.repository.addDestination(
+      name: name,
+      country: country,
+      continent: continent,
+    );
+    if (!mounted) return;
+    if (!added) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Could not add the destination -- it exists already, '
+            'or the write failed.'),
+      ));
+      return;
+    }
+    _reload();
+    if (withAi) {
+      await _populate(name, country, continent);
+    }
+  }
+
+  /// The second half of the add: ask DeepSeek and write the
+  /// profile onto the row that was just added.
+  Future<void> _populate(String name, String country, String continent) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final ai = await AiConfig.load();
+    final client = DeepSeekClient(ai);
+    try {
+      final profile = await client.generateDestinationProfile(
+        destination: name,
+        country: country,
+        continent: continent,
+      );
+      final (destination, problems) =
+          await widget.repository.getDestination(name);
+      if (destination == null || problems.isNotEmpty) {
+        messenger.showSnackBar(const SnackBar(
+            content: Text('The profile arrived but the destination '
+                'could not be read back.')));
+        return;
+      }
+      final updated = AiPopulator(destination).apply(profile);
+      final ok = await widget.repository.saveDestination(updated);
+      messenger.showSnackBar(SnackBar(
+        content: Text(ok
+            ? "Destination '$name' added and populated with DeepSeek AI"
+            : 'The profile was generated but nothing was written.'),
+      ));
+      if (ok) _reload();
+    } on DeepSeekError catch (error) {
+      messenger.showSnackBar(SnackBar(content: Text(error.message)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Catalogue'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            tooltip: 'Add a destination',
+            onPressed: _addDestination,
+          ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _reload),
         ],
       ),

@@ -64,6 +64,47 @@ class DestinationRepository {
     return saveDestination(dest.withField(field, value));
   }
 
+  /// Append a new placeholder destination
+  /// (`repository.add_new_destination`'s Turso branch):
+  /// the same core fields, the same "PLACEHOLDER - UPDATE
+  /// REQUIRED" status and the same tail. A duplicate name
+  /// is refused, not overwritten.
+  Future<bool> addDestination({
+    required String name,
+    String country = 'Unknown',
+    String continent = 'Unknown',
+  }) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return false;
+    final (existing, problems) = await getDestination(trimmed);
+    if (problems.isNotEmpty || existing != null) return false;
+    final destination = Destination(
+      core: {
+        'destination': trimmed,
+        'continent': continent,
+        'country': country,
+        'visited': false,
+        'favourite': false,
+        'prio': null,
+        'safety_rating': null,
+        'avg_cost_day': null,
+        'flight_time_fra': null,
+        'to_be_researched': true,
+        'malaria_risk': false,
+        'data_status': 'PLACEHOLDER - UPDATE REQUIRED',
+        'comment': null,
+      },
+      columns: [
+        ('Destination', trimmed),
+        ('Continent', continent),
+        ('Country', country),
+        ('Data Status', 'PLACEHOLDER - UPDATE REQUIRED'),
+        ('To be researched', true),
+      ],
+    );
+    return saveDestination(destination);
+  }
+
   /// Upsert one destination (`storage_turso.save_destination`):
   /// the typed core, the JSON tail and `updated_at` in one
   /// statement, so a save round-trips losslessly.

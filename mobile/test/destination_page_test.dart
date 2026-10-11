@@ -10,7 +10,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
+import 'package:travel_planner/data/ai_config.dart';
+import 'package:travel_planner/data/deepseek_client.dart';
 import 'package:travel_planner/data/destination_repository.dart';
 import 'package:travel_planner/models/destination.dart';
 import 'package:travel_planner/ui/destination_page.dart';
@@ -135,8 +139,7 @@ void main() {
     expect(find.textContaining('being populated'), findsOneWidget);
   });
 
-  testWidgets('a comment write reports success', (tester) async {
-    // updateField is a read-modify-write: one SELECT for the
+  testWidgets('a comment write reports success', (tester) async {    // updateField is a read-modify-write: one SELECT for the
     // read, one upsert for the write; the fake answers both.
     var selects = 0;
     var writes = 0;
@@ -167,5 +170,68 @@ void main() {
     expect(selects, greaterThanOrEqualTo(1));
     expect(writes, greaterThanOrEqualTo(1));
     expect(find.text('Saved'), findsOneWidget);
+  });
+
+  testWidgets('the AI populate applies the profile and reports it',
+      (tester) async {
+    var writes = 0;
+    final fake = FakeTurso((statements) {
+      final statement = statements.single;
+      if (statement.startsWith('SELECT')) {
+        return okRows(['destination', 'data'], [
+          ['Alexandria', jsonEncode([['Data Status', 'PLACEHOLDER']])],
+        ]);
+      }
+      writes++;
+      return okEmpty();
+    });
+    final repository = repositoryFor(fake);
+    final client = DeepSeekClient(
+      const AiConfig(apiKey: 'sk-test', model: 'deepseek-chat'),
+      httpClient: MockClient((request) async => http.Response(
+            jsonEncode({
+              'choices': [
+                {
+                  'message': {
+                    'content': jsonEncode({
+                      'destination': 'Alexandria',
+                      'country': 'Egypt',
+                      'continent': 'Africa',
+                      'profile': {
+                        'why_to_go': 'A hill town of towers.',
+                        'month_ratings': {'March': 'ideal'},
+                      },
+                    }),
+                  },
+                },
+              ],
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          )),
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      home: DestinationPage(
+        repository: repository,
+        destination:
+            alexandria().withField('data_status', 'PLACEHOLDER - UPDATE REQUIRED'),
+        aiClient: client,
+        aiConfig: const AiConfig(apiKey: 'sk-test'),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // The banner button runs the whole pipeline.
+    await scrollTo(tester,
+        find.widgetWithIcon(OutlinedButton, Icons.auto_awesome_outlined));
+    await tester.tap(
+        find.widgetWithIcon(OutlinedButton, Icons.auto_awesome_outlined));
+    await tester.pumpAndSettle();
+
+    expect(writes, greaterThanOrEqualTo(1));
+    expect(find.text('Populated with DeepSeek AI'), findsOneWidget);
+    await scrollTo(tester, find.text('A hill town of towers.'));
+    expect(find.text('A hill town of towers.'), findsOneWidget);
   });
 }
