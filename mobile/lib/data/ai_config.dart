@@ -9,6 +9,16 @@
 /// normal state: the AI features stay hidden rather than
 /// erroring, exactly like the legacy page's behaviour
 /// without a key.
+///
+/// **Storing the key inside the app is a decision, not an
+/// oversight** (user, 2026-10-11): DeepSeek has no
+/// auto-recharge enabled, so the worst case of an extracted
+/// key is a spend of at most ~10 EUR before the user notices
+/// and rotates it. That blast radius is accepted; the
+/// alternative (routing the populate through the PC's API)
+/// would tie the phone feature to a running PC, which the
+/// user did not want. The same reasoning already applies to
+/// the Turso token, which is revocable the same way.
 library;
 
 import 'dart:convert';

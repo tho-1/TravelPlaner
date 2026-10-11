@@ -141,6 +141,15 @@ populate** (DeepSeek) once `deepseek_api_key` sits in the same config
 file - without the key the button is simply not offered, exactly like
 the legacy pages behave.
 
+The keys inside that config file (Turso tokens and the DeepSeek key)
+ship inside the app bundle - a decision, not an oversight (2026-10-11):
+the app is single-user, the Turso tokens are revocable at any time, and
+DeepSeek has **no auto-recharge enabled**, so the worst case of an
+extracted AI key is a spend of at most ~10 EUR before it is rotated
+(edit `deepseek_api_key` in the config file and rebuild). The
+alternative - routing the AI populate through the PC's API - was
+rejected because it would tie the phone feature to a running PC.
+
 The generated assets (`assets/airports.json`,
 `assets/country_names.json`, `assets/city_coordinates.json`) are
 regenerated from the Python modules that own them with

@@ -83,31 +83,52 @@ carries `benefits_*` and `deepseek_api_key`.
 ## Next steps
 
 1. **Milestone reached on both targets.** Android: release APK + live
-   round-trip on the Redmi Note 9S. Windows: `travel_planner.exe` builds
-   (VS Build Tools 2022 on `E:\tools\vs-buildtools`) and loads the
+   round-trip on the Redmi Note 9S (re-verified 2026-10-11: the parity build
+   was rebuilt and installed, four tabs — Catalogue, Trips, Finder, Map —
+   confirmed via a UI dump, no taps sent). Windows: `travel_planner.exe`
+   builds (VS Build Tools 2022 on `E:\tools\vs-buildtools`) and loads the
    catalogue from Turso. Toolchain notes: JDK 21 at `E:\tools\jdk-21...`
    (`flutter config --jdk-dir`), Gradle cache at `E:\tools\gradle-home`,
    legacy `.gradle` moved to `E:\tools\gradle-legacy-home`, Developer Mode
    enabled, `shared_preferences` removed (the one native plugin — it
    forced the Developer-Mode/symlink requirement; re-add only with a
    feature that needs it).
-2. **Parity remainder** (the user's end goal: nothing PC-side only):
-   the destination **galleries** (Unsplash is key-gated exactly like the AI
+2. **AVG and the freshly built Windows exe — the exclusion, not avoidance**
+   (analysis 2026-10-11). AVG flags every newly built `travel_planner.exe`
+   as `IDP.Generic` — a false positive on the class of unsigned Flutter/Dart
+   binaries. Checked and rejected: the renderer (`--no-impeller` is not a
+   supported flag for `flutter build windows` in 3.47.2), icon tree-shaking
+   (changes the bytes, not the verdict), code signing (the real fix, but a
+   paid certificate conflicts with the project's no-money constraint), and a
+   vendor false-positive report (slow, unreliable). The working path is an
+   **AVG exclusion for `E:\Open Code  - Travel planner\mobile\build\`** — it
+   needs the file to exist, so a fresh `flutter build windows` is left in
+   place after each quarantine (the build is ~3 minutes).
+3. **The AI key in the app bundle is a decision, not a finding**
+   (user, 2026-10-11). DeepSeek has **no auto-recharge enabled**, so an
+   extracted key cannot cost more than ~10 EUR before it is rotated — the
+   accepted blast radius (documented in `lib/data/ai_config.dart` and
+   `README.md`). Keeping the populate on the phone instead of behind the PC
+   API was the deliberate choice: the phone feature must not depend on a
+   running PC. Rotate the key by editing `mobile/assets/turso_config.json`
+   (`deepseek_api_key`) and rebuilding the app.
+4. **Parity remainder** (the user's end goal: nothing PC-side only): the
+   destination **galleries** (Unsplash is key-gated exactly like the AI
    populate — the same pattern applies), trip **editing** (the app is
    read-only there on purpose), and the remaining world-map filters the
    legacy page has (month / travel condition). Each as repository + UI +
    tests, mirroring the legacy page's data sources.
-3. **Release-signing note**: the release APK currently signs with the
-   debug key (fine for sideloading a personal app; a real keystore is an
-   open nicety, not a blocker).
-4. **Phase 6 is deferred by decision** (2026-10-10): do not delete the
+5. **Release-signing note**: the release APK currently signs with the debug
+   key (fine for sideloading a personal app; a real keystore is an open
+   nicety, not a blocker).
+6. **Phase 6 is deferred by decision** (2026-10-10): do not delete the
    Streamlit pages, the workbook writers, the `sync/` stack or
    `refresh_cloud_workbook.py` — they are the fallback and the workbook
    branch's path to the phone.
-5. **Push.** Everything through the runnable-milestone commits is pushed
+7. **Push.** Everything through the runnable-milestone commits is pushed
    to `origin/main`; keep pushing after every verified commit. The branch
    `data-sync` must not be touched.
-5. Open items that stay open are in `AGENTS.md` §6 (Cloud persistence check,
+8. Open items that stay open are in `AGENTS.md` §6 (Cloud persistence check,
    legacy rainy-day rows, `open_destinations.json` on Cloud redeploys) and
    `NATIVE_HTML_PLAN.md` Phase 5 (offline-first sync is unimplemented — the
    Flutter app is online-only over the pipeline API).
