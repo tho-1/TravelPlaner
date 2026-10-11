@@ -14,6 +14,7 @@ import '../data/trip_repository.dart';
 import '../turso/config.dart';
 import '../turso/pipeline_client.dart';
 import 'catalogue_page.dart';
+import 'theme.dart';
 import 'trips_page.dart';
 import 'weekend_finder_page.dart';
 import 'world_map_page.dart';
@@ -32,7 +33,10 @@ class TravelPlannerApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Travel Planner',
-      theme: ThemeData(colorSchemeSeed: Colors.teal, useMaterial3: true),
+      debugShowCheckedModeBanner: false,
+      theme: buildTheme(Brightness.light),
+      darkTheme: buildTheme(Brightness.dark),
+      themeMode: ThemeMode.system,
       home: config.isConfigured
           ? HomeShell(config: config)
           : const UnconfiguredScreen(),

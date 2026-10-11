@@ -94,16 +94,31 @@ class _TripsPageState extends State<TripsPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Could not load trips',
-                            style: TextStyle(fontWeight: FontWeight.bold)),
+                        const Row(children: [
+                          Icon(Icons.cloud_off),
+                          SizedBox(width: 8),
+                          // Expanded: the title wraps instead of
+                          // overflowing a phone-width card.
+                          Expanded(child: Text('Could not load trips')),
+                        ]),
                         const SizedBox(height: 8),
-                        for (final problem in problems) Text(problem),
+                        for (final problem in problems)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 4),
+                            child: Text(problem),
+                          ),
+                        const SizedBox(height: 8),
+                        OutlinedButton(
+                            onPressed: _reload, child: const Text('Retry')),
                       ],
                     ),
                   ),
                 ),
               ),
             ]);
+          }
+          if (trips.isEmpty) {
+            return const _TripsEmptyState();
           }
           if (trips.isEmpty) {
             return const Center(child: Text('No trips stored.'));
@@ -118,6 +133,41 @@ class _TripsPageState extends State<TripsPage> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+/// The "no trips yet" state. Editing trips stays on the
+/// desktop side, so the app says where to go next instead
+/// of just "nothing here".
+class _TripsEmptyState extends StatelessWidget {
+  const _TripsEmptyState();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.luggage_outlined,
+                size: 56, color: theme.colorScheme.onSurfaceVariant),
+            const SizedBox(height: 16),
+            Text('No trips stored', style: theme.textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(
+              'Plan a trip in the desktop app -- the variants, stops and '
+              'legs appear here read-only.',
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -25,6 +25,7 @@ class CataloguePage extends StatefulWidget {
 class _CataloguePageState extends State<CataloguePage> {
   late Future<(List<Destination>, List<String>)> _future;
   var _query = '';
+  var _filter = _CatalogueFilter.all;
 
   @override
   void initState() {
@@ -171,15 +172,35 @@ class _CataloguePageState extends State<CataloguePage> {
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
             child: TextField(
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
                 hintText: 'Search name or country',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
                 isDense: true,
               ),
               onChanged: (value) => setState(() => _query = value),
             ),
           ),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                for (final filter in _CatalogueFilter.values)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(filter.label),
+                      avatar: Icon(filter.icon, size: 18),
+                      selected: _filter == filter,
+                      onSelected: (_) =>
+                          setState(() => _filter = filter),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
           Expanded(
             child: RefreshIndicator(
               onRefresh: () async => _reload(),
@@ -195,36 +216,81 @@ class _CataloguePageState extends State<CataloguePage> {
                     return _ProblemView(problems: problems, onRetry: _reload);
                   }
                   final needle = _query.trim().toLowerCase();
-                  final filtered = needle.isEmpty
-                      ? destinations
-                      : [
-                          for (final dest in destinations)
-                            if (dest.name.toLowerCase().contains(needle) ||
-                                (dest.country ?? '')
-                                    .toLowerCase()
-                                    .contains(needle))
-                            dest,
-                        ];
+                  final matches = [
+                    for (final dest in destinations)
+                      if (needle.isEmpty ||
+                          dest.name.toLowerCase().contains(needle) ||
+                          (dest.country ?? '')
+                              .toLowerCase()
+                              .contains(needle))
+                        dest,
+                  ];
+                  final filtered = [
+                    for (final dest in matches)
+                      if (_filter.accepts(dest)) dest,
+                  ];
                   if (filtered.isEmpty) {
                     // Never an ambiguous "no results": say whether
-                    // the database is empty or the search dropped
+                    // the database is empty or the filter dropped
                     // everything.
                     return ListView(children: [
                       const SizedBox(height: 120),
                       Center(
-                        child: Text(
-                          destinations.isEmpty
-                              ? 'The database holds no destinations.'
-                              : 'No destination matches "$_query".',
-                          style: Theme.of(context).textTheme.bodyLarge,
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                destinations.isEmpty
+                                    ? Icons.public_off_outlined
+                                    : Icons.filter_alt_off_outlined,
+                                size: 48,
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                destinations.isEmpty
+                                    ? 'The database holds no destinations.'
+                                    : matches.isEmpty
+                                        ? 'No destination matches "$_query".'
+                                        : 'No ${_filter.label.toLowerCase()} '
+                                            'destination matches '
+                                            '"$_query" (${matches.length} '
+                                            'matched before the filter).',
+                                textAlign: TextAlign.center,
+                                style:
+                                    Theme.of(context).textTheme.bodyLarge,
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ]);
                   }
                   return ListView.builder(
-                    itemCount: filtered.length,
+                    itemCount: filtered.length + 1,
                     itemBuilder: (context, index) {
-                      final dest = filtered[index];
+                      if (index == 0) {
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                          child: Text(
+                            '${filtered.length} of ${destinations.length} '
+                            'destinations',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelSmall
+                                ?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
+                          ),
+                        );
+                      }
+                      final dest = filtered[index - 1];
                       return ListTile(
                         title: Text(dest.name),
                         subtitle: Text([
@@ -273,6 +339,32 @@ class _CataloguePageState extends State<CataloguePage> {
   }
 }
 
+/// The catalogue's quick filters. A filter that empties the
+/// list says so in the empty state, like every other one.
+enum _CatalogueFilter {
+  all('All', Icons.public_outlined),
+  visited('Visited', Icons.check_circle_outline),
+  favourites('Favourites', Icons.star_outline),
+  research('To research', Icons.help_outline);
+
+  final String label;
+  final IconData icon;
+  const _CatalogueFilter(this.label, this.icon);
+
+  bool accepts(Destination destination) {
+    switch (this) {
+      case _CatalogueFilter.all:
+        return true;
+      case _CatalogueFilter.visited:
+        return destination.visited;
+      case _CatalogueFilter.favourites:
+        return destination.favourite;
+      case _CatalogueFilter.research:
+        return destination.toBeResearched;
+    }
+  }
+}
+
 class _ProblemView extends StatelessWidget {
   final List<String> problems;
   final VoidCallback onRetry;
@@ -295,11 +387,16 @@ class _ProblemView extends StatelessWidget {
                 const Row(children: [
                   Icon(Icons.cloud_off),
                   SizedBox(width: 8),
-                  Text('Could not load destinations',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  // Expanded: the title must wrap, not overflow a
+                  // phone-width card.
+                  Expanded(child: Text('Could not load destinations')),
                 ]),
                 const SizedBox(height: 8),
-                for (final problem in problems) Text(problem),
+                for (final problem in problems)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(problem),
+                  ),
                 const SizedBox(height: 8),
                 OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
               ],

@@ -33,6 +33,10 @@ class WorldMapView extends StatefulWidget {
   final List<MapMarker> markers;
   final double height;
 
+  /// Shown under the map when a tile could not be loaded
+  /// (the offline case). Empty hides the hint.
+  final String offlineHint;
+
   const WorldMapView({
     super.key,
     required this.latitude,
@@ -40,6 +44,7 @@ class WorldMapView extends StatefulWidget {
     required this.zoom,
     required this.markers,
     this.height = 320,
+    this.offlineHint = 'The map tiles need a connection.',
   });
 
   @override
@@ -65,6 +70,18 @@ class MapMarker {
 }
 
 class _WorldMapViewState extends State<WorldMapView> {
+  /// Set when a tile fails to load, so the offline hint can
+  /// appear. A notifier, because the failure happens inside
+  /// a builder during layout -- calling setState there would
+  /// be a build-phase error.
+  final _tilesFailed = ValueNotifier<bool>(false);
+
+  @override
+  void dispose() {
+    _tilesFailed.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     final centre = worldPixels(widget.latitude, widget.longitude, widget.zoom);
@@ -85,9 +102,8 @@ class _WorldMapViewState extends State<WorldMapView> {
     final tiles = <Widget>[];
     for (var y = firstTileY; y <= lastTileY; y++) {
       for (var x = firstTileX; x <= lastTileX; x++) {
-        final wrappedX = ((x % math.pow(2, widget.zoom).toInt()) +
-                math.pow(2, widget.zoom).toInt()) %
-            math.pow(2, widget.zoom).toInt();
+        final worldSize = math.pow(2, widget.zoom).toInt();
+        final wrappedX = ((x % worldSize) + worldSize) % worldSize;
         tiles.add(Positioned(
           left: x * 256.0 - topLeft.dx,
           top: y * 256.0 - topLeft.dy,
@@ -96,12 +112,23 @@ class _WorldMapViewState extends State<WorldMapView> {
           child: Image.network(
             tileUrl(widget.zoom, wrappedX, y),
             fit: BoxFit.cover,
-            errorBuilder: (context, error, stack) => Container(
-              color: const Color(0xFFE8EDF2),
-              child: const Center(
-                child: Icon(Icons.map_outlined, color: Colors.grey, size: 28),
-              ),
-            ),
+            errorBuilder: (context, error, stack) {
+              // A tile that will not load (offline) is a
+              // placeholder -- and it says so, so a blank
+              // grey box is never mistaken for an empty map.
+              // The flag is set after the frame: the builder
+              // runs while the tree builds, and a rebuild in
+              // that phase is a framework error.
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                _tilesFailed.value = true;
+              });
+              return Container(
+                color: const Color(0xFFE8EDF2),
+                child: const Center(
+                  child: Icon(Icons.map_outlined, color: Colors.grey, size: 28),
+                ),
+              );
+            },
           ),
         ));
       }
@@ -112,13 +139,39 @@ class _WorldMapViewState extends State<WorldMapView> {
         _markerFor(marker, topLeft, viewPixels),
     ];
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        height: widget.height,
-        color: const Color(0xFFE8EDF2),
-        child: Stack(children: [...tiles, ...markerWidgets]),
-      ),
+    return Column(
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            height: widget.height,
+            color: const Color(0xFFE8EDF2),
+            child: Stack(children: [...tiles, ...markerWidgets]),
+          ),
+        ),
+        if (widget.offlineHint.isNotEmpty)
+          ValueListenableBuilder<bool>(
+            valueListenable: _tilesFailed,
+            builder: (context, failed, _) {
+              if (!failed) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.cloud_off_outlined, size: 14),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        widget.offlineHint,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+      ],
     );
   }
 

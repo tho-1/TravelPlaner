@@ -142,13 +142,15 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
               spacing: 8,
               children: [
                 ChoiceChip(
-                  label: const Text('This weekend'),
+                  label: Text('This weekend '
+                      '(${_isoShort(weekendContaining(DateTime.now()).friday)})'),
                   selected: _isSameWeekend(weekendContaining(DateTime.now())),
                   onSelected: (_) => setState(
                       () => _weekend = weekendContaining(DateTime.now())),
                 ),
                 ChoiceChip(
-                  label: const Text('Next weekend'),
+                  label: Text(
+                      'Next weekend (${_isoShort(_nextWeekend().friday)})'),
                   selected: _isSameWeekend(_nextWeekend()),
                   onSelected: (_) =>
                       setState(() => _weekend = _nextWeekend()),
