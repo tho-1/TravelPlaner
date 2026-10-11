@@ -722,6 +722,48 @@ analyze` clean.
 
 ---
 
+## 0h. Parity session 2026-10-11 (7) - the destination banner (D3)
+
+The destination header now leads with a banner photo
+on the desktop, ported from the legacy
+`destination_detail.py`. The legacy page folds the
+destination name into a key (accent-, case- and
+spacing-insensitive, parentheticals dropped) and
+looks for a photo in the `Pictures/` folder next to
+the workbook. The match is now a pure module
+(`data/photo_cache.dart`) with the two-pass pick —
+an exact match with the qualifier kept always wins,
+otherwise the loose match so "Mexico City" finds
+"MexicoCity_1.jpg" — and the I/O half
+(`data/photo_repository.dart`) reads the folder with
+`dart:io`. The panoramic crop the legacy performs
+with PIL is achieved in the UI with a fixed-height
+`BoxFit.cover` container and a scrim, so no image
+library is needed.
+
+The folder is a per-machine path in
+`turso_config.json` (`pictures_dir`), the same
+per-device pattern as the IQAir snapshot: on the
+phone the configured PC path does not exist, so the
+banner stays hidden and the header keeps its
+typography — a missing folder is a normal state,
+never a crash. `DestinationPage` gained a
+`picturesDir` test seam (like the AI client) so the
+banner path can be exercised without a machine
+Pictures folder.
+
+The banner *rendering* (an `Image.file`) is not
+widget-tested: a real image load does not settle
+under the test fake clock, and `tester.runAsync` is
+off-limits on this machine. The matching is covered
+by `photo_cache_test.dart` (10 tests, pure) and
+`photo_repository_test.dart` (6 tests, real I/O in
+a plain test); the page test covers the no-photo
+fallback. The mobile suite is 235 tests; `flutter
+analyze` clean.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

@@ -5,5 +5,6 @@
   "benefits_token": "PASTE_THE_BENEFITS_TOKEN_HERE",
   "deepseek_api_key": "PASTE_THE_DEEPSEEK_KEY_HERE",
   "deepseek_model": "deepseek-chat",
-  "iqair_snapshot": "C:\\PATH\\TO\\iqair_cache\\world_cities.json"
+  "iqair_snapshot": "C:\\PATH\\TO\\iqair_cache\\world_cities.json",
+  "pictures_dir": "C:\\PATH\\TO\\Pictures"
 }

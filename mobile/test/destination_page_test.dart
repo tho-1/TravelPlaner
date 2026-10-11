@@ -7,6 +7,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -307,5 +308,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(writes, greaterThanOrEqualTo(1));
     expect(find.text('Saved'), findsOneWidget);
+  });
+
+  testWidgets('no matching photo keeps the typography header',
+      (tester) async {
+    final dir = Directory.systemTemp.createTempSync('banner_empty_');
+    addTearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+    final repository =
+        repositoryFor(FakeTurso((_) => okRows(['destination'], [])));
+
+    await tester.pumpWidget(MaterialApp(
+      home: DestinationPage(
+        repository: repository,
+        destination: alexandria(),
+        picturesDir: dir.path,
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Image), findsNothing);
+    expect(find.text('Egypt · Africa'), findsOneWidget);
   });
 }

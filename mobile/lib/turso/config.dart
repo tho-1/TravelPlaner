@@ -41,12 +41,24 @@ class TursoConfig {
   /// same per-device pattern as the banner photos.
   final String iqairSnapshot;
 
+  /// The `Pictures/` folder the desktop app reads
+  /// banner photos from (the legacy app's folder,
+  /// next to the workbook). Optional: without it —
+  /// on Android, or a machine without the folder —
+  /// the destination header stays typography, which
+  /// is the same per-device pattern as the IQAir
+  /// snapshot. The path is a PC path, so it simply
+  /// does not exist on the phone and the banner
+  /// stays hidden there.
+  final String picturesDir;
+
   const TursoConfig({
     required this.url,
     required this.token,
     this.benefitsUrl = '',
     this.benefitsToken = '',
     this.iqairSnapshot = '',
+    this.picturesDir = '',
   });
 
   bool get isConfigured => url.trim().isNotEmpty && token.trim().isNotEmpty;
@@ -77,6 +89,8 @@ class TursoConfig {
         benefitsToken: (map['benefits_token'] as String?)?.trim() ?? '',
         iqairSnapshot:
             (map['iqair_snapshot'] as String?)?.trim() ?? '',
+        picturesDir:
+            (map['pictures_dir'] as String?)?.trim() ?? '',
       );
     } catch (_) {
       return const TursoConfig(

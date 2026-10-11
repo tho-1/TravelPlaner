@@ -9,6 +9,8 @@
 /// never reported as success.
 library;
 
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -17,8 +19,10 @@ import '../data/ai_populator.dart';
 import '../data/city_coordinates.dart';
 import '../data/deepseek_client.dart';
 import '../data/destination_repository.dart';
+import '../data/photo_repository.dart';
 import '../models/destination.dart';
 import '../models/destination_profile.dart';
+import '../turso/config.dart';
 import 'climate_chart.dart';
 import 'aqi_chart.dart';
 import 'iqair_table.dart';
@@ -38,6 +42,13 @@ class DestinationPage extends StatefulWidget {
   final DeepSeekClient? aiClient;
   final AiConfig? aiConfig;
 
+  /// Test seam: the `Pictures/` folder the banner photo
+  /// is read from. Null loads the bundled config (the
+  /// running app); a path reads that folder directly,
+  /// so the banner can be exercised without a machine
+  /// Pictures folder.
+  final String? picturesDir;
+
   const DestinationPage({
     super.key,
     required this.repository,
@@ -45,6 +56,7 @@ class DestinationPage extends StatefulWidget {
     this.onChanged,
     this.aiClient,
     this.aiConfig,
+    this.picturesDir,
   });
 
   @override
@@ -230,7 +242,8 @@ class _DestinationPageState extends State<DestinationPage> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           children: [
-            _DestinationHeader(destination: dest, profile: profile),
+            _DestinationHeader(
+                destination: dest, profile: profile, picturesDir: widget.picturesDir),
             if (profile.dataStatus != null) ...[
               const SizedBox(height: 12),
               _StatusBanner(
@@ -871,34 +884,82 @@ class _KpiCard extends StatelessWidget {
   }
 }
 
-/// The destination's identity: name, where it is, and the
-/// facts that identify it at a glance.
+/// The destination's identity: name, where it is, and
+/// the facts that identify it at a glance.
 ///
-/// The legacy page leads with a banner image the app cannot
-/// bundle (it lives in `Pictures/`), so the header leads
-/// with typography and colour instead -- a large name, the
-/// country and continent, and the count of ways home.
-class _DestinationHeader extends StatelessWidget {
+/// On the desktop the legacy page leads with a banner
+/// photo read from `Pictures/` (a panoramic crop); this
+/// header loads the same photo with `PhotoRepository`
+/// and overlays the name on it. When there is no photo
+/// -- on the phone, or a machine without the folder --
+/// the header leads with typography and colour instead:
+/// a large name, the country and continent, and the
+/// chips below.
+class _DestinationHeader extends StatefulWidget {
   final Destination destination;
   final DestinationProfile profile;
+  final String? picturesDir;
 
-  const _DestinationHeader(
-      {required this.destination, required this.profile});
+  const _DestinationHeader({
+    required this.destination,
+    required this.profile,
+    this.picturesDir,
+  });
+
+  @override
+  State<_DestinationHeader> createState() => _DestinationHeaderState();
+}
+
+class _DestinationHeaderState extends State<_DestinationHeader> {
+  String? _bannerPath;
+
+  Destination get _destination => widget.destination;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBanner();
+  }
+
+  /// The banner is a per-machine folder the app cannot
+  /// assume exists; a missing folder or photo is a normal
+  /// state (the header falls back to typography), never a
+  /// crash.
+  Future<void> _loadBanner() async {
+    final dir =
+        widget.picturesDir ?? (await TursoConfig.load()).picturesDir;
+    if (dir.trim().isEmpty) return;
+    final file = await PhotoRepository(dir).findBanner(
+      _destination.name,
+      _destination.name,
+    );
+    if (mounted && file != null) {
+      setState(() => _bannerPath = file.path);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final location = [
-      if (destination.country != null && destination.country!.isNotEmpty)
-        destination.country!,
-      if (destination.continent != null && destination.continent!.isNotEmpty)
-        destination.continent!,
+      if (_destination.country != null && _destination.country!.isNotEmpty)
+        _destination.country!,
+      if (_destination.continent != null &&
+          _destination.continent!.isNotEmpty)
+        _destination.continent!,
     ].join(' · ');
+    final bannerPath = _bannerPath;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(destination.name, style: theme.textTheme.headlineSmall),
-        if (location.isNotEmpty) ...[
+        if (bannerPath != null)
+          _BannerPhoto(
+              path: bannerPath,
+              name: _destination.name,
+              location: location)
+        else
+          Text(_destination.name, style: theme.textTheme.headlineSmall),
+        if (bannerPath == null && location.isNotEmpty) ...[
           const SizedBox(height: 2),
           Text(location, style: theme.textTheme.titleSmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
@@ -909,27 +970,109 @@ class _DestinationHeader extends StatelessWidget {
           spacing: 6,
           runSpacing: 6,
           children: [
-            if (destination.visited)
+            if (_destination.visited)
               const _HeaderChip(
                   icon: Icons.check_circle_outline,
                   label: 'Visited',
                   tone: _HeaderChipTone.positive),
-            if (destination.favourite)
+            if (_destination.favourite)
               const _HeaderChip(
                   icon: Icons.star_outline,
                   label: 'Favourite',
                   tone: _HeaderChipTone.accent),
-            if (profile.reviewsCount != null)
+            if (widget.profile.reviewsCount != null)
               _HeaderChip(
                   icon: Icons.reviews_outlined,
-                  label: '${profile.reviewsCount}/10 reviews'),
-            if (destination.prioInt != null)
+                  label: '${widget.profile.reviewsCount}/10 reviews'),
+            if (_destination.prioInt != null)
               _HeaderChip(
                   icon: Icons.priority_high_outlined,
-                  label: 'Prio ${destination.prioInt}'),
+                  label: 'Prio ${_destination.prioInt}'),
           ],
         ),
       ],
+    );
+  }
+}
+
+/// The banner photo: the image, a darkening scrim, and
+/// the destination name over the bottom. The panoramic
+/// crop the legacy performs with PIL is achieved here
+/// with a fixed height and `BoxFit.cover` — no image
+/// library is needed. A file that vanished between the
+/// match and the paint falls back to a tinted panel so
+/// the overlay stays readable.
+class _BannerPhoto extends StatelessWidget {
+  final String path;
+  final String name;
+  final String location;
+
+  const _BannerPhoto({
+    required this.path,
+    required this.name,
+    required this.location,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        height: 200,
+        width: double.infinity,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.file(
+              File(path),
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stack) =>
+                  ColoredBox(color: theme.colorScheme.surfaceContainerHighest),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.6),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 12,
+              child: IgnorePointer(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      name,
+                      style: theme.textTheme.headlineSmall
+                          ?.copyWith(color: Colors.white),
+                    ),
+                    if (location.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        location,
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(color: Colors.white70),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
