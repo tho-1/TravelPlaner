@@ -42,17 +42,28 @@ class Windows {
   final int saturdayReturnAfter;
   final int mondayReturnBefore;
 
+  /// The legacy's "Limit Sunday returns too" bound:
+  /// null means any Sunday return counts (the
+  /// default), a value means the return must land
+  /// by then.
+  final int? sundayReturnUntil;
+
   const Windows({
     this.fridayFrom = 14 * 60,
     this.saturdayBefore = 12 * 60,
     this.saturdayReturnAfter = 12 * 60,
     this.mondayReturnBefore = 9 * 60,
+    this.sundayReturnUntil,
   });
 
-  String describe() =>
-      'out: Fri from ${_hm(fridayFrom)} or Sat before ${_hm(saturdayBefore)} '
-      '· back: Sat after ${_hm(saturdayReturnAfter)}, Sun any time, or Mon '
-      'before ${_hm(mondayReturnBefore)}';
+  String describe() {
+    final sunday = sundayReturnUntil == null
+        ? 'any time'
+        : 'before ${_hm(sundayReturnUntil!)}';
+    return 'out: Fri from ${_hm(fridayFrom)} or Sat before ${_hm(saturdayBefore)} '
+        '· back: Sat after ${_hm(saturdayReturnAfter)}, Sun $sunday, or Mon '
+        'before ${_hm(mondayReturnBefore)}';
+  }
 
   static String _hm(int minutes) =>
       '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
@@ -213,7 +224,12 @@ bool isReturnCandidate(Flight flight, Weekend weekend, Windows windows) {
   if (_sameDay(arr, weekend.saturday)) {
     return _minutesOfDay(arr) >= windows.saturdayReturnAfter;
   }
-  if (_sameDay(arr, weekend.sunday)) return true;
+  if (_sameDay(arr, weekend.sunday)) {
+    // The legacy's "Limit Sunday returns too": off
+    // (null) means any Sunday return counts.
+    final until = windows.sundayReturnUntil;
+    return until == null || _minutesOfDay(arr) <= until;
+  }
   if (_sameDay(arr, weekend.monday)) {
     return _minutesOfDay(arr) < windows.mondayReturnBefore;
   }

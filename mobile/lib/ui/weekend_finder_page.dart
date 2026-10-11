@@ -48,6 +48,10 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   Windows _windows = const Windows();
   var _catalogueFirst = true;
 
+  /// The legacy's "Limit Sunday returns too": off
+  /// means any Sunday return counts.
+  var _limitSundayReturns = false;
+
   WeekendSearch? _result;
   List<Destination> _catalogue = const <Destination>[];
   var _searching = false;
@@ -227,6 +231,20 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                 }),
               ],
             ),
+            const SizedBox(height: 4),
+            SwitchListTile(
+              title: const Text('Limit Sunday returns too'),
+              subtitle: Text(_limitSundayReturns
+                  ? 'Sunday returns must land by 20:00.'
+                  : 'Any Sunday return counts.'),
+              value: _limitSundayReturns,
+              onChanged: (value) => setState(() {
+                _limitSundayReturns = value;
+                _windows = _copyWindows(
+                    sundayReturnUntil: value ? 20 * 60 : null);
+              }),
+              contentPadding: EdgeInsets.zero,
+            ),
           ],
         ),
       ),
@@ -238,6 +256,7 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     int? saturdayBefore,
     int? saturdayReturnAfter,
     int? mondayReturnBefore,
+    int? sundayReturnUntil,
   }) =>
       Windows(
         fridayFrom: fridayFrom ?? _windows.fridayFrom,
@@ -245,6 +264,8 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
         saturdayReturnAfter:
             saturdayReturnAfter ?? _windows.saturdayReturnAfter,
         mondayReturnBefore: mondayReturnBefore ?? _windows.mondayReturnBefore,
+        sundayReturnUntil:
+            sundayReturnUntil ?? _windows.sundayReturnUntil,
       );
 
   Widget _boundChip(String label, int value, ValueChanged<int> onChanged) {
@@ -271,8 +292,23 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Airlines with benefits',
-                style: Theme.of(context).textTheme.titleSmall),
+            Row(
+              children: [
+                Expanded(
+                  child: Text('Airlines with benefits',
+                      style: Theme.of(context).textTheme.titleSmall),
+                ),
+                // The legacy's re-read: the Dart side
+                // holds no cache, so a re-read is a
+                // fresh fetch of the same query.
+                if (!_loadingBenefits)
+                  IconButton(
+                    icon: const Icon(Icons.refresh_outlined, size: 20),
+                    tooltip: 'Re-read the benefits database',
+                    onPressed: _loadBenefits,
+                  ),
+              ],
+            ),
             const SizedBox(height: 4),
             if (_loadingBenefits)
               const Text('Reading the benefits database…')

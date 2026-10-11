@@ -234,4 +234,78 @@ void main() {
     await scrollTo(tester, find.text('A hill town of towers.'));
     expect(find.text('A hill town of towers.'), findsOneWidget);
   });
+
+  testWidgets('the research flag toggles', (tester) async {
+    var writes = 0;
+    final fake = FakeTurso((statements) {
+      final statement = statements.single;
+      if (statement.startsWith('SELECT')) {
+        return okRows(['destination', 'data'], [
+          ['Alexandria', jsonEncode(const [])],
+        ]);
+      }
+      writes++;
+      return okEmpty();
+    });
+    final repository = repositoryFor(fake);
+
+    await tester.pumpWidget(MaterialApp(
+      home: DestinationPage(repository: repository, destination: alexandria()),
+    ));
+    await tester.pumpAndSettle();
+
+    // The chip is a toggle: off -> on writes the flag.
+    await scrollTo(tester, find.widgetWithText(FilterChip, 'Researched'));
+    await tester.tap(find.widgetWithText(FilterChip, 'Researched'));
+    await tester.pumpAndSettle();
+
+    expect(writes, greaterThanOrEqualTo(1));
+    expect(find.text('Saved'), findsOneWidget);
+  });
+
+  testWidgets('clearing a comment asks before deleting it',
+      (tester) async {
+    var writes = 0;
+    final fake = FakeTurso((statements) {
+      final statement = statements.single;
+      if (statement.startsWith('SELECT')) {
+        return okRows(['destination', 'data'], [
+          ['Alexandria', jsonEncode([['Comment', 'old']])],
+        ]);
+      }
+      writes++;
+      return okEmpty();
+    });
+    final repository = repositoryFor(fake);
+
+    await tester.pumpWidget(MaterialApp(
+      home: DestinationPage(repository: repository, destination: alexandria()),
+    ));
+    await tester.pumpAndSettle();
+
+    // Empty the box and save: the legacy asks first.
+    await scrollTo(tester, find.byType(TextField));
+    await tester.enterText(find.byType(TextField), '');
+    await scrollTo(tester, find.widgetWithIcon(FilledButton, Icons.save_outlined));
+    await tester.tap(find.widgetWithIcon(FilledButton, Icons.save_outlined));
+    await tester.pumpAndSettle();
+
+    // The confirmation dialog, not a silent delete.
+    expect(find.text('Delete the comment?'), findsOneWidget);
+    expect(writes, 0);
+
+    // "Keep it" leaves the comment alone.
+    await tester.tap(find.text('Keep it'));
+    await tester.pumpAndSettle();
+    expect(writes, 0);
+
+    // Saving empty again, then confirming, deletes it.
+    await tester.enterText(find.byType(TextField), '');
+    await tester.tap(find.widgetWithIcon(FilledButton, Icons.save_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Yes, delete it'));
+    await tester.pumpAndSettle();
+    expect(writes, greaterThanOrEqualTo(1));
+    expect(find.text('Saved'), findsOneWidget);
+  });
 }

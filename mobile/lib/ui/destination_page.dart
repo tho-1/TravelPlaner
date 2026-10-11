@@ -177,6 +177,45 @@ class _DestinationPageState extends State<DestinationPage> {
     if (value != null) _update('prio', value);
   }
 
+  /// Save the comment box. An empty box over an
+  /// existing comment is a delete, and the legacy
+  /// made that explicit — so it asks first instead
+  /// of losing the text to a stray select-all.
+  Future<void> _saveComment() async {
+    final typed = _comment.text.trim();
+    if (typed.isEmpty &&
+        _dest.comment != null &&
+        _dest.comment!.trim().isNotEmpty) {
+      await _confirmDeleteComment();
+      return;
+    }
+    _update('comment', typed);
+  }
+
+  Future<void> _confirmDeleteComment() async {
+    final delete = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete the comment?'),
+        content: const Text('This will delete the saved comment.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Keep it'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes, delete it'),
+          ),
+        ],
+      ),
+    );
+    if (delete == true) {
+      _comment.clear();
+      _update('comment', null);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final dest = _dest;
@@ -199,14 +238,6 @@ class _DestinationPageState extends State<DestinationPage> {
               ),
             ],
             const SizedBox(height: 12),
-            if (dest.toBeResearched)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.help_outline),
-                title: const Text('Marked for research'),
-                subtitle: const Text(
-                    'This destination is still on the research list.'),
-              ),
             Wrap(
               spacing: 8,
               runSpacing: 4,
@@ -226,6 +257,20 @@ class _DestinationPageState extends State<DestinationPage> {
                   label: const Text('Favourite'),
                   selected: dest.favourite,
                   onSelected: (value) => _update('favourite', value),
+                ),
+                // The legacy header's research button: a
+                // toggle, not a static note — the ❔/❓
+                // button that marks the row as researched.
+                FilterChip(
+                  avatar: Icon(dest.toBeResearched
+                      ? Icons.help_outline
+                      : Icons.help_outline_outlined),
+                  label: Text(dest.toBeResearched
+                      ? 'Needs research'
+                      : 'Researched'),
+                  selected: dest.toBeResearched,
+                  onSelected: (value) =>
+                      _update('to_be_researched', value),
                 ),
                 ActionChip(
                   avatar: const Icon(Icons.priority_high_outlined),
@@ -249,15 +294,28 @@ class _DestinationPageState extends State<DestinationPage> {
               ),
             ),
             const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.icon(
-                icon: const Icon(Icons.save_outlined),
-                label: const Text('Save comment'),
-                onPressed: _busy
-                    ? null
-                    : () => _update('comment', _comment.text.trim()),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                // The legacy's explicit delete: saving an
+                // empty box over an existing comment asks
+                // first — one stray select-all + Save
+                // used to lose the text outright.
+                if (_dest.comment != null &&
+                    _dest.comment!.trim().isNotEmpty)
+                  TextButton(
+                    onPressed: _busy ? null : _confirmDeleteComment,
+                    child: const Text('Delete'),
+                  ),
+                const SizedBox(width: 8),
+                FilledButton.icon(
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Save comment'),
+                  onPressed: _busy
+                      ? null
+                      : () => _saveComment(),
+                ),
+              ],
             ),
             const _SectionTitle('Overview'),
             if (_coordinate != null) ...[

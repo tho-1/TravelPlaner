@@ -10,8 +10,11 @@ import '../data/ai_config.dart';
 import '../data/deepseek_client.dart';
 import '../data/destination_repository.dart';
 import '../data/ai_populator.dart';
+import '../models/catalogue_filters.dart';
 import '../models/destination.dart';
+import '../models/destination_profile.dart';
 import 'destination_page.dart';
+import 'filter_sheet.dart';
 
 class CataloguePage extends StatefulWidget {
   final DestinationRepository repository;
@@ -25,7 +28,11 @@ class CataloguePage extends StatefulWidget {
 class _CataloguePageState extends State<CataloguePage> {
   late Future<(List<Destination>, List<String>)> _future;
   var _query = '';
-  var _filter = _CatalogueFilter.all;
+  var _quick = _QuickFilter.all;
+
+  /// The shared filter set — the same model the map
+  /// uses, so the two pages can never drift.
+  CatalogueFilters _filters = CatalogueFilters.initial();
 
   @override
   void initState() {
@@ -37,6 +44,17 @@ class _CataloguePageState extends State<CataloguePage> {
     setState(() {
       _future = widget.repository.loadDestinations();
     });
+  }
+
+  Future<void> _openFilters() async {
+    final (destinations, problems) = await _future;
+    if (!mounted || problems.isNotEmpty) return;
+    await openCatalogueFilterSheet(
+      context,
+      value: _filters,
+      destinations: destinations,
+      onChanged: (filters) => setState(() => _filters = filters),
+    );
   }
 
   /// Add a new destination: a placeholder, optionally
@@ -160,6 +178,14 @@ class _CataloguePageState extends State<CataloguePage> {
         title: const Text('Catalogue'),
         actions: [
           IconButton(
+            icon: Badge(
+              isLabelVisible: _filters.isActive,
+              child: const Icon(Icons.filter_list),
+            ),
+            tooltip: 'Filters',
+            onPressed: _openFilters,
+          ),
+          IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Add a destination',
             onPressed: _addDestination,
@@ -186,15 +212,15 @@ class _CataloguePageState extends State<CataloguePage> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Row(
               children: [
-                for (final filter in _CatalogueFilter.values)
+                for (final quick in _QuickFilter.values)
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ChoiceChip(
-                      label: Text(filter.label),
-                      avatar: Icon(filter.icon, size: 18),
-                      selected: _filter == filter,
+                      label: Text(quick.label),
+                      avatar: Icon(quick.icon, size: 18),
+                      selected: _quick == quick,
                       onSelected: (_) =>
-                          setState(() => _filter = filter),
+                          setState(() => _quick = quick),
                     ),
                   ),
               ],
@@ -225,9 +251,16 @@ class _CataloguePageState extends State<CataloguePage> {
                               .contains(needle))
                         dest,
                   ];
+                  // The shared filter set, then the quick
+                  // chip on top of it.
+                  final outcome = applyCatalogueFilters(
+                    matches,
+                    _filters,
+                    (dest) => DestinationProfile.from(dest),
+                  );
                   final filtered = [
-                    for (final dest in matches)
-                      if (_filter.accepts(dest)) dest,
+                    for (final dest in outcome.kept)
+                      if (_quick.accepts(dest)) dest,
                   ];
                   if (filtered.isEmpty) {
                     // Never an ambiguous "no results": say whether
@@ -256,7 +289,7 @@ class _CataloguePageState extends State<CataloguePage> {
                                     ? 'The database holds no destinations.'
                                     : matches.isEmpty
                                         ? 'No destination matches "$_query".'
-                                        : 'No ${_filter.label.toLowerCase()} '
+                                        : 'No ${_quick.label.toLowerCase()} '
                                             'destination matches '
                                             '"$_query" (${matches.length} '
                                             'matched before the filter).',
@@ -278,7 +311,7 @@ class _CataloguePageState extends State<CataloguePage> {
                           padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                           child: Text(
                             '${filtered.length} of ${destinations.length} '
-                            'destinations',
+                            'destinations. ${outcome.missingCaption}',
                             style: Theme.of(context)
                                 .textTheme
                                 .labelSmall
@@ -341,7 +374,9 @@ class _CataloguePageState extends State<CataloguePage> {
 
 /// The catalogue's quick filters. A filter that empties the
 /// list says so in the empty state, like every other one.
-enum _CatalogueFilter {
+/// These are presets on top of the shared [CatalogueFilters]
+/// — the legacy panel itself is the filter sheet.
+enum _QuickFilter {
   all('All', Icons.public_outlined),
   visited('Visited', Icons.check_circle_outline),
   favourites('Favourites', Icons.star_outline),
@@ -349,17 +384,17 @@ enum _CatalogueFilter {
 
   final String label;
   final IconData icon;
-  const _CatalogueFilter(this.label, this.icon);
+  const _QuickFilter(this.label, this.icon);
 
   bool accepts(Destination destination) {
     switch (this) {
-      case _CatalogueFilter.all:
+      case _QuickFilter.all:
         return true;
-      case _CatalogueFilter.visited:
+      case _QuickFilter.visited:
         return destination.visited;
-      case _CatalogueFilter.favourites:
+      case _QuickFilter.favourites:
         return destination.favourite;
-      case _CatalogueFilter.research:
+      case _QuickFilter.research:
         return destination.toBeResearched;
     }
   }

@@ -166,6 +166,38 @@ void main() {
         isFalse,
       );
     });
+
+    test('the Sunday bound applies only when it is set', () {
+      // Off (the default): any Sunday return counts.
+      expect(
+        isReturnCandidate(
+            back(departure: sunday.add(const Duration(hours: 23))),
+            weekend,
+            windows),
+        isTrue,
+      );
+      // On: the return must land by the bound. The
+      // `back()` fixture lands two hours after it
+      // departs, so the departure times below land at
+      // 19:00 and 21:00.
+      final limited =
+          const Windows(sundayReturnUntil: 20 * 60);
+      expect(limited.describe(), contains('Sun before 20:00'));
+      expect(
+        isReturnCandidate(
+            back(departure: sunday.add(const Duration(hours: 17))),
+            weekend,
+            limited),
+        isTrue,
+      );
+      expect(
+        isReturnCandidate(
+            back(departure: sunday.add(const Duration(hours: 19))),
+            weekend,
+            limited),
+        isFalse,
+      );
+    });
   });
 
   group('nights', () {

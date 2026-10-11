@@ -592,6 +592,37 @@ check: 62 catalogue countries, all 62 now resolve a fill.
 
 ---
 
+## 0d. Parity session 2026-10-11 (3) - the quick wins
+
+The next batch from the gap plan, each verified before the commit:
+
+* **The catalogue's filter panel** (`catalogue_page.dart`). The catalogue
+  now opens the *same* filter sheet the map opens — one model, two pages —
+  with the quick chips (All/Visited/Favourites/To research) stacking on
+  top of it. The count caption reports the missing-value counts, and the
+  empty state still says whether the database, the search or the filter
+  emptied the list.
+* **The detail page's research toggle and comment delete**
+  (`destination_page.dart`). The static "Marked for research" note became
+  the legacy header's ❔/❓ toggle (`to_be_researched`), and clearing the
+  comment box over an existing comment now asks first ("Delete the
+  comment?" / "Keep it") — the legacy made that explicit because a stray
+  select-all + Save used to lose the text outright.
+* **The finder's Sunday bound** (`weekend_match.dart`,
+  `weekend_finder_page.dart`). The legacy's "Limit Sunday returns too"
+  checkbox: off (the default) means any Sunday return counts, on means the
+  return must land by 20:00. The `Windows` model gained
+  `sundayReturnUntil` and the matcher applies it — previously the Dart
+  port always accepted any Sunday return, which was only correct for the
+  default.
+* **The benefits re-read** (`weekend_finder_page.dart`). The legacy's
+  "Re-read the benefits database" button: the Dart side holds no cache,
+  so a re-read is a fresh fetch of the same query.
+
+The mobile suite is 188 tests; `flutter analyze` clean.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)
