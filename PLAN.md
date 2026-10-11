@@ -676,6 +676,33 @@ The mobile suite is 210 tests; `flutter analyze` clean.
 
 ---
 
+## 0f. Parity session 2026-10-11 (5) - the responsive shell (A1)
+
+The app shell is now responsive (`main.dart`). On a window
+wider than 600 px the four tabs move from the bottom bar to a
+`NavigationRail` on the left, and the content is constrained to
+a centred 1100-px column — a travel catalogue reads best in a
+column, not edge-to-edge, and the rail already owns the left of
+the window. Below 600 px (phones) the bottom `NavigationBar`
+is unchanged. The rail and the bar share one destination list,
+so the two layouts cannot drift apart.
+
+**A test-harness bug surfaced while verifying this.** The
+screens suite set the phone width with
+`binding.setSurfaceSize(...)`, which Flutter 3.47 deprecated
+into a **no-op** — so every "phone-width" test in the suite
+had actually been rendering at the 800×600 default, and the
+layout bugs the suite exists to catch would not have shown up.
+The harness now sets the view size directly
+(`tester.view.physicalSize` + `devicePixelRatio`, with a
+tearDown reset), which is the supported API. The suite was
+re-run green at the *real* phone width — no page overflowed,
+which is itself the verification the suite was written for.
+
+The mobile suite is 214 tests; `flutter analyze` clean.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

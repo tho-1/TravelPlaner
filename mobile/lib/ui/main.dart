@@ -96,6 +96,66 @@ class _HomeShellState extends State<HomeShell> {
   late final BenefitsRepository benefits;
   var _tab = 0;
 
+  /// The width at which the shell switches from the
+  /// phone bottom bar to the desktop side rail — the
+  /// Material compact/medium boundary.
+  static const _wideBreakpoint = 600.0;
+
+  /// The desktop content is constrained and centred: a
+  /// travel catalogue reads best in a column, not
+  /// edge-to-edge, and the rail already owns the left
+  /// of the window.
+  static const _contentMaxWidth = 1100.0;
+
+  static const _destinations = [
+    NavigationDestination(
+      icon: Icon(Icons.public_outlined),
+      selectedIcon: Icon(Icons.public),
+      label: 'Catalogue',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.luggage_outlined),
+      selectedIcon: Icon(Icons.luggage),
+      label: 'Trips',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.travel_explore_outlined),
+      selectedIcon: Icon(Icons.travel_explore),
+      label: 'Finder',
+    ),
+    NavigationDestination(
+      icon: Icon(Icons.map_outlined),
+      selectedIcon: Icon(Icons.map),
+      label: 'Map',
+    ),
+  ];
+
+  /// The rail's destinations are a different
+  /// widget type than the bottom bar's, the same
+  /// four tabs.
+  static const _railDestinations = [
+    NavigationRailDestination(
+      icon: Icon(Icons.public_outlined),
+      selectedIcon: Icon(Icons.public),
+      label: Text('Catalogue'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.luggage_outlined),
+      selectedIcon: Icon(Icons.luggage),
+      label: Text('Trips'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.travel_explore_outlined),
+      selectedIcon: Icon(Icons.travel_explore),
+      label: Text('Finder'),
+    ),
+    NavigationRailDestination(
+      icon: Icon(Icons.map_outlined),
+      selectedIcon: Icon(Icons.map),
+      label: Text('Map'),
+    ),
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -107,42 +167,49 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    final wide =
+        MediaQuery.sizeOf(context).width >= _wideBreakpoint;
+    final pages = IndexedStack(
+      index: _tab,
+      children: [
+        CataloguePage(repository: destinations),
+        TripsPage(repository: trips),
+        WeekendFinderPage(benefits: benefits, destinations: destinations),
+        WorldMapPage(repository: destinations),
+      ],
+    );
     return Scaffold(
-      body: IndexedStack(
-        index: _tab,
-        children: [
-          CataloguePage(repository: destinations),
-          TripsPage(repository: trips),
-          WeekendFinderPage(benefits: benefits, destinations: destinations),
-          WorldMapPage(repository: destinations),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (index) => setState(() => _tab = index),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.public_outlined),
-            selectedIcon: Icon(Icons.public),
-            label: 'Catalogue',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.luggage_outlined),
-            selectedIcon: Icon(Icons.luggage),
-            label: 'Trips',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.travel_explore_outlined),
-            selectedIcon: Icon(Icons.travel_explore),
-            label: 'Finder',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.map_outlined),
-            selectedIcon: Icon(Icons.map),
-            label: 'Map',
-          ),
-        ],
-      ),
+      body: wide
+          ? Row(
+              children: [
+                NavigationRail(
+                  selectedIndex: _tab,
+                  onDestinationSelected: (index) =>
+                      setState(() => _tab = index),
+                  destinations: _railDestinations,
+                  labelType: NavigationRailLabelType.all,
+                ),
+                const VerticalDivider(thickness: 1, width: 1),
+                Expanded(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                          maxWidth: _contentMaxWidth),
+                      child: pages,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          : pages,
+      bottomNavigationBar: wide
+          ? null
+          : NavigationBar(
+              selectedIndex: _tab,
+              onDestinationSelected: (index) =>
+                  setState(() => _tab = index),
+              destinations: _destinations,
+            ),
     );
   }
 }

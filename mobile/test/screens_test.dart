@@ -36,13 +36,13 @@ import 'destination_page_test.dart' show alexandria;
 const _phone = Size(420, 1100);
 
 void main() {
-  final binding = TestWidgetsFlutterBinding.ensureInitialized();
+  TestWidgetsFlutterBinding.ensureInitialized();
 
   /// Render one screen at phone width and assert the
   /// framework threw nothing (a render overflow is an
   /// exception, not a silent clip).
   Future<void> render(WidgetTester tester, Widget screen) async {
-    await binding.setSurfaceSize(_phone);
+    _setSurface(tester, _phone);
     await tester.pumpWidget(MaterialApp(
       theme: _themeFor(),
       darkTheme: _themeFor(brightness: Brightness.dark),
@@ -194,7 +194,7 @@ void main() {
   });
 
   testWidgets('the app shell renders all tabs', (tester) async {
-    await binding.setSurfaceSize(_phone);
+    _setSurface(tester, _phone);
     // The shell builds its own repository from the config,
     // so in a test itsTurso calls answer with the test
     // binding's 400 -- the pages then render their problem
@@ -207,10 +207,29 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.byType(NavigationRail), findsNothing);
     // The tab label and the app bar share the word.
     expect(find.text('Catalogue'), findsWidgets);
     expect(find.text('Map'), findsWidgets);
     expect(find.text('Finder'), findsWidgets);
+  });
+
+  testWidgets('the shell switches to the rail on wide windows',
+      (tester) async {
+    _setSurface(tester, const Size(1200, 900));
+    await tester.pumpWidget(MaterialApp(
+      theme: _themeFor(),
+      darkTheme: _themeFor(brightness: Brightness.dark),
+      home: const HomeShell(config: _config),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    // The desktop layout: a side rail, no bottom bar,
+    // and the content constrained to a column.
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('Catalogue'), findsWidgets);
+    expect(find.text('Map'), findsWidgets);
   });
 }
 
@@ -227,3 +246,18 @@ ThemeData _themeFor({Brightness brightness = Brightness.light}) =>
         brightness: brightness,
       ),
     );
+
+/// Set the test surface to [size]. The old
+/// `binding.setSurfaceSize` is deprecated and a
+/// no-op in this Flutter version, so the view's
+/// physical size is set directly — without this,
+/// every "phone-width" test here would actually
+/// render at the 800x600 default.
+void _setSurface(WidgetTester tester, Size size) {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(() {
+    tester.view.physicalSize = const Size(800, 600);
+    tester.view.devicePixelRatio = 1.0;
+  });
+}
