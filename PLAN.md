@@ -764,6 +764,53 @@ analyze` clean.
 
 ---
 
+## 0i. Parity session 2026-10-11 (8) - the gallery cache (D4, read half)
+
+The destination page now shows the photo gallery
+the legacy app populated, read straight from the
+`Pictures/` caches the desktop already holds.
+Both providers persist a per-destination folder —
+Unsplash in `gallery/<slug>/`, DuckDuckGo in
+`gallery_ddg/<slug>/` — each with a
+`metadata.json` sidecar. The folder names and
+the slug (lowercase, accents folded, runs to
+`-`) are ported as a pure module
+(`data/gallery_cache.dart`), and the sidecar is
+parsed into one `GalleryEntry` shape whatever
+the provider: the caption is the photographer
+(Unsplash) or the search title (DuckDuckGo).
+The I/O half (`data/gallery_repository.dart`)
+reads the cache with `dart:io`, trying the
+Unsplash folder first, and re-attaches a stale
+absolute image path to the file's name inside
+the cache folder — the same defensive step the
+legacy takes when a sidecar outlives the
+machine that wrote it.
+
+The gallery renders as a wrap of 220-px images
+with their captions, the panoramic crop the
+legacy performs with PIL achieved by a fixed
+`AspectRatio` and `BoxFit.cover`. The per-photo
+Replace button is not ported yet (that is the
+fetch half, D4's second commit); the grid is
+read-only for now.
+
+Like the banner, the gallery is a per-machine
+path (`pictures_dir`), so on the phone it stays
+empty — a missing cache is a normal state, never
+a crash, and the `DestinationPage.picturesDir`
+seam the banner added carries the gallery too.
+The rendering (an `Image.file`) is not
+widget-tested for the same reason as the banner:
+a real image load does not settle under the test
+fake clock. The matching is covered by
+`gallery_cache_test.dart` (7 tests, pure) and
+`gallery_repository_test.dart` (6 tests, real
+I/O in a plain test). The mobile suite is 248
+tests; `flutter analyze` clean.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

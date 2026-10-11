@@ -19,6 +19,8 @@ import '../data/ai_populator.dart';
 import '../data/city_coordinates.dart';
 import '../data/deepseek_client.dart';
 import '../data/destination_repository.dart';
+import '../data/gallery_cache.dart';
+import '../data/gallery_repository.dart';
 import '../data/photo_repository.dart';
 import '../models/destination.dart';
 import '../models/destination_profile.dart';
@@ -376,6 +378,8 @@ class _DestinationPageState extends State<DestinationPage> {
             _BestMonths(profile: profile),
             const _SectionTitle('Climate'),
             _ClimateSection(profile: profile),
+            _GallerySection(
+                destinationName: dest.name, picturesDir: widget.picturesDir),
           ],
         ),
       ),
@@ -1324,6 +1328,113 @@ class _FactCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The photo gallery: the cached photos the
+/// legacy app populated under `Pictures/`,
+/// shown as a wrap of images with their
+/// captions. The photos load from disk, so
+/// the section stays empty until the cache
+/// is read; a destination with no cache
+/// shows nothing, the same "no data" the
+/// legacy treats a missing gallery as.
+///
+/// The per-photo replace button the legacy
+/// offers is not ported yet — the grid is
+/// read-only for now.
+class _GallerySection extends StatefulWidget {
+  final String destinationName;
+  final String? picturesDir;
+
+  const _GallerySection({
+    required this.destinationName,
+    this.picturesDir,
+  });
+
+  @override
+  State<_GallerySection> createState() => _GallerySectionState();
+}
+
+class _GallerySectionState extends State<_GallerySection> {
+  List<GalleryEntry>? _entries;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  /// The gallery is a per-machine cache the
+  /// app cannot assume exists; a missing
+  /// folder or cache is a normal state (the
+  /// section stays empty), never a crash.
+  Future<void> _load() async {
+    final dir =
+        widget.picturesDir ?? (await TursoConfig.load()).picturesDir;
+    if (dir.trim().isEmpty) return;
+    final entries =
+        await GalleryRepository(dir).load(widget.destinationName);
+    if (mounted && entries != null && entries.isNotEmpty) {
+      setState(() => _entries = entries);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final entries = _entries;
+    if (entries == null || entries.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionTitle('Gallery'),
+        Text(
+          'Photos from DuckDuckGo & Unsplash.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final entry in entries)
+              SizedBox(
+                width: 220,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    AspectRatio(
+                      aspectRatio: 3 / 2,
+                      child: Image.file(
+                        File(entry.imagePath),
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stack) =>
+                            ColoredBox(
+                          color: theme
+                              .colorScheme.surfaceContainerHighest,
+                        ),
+                      ),
+                    ),
+                    if (entry.caption.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          entry.caption,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }
