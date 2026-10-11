@@ -144,10 +144,13 @@ shows the profile sections the Streamlit page shows (overview,
 highlights, logistics, food, best months,
 climate - the temperature/rainfall chart with the rainy-day
 counts, the four-series AQI profile with the severity bands,
-and the IQAir PM2.5 history table) plus a mini-map; a
+and the IQAir PM2.5 history table) plus a mini-map, a banner
+photo and a photo gallery read from the PC's `Pictures/`
+caches (per-device, so both stay empty on the phone); a
 placeholder can be filled with the **AI populate** (DeepSeek)
+and blank food notes with the **food populate**, both
 once `deepseek_api_key` sits in the same config
-file - without the key the button is simply not offered, exactly like
+file - without the key the buttons are simply not offered, exactly like
 the legacy pages behave. The IQAir table reads the local
 ranking snapshot (`iqair_cache/world_cities.json`, the path
 from `iqair_snapshot` in the config) - a per-device file like

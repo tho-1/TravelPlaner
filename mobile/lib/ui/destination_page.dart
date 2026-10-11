@@ -19,6 +19,7 @@ import '../data/ai_populator.dart';
 import '../data/city_coordinates.dart';
 import '../data/deepseek_client.dart';
 import '../data/destination_repository.dart';
+import '../data/food_populator.dart';
 import '../data/gallery_cache.dart';
 import '../data/gallery_repository.dart';
 import '../data/photo_repository.dart';
@@ -72,6 +73,7 @@ class _DestinationPageState extends State<DestinationPage> {
   CityCoordinate? _coordinate;
   var _busy = false;
   var _populating = false;
+  var _populatingFood = false;
   var _aiConfigured = false;
 
   @override
@@ -129,6 +131,45 @@ class _DestinationPageState extends State<DestinationPage> {
     } on DeepSeekError catch (error) {
       if (!mounted) return;
       setState(() => _populating = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(error.message),
+      ));
+    }
+  }
+
+  /// The food populate: ask DeepSeek for the food
+  /// profile, apply it, save once. Offered only
+  /// while the food columns are blank -- the legacy
+  /// shows the button only then. Failure is a
+  /// message, never a crash.
+  Future<void> _populateFood() async {
+    setState(() => _populatingFood = true);
+    final client = widget.aiClient ??
+        DeepSeekClient(widget.aiConfig ?? await AiConfig.load());
+    try {
+      final food = await client.generateFoodProfile(
+        destination: _dest.name,
+        country: _dest.country ?? '',
+      );
+      final updated = FoodPopulator(_dest).apply(food);
+      final ok = await widget.repository.saveDestination(updated);
+      if (!mounted) return;
+      setState(() {
+        _populatingFood = false;
+        if (ok) {
+          _dest = updated;
+          _profile = DestinationProfile.from(updated);
+        }
+      });
+      if (ok) widget.onChanged?.call();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(ok
+            ? 'Food information saved'
+            : 'The food profile was generated but nothing was written.'),
+      ));
+    } on DeepSeekError catch (error) {
+      if (!mounted) return;
+      setState(() => _populatingFood = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(error.message),
       ));
@@ -373,7 +414,11 @@ class _DestinationPageState extends State<DestinationPage> {
             if (profile.hasFood)
               _FoodSection(profile: profile)
             else
-              const Text('No food notes yet.'),
+              _FoodEmpty(
+                aiConfigured: _aiConfigured,
+                populating: _populatingFood,
+                onPopulate: _populatingFood ? null : _populateFood,
+              ),
             const _SectionTitle('Best months'),
             _BestMonths(profile: profile),
             const _SectionTitle('Climate'),
@@ -490,6 +535,51 @@ class _FoodSection extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _LabelledText('Description', profile.foodDescription),
+      ],
+    );
+  }
+}
+
+/// The empty food section: the legacy shows the
+/// "Populate Food with DeepSeek AI" button only
+/// while the food columns are blank -- it is the
+/// only way to fill them, and it disappears once
+/// they are populated. Like the status banner's
+/// populate button, it is offered only when the
+/// DeepSeek key is configured.
+class _FoodEmpty extends StatelessWidget {
+  final bool aiConfigured;
+  final bool populating;
+  final VoidCallback? onPopulate;
+
+  const _FoodEmpty({
+    required this.aiConfigured,
+    required this.populating,
+    required this.onPopulate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('No food notes yet.'),
+        if (aiConfigured) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            icon: populating
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.restaurant_outlined, size: 18),
+            label: Text(populating
+                ? 'Asking DeepSeek…'
+                : 'Populate Food with DeepSeek AI'),
+            onPressed: onPopulate,
+          ),
+        ],
       ],
     );
   }

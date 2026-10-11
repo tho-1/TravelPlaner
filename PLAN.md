@@ -811,6 +811,50 @@ tests; `flutter analyze` clean.
 
 ---
 
+## 0j. Parity session 2026-10-11 (9) - food populate (D6)
+
+The destination page can now fill its food notes
+with DeepSeek — the legacy's "🍜 Populate Food
+with DeepSeek AI", a food-only populate offered
+only while the three Food columns are blank (the
+legacy shows the button only then, and it is the
+only way to fill them).
+
+The request is the legacy's `generate_food_profile`
+ported verbatim: the food system prompt, the food
+user template, the `json_object` payload, and the
+same validation — a non-negative spiciness and a
+description of 5-10 sentences, counted with the
+legacy's own sentence regex. A response the legacy
+would reject is rejected here too. The pure
+parsing and validation (`parseFoodProfile`,
+`countFoodSentences`, `parseFoodDishes`) live in
+the client file next to `extractJson`, and the
+write is a pure `FoodPopulator` that sets the
+three Food columns — `Food - Spicyness` (the
+legacy's spelling, written as a number), `Food -
+Description` and `Food - Main Dishes` (comma-
+joined) — the same read-modify-write the flag
+editors use. Unlike the full populate, the food
+populate does **not** clear the placeholder
+status: only the full populate does.
+
+The button sits where "No food notes yet." was,
+in the food section, and follows the status
+banner's convention: it is offered only when the
+DeepSeek key is configured, shows a spinner while
+asking, and surfaces every failure (no key, no
+network, HTTP error, invalid profile) as a
+SnackBar, never a crash. The full-profile
+populate in the status banner is unchanged.
+
+Covered by `food_populator_test.dart` (14 tests:
+the parsing and validation, the column mapping,
+and the request with a faked API). The mobile
+suite is 262 tests; `flutter analyze` clean.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

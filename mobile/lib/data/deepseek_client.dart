@@ -115,6 +115,34 @@ Rules:
   rules, real safety, real flight times from Frankfurt, Germany).
 """;
 
+/// The food system prompt, ported verbatim from
+/// `deepseek_client.generate_food_profile` -- the
+/// prompt is the project's asset, so it travels
+/// exactly as the legacy sends it.
+const foodSystemPrompt =
+    'You are a precise travel food researcher. Return only valid JSON. '
+    'Write grounded, specific information about local food in the named city.';
+
+/// The food user template (a plain template, not an
+/// interpolation, so the JSON braces survive); the
+/// placeholders are substituted below.
+const foodUserTemplate = '''Describe the local food in __DEST__, __COUNTRY__.
+
+Return exactly this JSON object:
+{
+  "spiciness": number,
+  "dishes": ["Dish 1", "Dish 2", "Dish 3", "Dish 4", "Dish 5"],
+  "description": "one paragraph of 5 to 10 sentences"
+}
+
+Rules:
+- Focus especially on how spicy the local food is and mention representative dishes.
+- Rate spiciness from 0 (not spicy at all) to 10 (Sichuan spicy); values above 10 are allowed.
+- In "dishes", list 4 to 8 representative main dishes named in their local language (using Romanized script/transliteration, e.g. "Masala Dosa", "Ven Pongal", "Chettinad Chicken", "Pad Thai", "Tom Yum Goong", "Ceviche").
+- The description must be one paragraph containing 5 to 10 complete sentences.
+- Discuss the typical local food, not only one restaurant or isolated dish.
+''';
+
 /// Re-exported from the profile parser: the months the
 /// prompt template names, in the workbook's own order.
 final monthsFull = fullMonths;
@@ -186,6 +214,72 @@ class DeepSeekClient {
     }
   }
 
+  /// Ask DeepSeek for the food profile of one destination:
+  /// the spiciness, the description and the main dishes.
+  /// The Dart port of `deepseek_client.generate_food_profile`
+  /// -- the same payload shape and the same validation, so
+  /// a response the legacy would reject is rejected here too.
+  Future<FoodProfile> generateFoodProfile({
+    required String destination,
+    required String country,
+  }) async {
+    if (!config.isConfigured) {
+      throw const DeepSeekError(
+        'The DeepSeek API key is not configured. Add '
+        '"deepseek_api_key" to assets/turso_config.json '
+        '(git-ignored) and try again.',
+      );
+    }
+    final payload = {
+      'model': config.model.isEmpty ? AiConfig.defaultModel : config.model,
+      'messages': [
+        {'role': 'system', 'content': foodSystemPrompt},
+        {
+          'role': 'user',
+          'content': foodUserTemplate
+              .replaceAll('__DEST__', destination.trim())
+              .replaceAll('__COUNTRY__', country.trim()),
+        },
+      ],
+      'response_format': {'type': 'json_object'},
+      'temperature': 0.3,
+    };
+    final http.Response response;
+    try {
+      response = await httpClient
+          .post(
+            Uri.parse(deepseekApiUrl),
+            headers: {
+              'Authorization': 'Bearer ${config.apiKey}',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(payload),
+          )
+          .timeout(requestTimeout);
+    } catch (error) {
+      throw DeepSeekError(
+          'Could not reach the DeepSeek API (${error.runtimeType}).');
+    }
+    if (response.statusCode != 200) {
+      throw DeepSeekError(
+        'DeepSeek API request failed (HTTP ${response.statusCode}): '
+        '${_snippet(response.body)}',
+      );
+    }
+    try {
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      final content = ((data['choices'] as List).first
+          as Map)['message']['content'] as String;
+      return parseFoodProfile(extractJson(content));
+    } on DeepSeekError {
+      // The food validation's own error, not a parse failure.
+      rethrow;
+    } catch (error) {
+      throw DeepSeekError('DeepSeek returned an unparseable response '
+          '(${error.runtimeType}).');
+    }
+  }
+
   static String userPrompt(
       String destination, String country, String continent) {
     return userTemplate
@@ -196,6 +290,84 @@ class DeepSeekClient {
 
   static String _snippet(String body) =>
       body.length <= 300 ? body : body.substring(0, 300);
+}
+
+/// The food profile `generate_food_profile` returns:
+/// the spiciness rating, the description paragraph and
+/// the main dishes in their local language.
+class FoodProfile {
+  final double spiciness;
+  final String description;
+  final List<String> dishes;
+
+  const FoodProfile({
+    required this.spiciness,
+    required this.description,
+    required this.dishes,
+  });
+}
+
+/// Parse and validate the food JSON DeepSeek returned.
+/// Pure, so the validation is testable without the API.
+///
+/// The legacy `generate_food_profile` raises on a
+/// negative spiciness, an empty description or a
+/// description that is not 5-10 sentences; the same
+/// shapes raise [DeepSeekError] here, so a response
+/// the legacy would reject is rejected the same way.
+FoodProfile parseFoodProfile(Map<String, dynamic> json) {
+  final spiciness = _toDouble(json['spiciness']);
+  if (spiciness == null) {
+    throw const DeepSeekError(
+        'DeepSeek returned an invalid food spiciness rating.');
+  }
+  final description = (json['description'] ?? '').toString().trim();
+  final sentenceCount = countFoodSentences(description);
+  if (spiciness < 0 ||
+      description.isEmpty ||
+      sentenceCount < 5 ||
+      sentenceCount > 10) {
+    throw const DeepSeekError(
+        'DeepSeek returned an invalid food profile; expected a '
+        '5-10 sentence paragraph and a non-negative spiciness rating.');
+  }
+  return FoodProfile(
+    spiciness: spiciness,
+    description: description,
+    dishes: parseFoodDishes(json['dishes']),
+  );
+}
+
+/// `re.findall(r"[^.!?]+[.!?](?:\s|$)", description)`
+/// -- the sentence count the legacy validates with.
+int countFoodSentences(String description) =>
+    RegExp(r'[^.!?]+[.!?](?:\s|$)').allMatches(description).length;
+
+/// The dishes: a list, or a comma/semicolon/newline
+/// separated string -- the two shapes the legacy
+/// accepts from the model.
+List<String> parseFoodDishes(Object? raw) {
+  if (raw is String) {
+    return [
+      for (final part in raw.split(RegExp(r'[,;\n]+')))
+        if (part.trim().isNotEmpty) part.trim(),
+    ];
+  }
+  if (raw is List) {
+    return [
+      for (final item in raw)
+        if (item.toString().trim().isNotEmpty) item.toString().trim(),
+    ];
+  }
+  return const [];
+}
+
+/// A number or nothing -- the spiciness arrives as a
+/// JSON number but the model sometimes sends a string.
+double? _toDouble(Object? value) {
+  if (value == null || value is bool) return null;
+  if (value is num) return value.toDouble();
+  return double.tryParse(value.toString());
 }
 
 /// Parse a JSON object out of a chat response. Tolerates
