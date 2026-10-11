@@ -18,18 +18,22 @@ code.
 | `PLAN.md` | the full history: every review finding, every fix, every decision, with dates and commit hashes |
 | `WEEKEND_FINDER_PLAN.md` | the weekend trip finder: spec, status, what is blocked and why |
 | `TURSO_PLAN.md` | the airline-benefits Turso database: access contract, fallback ladder, open items |
-| `NATIVE_HTML_PLAN.md` | the target architecture: move off Streamlit to native desktop + Android on Turso — the decision, the phases, their current status (1–3 done, 4–5 partially, 6 deferred) and the remaining work |
+| `NATIVE_HTML_PLAN.md` | the target architecture: move off Streamlit to native desktop + Android on Turso — the decision, the phases, their current status (1–4 done, 5 at feature parity, 6 deferred) and the remaining work |
 
 ---
 
 ## 1. Sixty-second orientation
 
-* **Status (2026-10-10): the Streamlit version is legacy.** It is
+* **Status (2026-10-11): the Streamlit version is legacy.** It is
   archived as a source of knowledge and as a potential fall-back in
   case the native development does not go as planned. The target
   architecture moves away from Streamlit — a native desktop + Android
-  app on the Turso data layer (`NATIVE_HTML_PLAN.md`; Phase 1, the
-  Turso data layer, is done).
+  app on the Turso data layer. The Flutter app in `mobile/` has
+  reached **feature parity** with the legacy app: catalogue, trips,
+  destination detail, weekend finder, world map and the key-gated AI
+  populate, all ported rule-for-rule from the Streamlit pages and
+  verified against the live database (`NATIVE_HTML_PLAN.md` §11 for
+  the phase table).
 * A personal travel catalogue and trip planner. 144 destinations in an Excel
   workbook, one Streamlit page per destination, a multi-stop itinerary planner,
   and a PC↔phone (Streamlit Cloud) sync that merges instead of overwriting.

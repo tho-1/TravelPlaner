@@ -130,6 +130,23 @@ Credentials come from `mobile/assets/turso_config.json`
 `.streamlit/secrets.toml`). Without the file the app runs
 unconfigured and explains itself instead of crashing.
 
+Four tabs: **Catalogue** (search, filters, add destination, open a
+destination), **Trips** (read-only listing with delete), **Finder**
+(the weekend finder from FRA - the Fraport board plus the benefits
+database) and **Map** (every destination on OpenStreetMap tiles). A
+destination's detail page shows the profile sections the Streamlit
+page shows (overview, highlights, logistics, food, best months,
+climate) plus a mini-map; a placeholder can be filled with the **AI
+populate** (DeepSeek) once `deepseek_api_key` sits in the same config
+file - without the key the button is simply not offered, exactly like
+the legacy pages behave.
+
+The generated assets (`assets/airports.json`,
+`assets/country_names.json`, `assets/city_coordinates.json`) are
+regenerated from the Python modules that own them with
+`python mobile/tools/generate_assets.py` - the documented path, kept
+so a correction reaches both apps.
+
 ## Tests, lint, build
 
 ```powershell

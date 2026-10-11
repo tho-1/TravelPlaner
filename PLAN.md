@@ -498,6 +498,56 @@ tests pass** (501 + 10), `tests/run_all.py --no-pytest` exits 0.
 
 ---
 
+## 0b. Parity session 2026-10-11 - the Flutter app reaches feature parity
+
+What was done, in order, each verified before the commit:
+
+1. **Weekend finder** (`fb90956`). Ported rule for rule: the Fraport board
+   (cursor paging, naive wall-clocks, direct-only, loud shape-change
+   failure, Berlin DST), the benefits ladder (Turso -> seed list, empty read
+   = failure), the matcher (`find_weekends`), the catalogue match, and the UI.
+   The throttle is 1.5s, not the legacy 5s, because a phone search walks ~39
+   requests. Verified live: 644 flights in one Sunday window; the benefits
+   database answered 597 records with the same seven qualifying airlines
+   (CX JL KC LH VL VN ZH).
+2. **Destination detail richness** (`c55d801`). The overview, highlights,
+   logistics, food, best-months chips, climate KPIs and the temperature &
+   rainfall chart, parsed from the same data tail the Streamlit page reads.
+   Verified live against the real Alexandria row: ideal months Mar-Oct,
+   Jun-Aug `bad: very hot and humid`, peak high 31.5C (Aug), wettest 44mm
+   (Jan), average AQI 65 (Moderate) - the same numbers the PC page shows.
+3. **World map + detail mini-map** (`c02008b`). Web Mercator projection,
+   the coordinate lookup contract both Python readers use, the slippy-map
+   mosaic, region presets, a visited/favourites filter, and an offline
+   caption when a tile fails. Verified live: 144/144 destinations resolve;
+   the bundled asset loads; the tile URLs match the scheme.
+4. **AI populate, key-gated** (`80d1f6c`). The DeepSeek client with the legacy
+   prompt verbatim, the review-score arithmetic (the Bayesian platform
+   average), the profile-to-destination write with the legacy field map and
+   its deliberate gaps, and the UI in the status banner and the catalogue
+   add dialog.
+5. **UX pass** (`33379ce`). A theme (teal seed, light + dark), a destination
+   header and fact grid, catalogue filters and count, icon empty states,
+   dated finder chips, map offline caption. Two layout bugs found and fixed:
+   the problem cards overflowed a phone-width card; the fact grid asked a
+   scrolling list for an infinite height. `screens_test.dart` renders every
+   screen at phone width and asserts nothing throws.
+
+Facts worth keeping:
+
+* **`normalize_text` is lossy on both sides** - it drops everything that is
+  not a-z0-9, so `Bogota` reaches the slug `bogot`. A `smarter` accent-folding
+  rewrite of the Dart coordinate index broke 144/144.
+* **`rootBundle` and a live HTTP request cannot share one Flutter test**: the
+  test binding answers every request with **400**, which looks exactly like a
+  server-side bug. Live checks split into a `testWidgets` (assets) and a plain
+  `test` (network).
+* The mobile suite is 158 tests; `flutter analyze` clean; the Windows app is
+  built by CI-adjacent tooling and the exe is a recurring AVG false positive
+  (restore from quarantine + an exclusion for `mobile/build/`).
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

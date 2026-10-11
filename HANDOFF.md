@@ -13,74 +13,72 @@ orientation. Delete this file when the native phases are done.
 | 3 — native HTML frontend | done, committed `2a066fb` | `web/` (index.html, app.js, styles.css, sw.js, manifest) |
 | — benefits credentials bug | fixed, committed `2a066fb` | `benefits_turso.py`, `tests/conftest.py` |
 | 4 — trips runtime cutover | done, committed `7fadbbc` | `itinerary/storage.py`, `tests/test_trips_turso.py` |
-| 5 — Flutter app (desktop + Android) | **code complete and verified — repositories, UI and 31 tests, `flutter analyze` clean (`9693e28`)** | `mobile/` |
+| 5 — Flutter app (desktop + Android) | **parity pushed: weekend finder, destination richness, world map, AI populate, UX pass — `fb90956`, `c55d801`, `c02008b`, `80d1f6c`, `33379ce`** | `mobile/` |
 | 6 — cutover/cleanup | **deferred — do not run** (it would delete the Streamlit fallback the user decided to keep, 2026-10-10) | — |
 
-## What this session added (Phase 5 completion)
+## What the parity session added (2026-10-11)
 
-* `mobile/lib/data/destination_repository.dart` — `loadDestinations()`,
-  `getDestination()` (single-quote escaping, unknown ≠ failed),
-  `updateField()` as the read-modify-write that sets the typed column **and**
-  the matching entry of the lossless `data` tail (the Dart
-  `repository._set_field`), `saveDestination()` (the full
-  `storage_turso.save_destination` upsert).
-* `mobile/lib/data/trip_repository.dart` — `loadTrips()` (the four SELECTs in
-  **one** pipeline request, grouped in Dart), `saveTrip()` (one atomic
-  pipeline: upsert trip → upsert variants → delete + re-insert that
-  variant's stops/legs; stops without an id get one in the
-  `stop-<10 hex>` shape `itinerary.models.new_id` uses), `deleteTrip()`
-  (legs → stops → variants → trip, id escaped).
-* `mobile/lib/ui/` — `main.dart` (config load once, bottom nav
-  Catalogue/Trips, an explicit "not configured" screen),
-  `catalogue_page.dart` (list + text search; empty says whether the
-  database is empty or the search dropped everything),
-  `destination_page.dart` (metrics, visited/favourite/❔ switches, prio
-  dialog, comment editor; a `false` write is surfaced, never reported as
-  success), `trips_page.dart` (trips → variants → stops/legs, trip delete
-  with confirm).
-* `mobile/test/` — `fake_turso.dart` (a scripted pipeline endpoint that
-  captures SQL; built on `MockClient.streaming`, because the plain
-  `MockClient` finalizes the request and a second `finalize()` throws),
-  `pipeline_client_test.dart`, `models_test.dart`,
-  `destination_repository_test.dart`, `trip_repository_test.dart`.
+* **Weekend finder, ported rule for rule**: `mobile/lib/models/timetable.dart`
+  (the Fraport board — cursor paging, naive wall-clocks whose offsets are read
+  and never applied, direct flights only with a missing `stops` kept, a loud
+  failure on a shape change, Berlin DST from the last-Sunday rule),
+  `models/airline_benefits.dart` (yes-only flags, code+name keys,
+  `data/benefits_repository.dart`: benefits Turso → seed list, **an empty read
+  is a failure, never "nobody qualifies"**), `data/weekend_repository.dart`
+  (the five windowed queries; a failed window becomes a note and the legs that
+  arrived are kept), `data/catalogue_match.dart` + the generated assets
+  (`mobile/tools/generate_assets.py` is the documented regeneration path),
+  `ui/weekend_finder_page.dart`. Throttle is 1.5 s, not the legacy 5 s —
+  a phone search walks ~39 requests.
+* **Destination detail richness** from the data tail:
+  `models/destination_profile.dart` (blank/coerce rules, month-rating buckets,
+  the avoid-text reason parser, the climate KPIs), `ui/climate_chart.dart`
+  (a CustomPainter chart — no chart dependency, gaps stay gaps).
+  Verified live against the real Alexandria row: the same numbers the
+  Streamlit page shows.
+* **World map + detail mini-map**: `models/geo.dart` (Web Mercator, tile
+  addressing, spherical distance), `data/city_coordinates.dart` (the lookup
+  contract *both* Python readers use — `normalize_text` first, then the
+  parenthetical-stripped name; verified 144/144), `ui/world_map_page.dart`
+  (slippy-map tiles, region presets, visited/favourites filter, an offline
+  caption when a tile fails).
+* **AI populate, key-gated**: `data/ai_config.dart` (the key in the bundled
+  config), `data/deepseek_client.dart` (the legacy prompt verbatim),
+  `models/review_score.dart` (the Bayesian review arithmetic),
+  `data/ai_populator.dart` (the legacy field map, gaps included), and the UI
+  in both the detail page's status banner and the catalogue's add dialog.
+* **UX pass** (the user's request, 2026-10-11): `ui/theme.dart` (teal seed,
+  light+dark, consistent cards/nav), a destination header + fact grid instead
+  of five cramped metric cards, catalogue quick filters + count, icon empty
+  states, dated finder chips, map offline caption. Two layout bugs found and
+  fixed: the problem cards overflowed a phone-width screen (a `Row` without
+  `Expanded`), and the fact grid's stretched row asked a scrolling list for an
+  infinite height. `screens_test.dart` renders every screen at phone width and
+  asserts the framework throws nothing — that is what caught both.
 
-Verified this session: `flutter pub get`, `flutter analyze` (**no issues**),
-`flutter test` (**31/31 pass**). `mobile/assets/turso_config.json` is written
-(git-ignored) from `.streamlit/secrets.toml` — it holds the live
-`libsql://travel-tz123...` URL and token; the client upgrades the scheme to
-`https://` and appends `/v2/pipeline`.
+Verified: `flutter analyze` clean, **158/158 tests**, live checks against the
+real board (644 flights in one Sunday window), the real benefits database (597
+records, the same seven qualifying airlines), the real catalogue (144/144
+coordinates) and the real Alexandria profile. `turso_config.json` now also
+carries `benefits_*` and `deepseek_api_key`.
 
-## Bugs found and fixed (Phase 5 completion; don't re-litigate)
+## Bugs found and fixed this session (don't re-litigate)
 
-* **The `Destination` model must keep the *raw* typed core, not parsed
-  fields.** The live `Prio Thorsten` column holds ints, a float (0.5) and
-  strings (`"n/a"`, `"3 (Medellin seems better)"`); `Malaria risk?` holds
-  free text. A model with `int? prio` would have written NULL over `"n/a"`
-  on the next flag edit. The model now keeps the raw row values and parses
-  only for display (`prioInt`, `truthy`, `text`).
-* **Response bodies are decoded as UTF-8 explicitly.** The http package's
-  `Response(String, ...)` validates latin1, and `Response.body` decodes with
-  the header charset (latin1 default) — real JSON is UTF-8 by definition,
-  so non-ASCII column names ("In näherer Auswahl 2025?") would mangle.
-  `utf8.decode(bodyBytes)` in the client; the test fake builds
-  `Response.bytes` with a UTF-8 charset header.
-* **Connection failures mirror `turso_db.py`'s wording**: `could not reach
-  Turso: <ExceptionType>` — the type only, never the full text (a URL could
-  leak into it).
-* **Import-time default paths defeated the sandbox (CI run #14).** The
-  `repository.update_*` helpers captured `data_utils.DATA_PATH` as a
-  def-time default, so the API's PATCH wrote the real workbook while the
-  read-back used the sandbox copy: CI failed loudly; a dev machine passed
-  falsely and rewrote the real file (cell-identically — verified against
-  the pre-write backup and restored). All eight helpers now resolve the
-  path at call time; `test_patch_writes_sandbox_only` hashes the source
-  seed around a round-trip. Lesson: a targeted run must include the
-  real-file guard tests (`test_real_workbook_is_untouched_by_the_suite`,
-  `test_real_workbook_metadata_is_unaffected`) whenever writes are
-  involved — they are the only witnesses on a dev machine.
-* Earlier session bugs (Phases 2–4) are recorded in `PLAN.md` and stay
-  fixed: the benefits secrets-file fallback, the `_clear_cache` guard, the
-  FastAPI background import, the NaN JSON sanitiser.
+* **`normalize_text` is lossy on both sides.** `data_utils.normalize_text`
+  drops everything that is not a-z0-9 — so "Bogotá" reaches the slug "bogot",
+  not "bogota". The Dart coordinate index must be as lossy as the keys it
+  looks up; a "smart" accent-folding rewrite broke 144/144.
+* **`rootBundle` and a live request cannot share one Flutter test.** Once the
+  test binding is active it installs an HTTP override that answers every
+  request with **400** — which looks exactly like a server-side bug. A live
+  check that needs assets is a `testWidgets` with no network; one that needs
+  network is a plain `test` reading the config with `dart:io`.
+* **`TestWidgetsFlutterBinding.ensureInitialized()` in a plain `test` installs
+  the same override.** Same symptom, same lesson.
+* Earlier session bugs (Phases 2–5) are recorded in `PLAN.md` and stay
+  fixed: the raw typed core, UTF-8 body decoding, the benefits secrets
+  fallback, the `_clear_cache` guard, the FastAPI background import, the
+  import-time default paths, the NaN JSON sanitiser.
 
 ## Next steps
 
@@ -93,10 +91,12 @@ Verified this session: `flutter pub get`, `flutter analyze` (**no issues**),
    enabled, `shared_preferences` removed (the one native plugin — it
    forced the Developer-Mode/symlink requirement; re-add only with a
    feature that needs it).
-2. **Parity work starts: destination detail richness** (user's chosen
-   order): map, galleries, climate, reviews — one feature at a time,
-   each as repository + UI + tests, mirroring the legacy page's data
-   sources (`flight_routes.py`, galleries, `aqi_api.py`).
+2. **Parity remainder** (the user's end goal: nothing PC-side only):
+   the destination **galleries** (Unsplash is key-gated exactly like the AI
+   populate — the same pattern applies), trip **editing** (the app is
+   read-only there on purpose), and the remaining world-map filters the
+   legacy page has (month / travel condition). Each as repository + UI +
+   tests, mirroring the legacy page's data sources.
 3. **Release-signing note**: the release APK currently signs with the
    debug key (fine for sideloading a personal app; a real keystore is an
    open nicety, not a blocker).

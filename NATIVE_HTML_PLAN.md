@@ -385,6 +385,46 @@ The remaining costs of "native vs PWA":
    version". Note the libsql_dart quote (sec. 8) becomes relevant here: in
    Flutter use `@tursodatabase/sync` (push/pull), not `libsql_dart`.
 
+
+
+## 11. Status (2026-10-11)
+
+Option 2 is what was built. The phases:
+
+| Phase | State | Where |
+|---|---|---|
+| 1 — Turso data layer (PC side) | done | 	urso_db.py, storage_turso.py, 
+epository.py |
+| 2 — FastAPI backend | done, 2a066fb | pi.py, 	ests/test_api.py |
+| 3 — native HTML frontend | done, 2a066fb | web/ |
+| 4 — trips runtime cutover | done, 7fadbbc | itinerary/storage.py |
+| 5 — Flutter app (desktop + Android) | **parity in progress**: catalogue/trips/detail/weekend finder/map/AI populate, lutter analyze clean, 158 tests | mobile/ |
+| 6 — cutover/cleanup | deferred by decision (2026-10-10) | — |
+
+Phase 5 in detail (all of it ported rule-for-rule from the Streamlit app and
+verified against the live database):
+
+| Area | Legacy source | Dart port |
+|---|---|---|
+| Catalogue + detail | 
+epository.py, pages/destination_detail.py | data/destination_repository.dart, ui/destination_page.dart |
+| Trip list (read + delete) | itinerary/ | data/trip_repository.dart, ui/trips_page.dart |
+| Weekend finder | pages/weekend_finder.py, 	imetable.py, weekend_match.py | lib/models/timetable.dart, lib/models/weekend_match.dart, lib/data/weekend_repository.dart, ui/weekend_finder_page.dart |
+| Airline benefits | irline_benefits.py, enefits_turso.py | lib/models/airline_benefits.dart, lib/data/benefits_repository.dart |
+| Detail richness | destination_detail.py climate + reviews + best months | lib/models/destination_profile.dart, lib/ui/climate_chart.dart |
+| World map | pages/world_map.py, city_coordinates.json | lib/models/geo.dart, lib/data/city_coordinates.dart, lib/ui/world_map_page.dart |
+| AI populate | deepseek_populator.py, deepseek_client.py, 
+eview_analyzer.py | lib/data/deepseek_client.dart, lib/data/ai_populator.dart, lib/models/review_score.dart |
+
+Key-gated features (DeepSeek, and later the Unsplash galleries) read their
+key from mobile/assets/turso_config.json (git-ignored) and stay hidden
+without one — the same behaviour the legacy pages have without a key.
+
+Still open in Phase 5: **trip editing** (the app is deliberately read-only
+there), the **galleries**, and offline-first sync (an explicit non-goal,
+2026-10-11). The web/ and pi.py frontends from Phases 2-3 stay as
+they are.
+
 **Bottom line for this variant:** a native Android app + Turso Sync is
 *more* viable under "no server, no money" than a PWA, because Turso is the
 only server and it is free. The trade-off moves from "I have no host" to "I

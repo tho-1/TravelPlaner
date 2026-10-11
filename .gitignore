@@ -78,3 +78,8 @@ mobile/.flutter-plugins
 mobile/.flutter-plugins-dependencies
 # The app's Turso credentials (never commit secrets)
 mobile/assets/turso_config.json
+
+# Local handover / review work artifacts, never repo content
+chat.json
+chat_dump.txt
+codereview.md
