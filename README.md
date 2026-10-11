@@ -151,7 +151,15 @@ placeholder can be filled with the **AI populate** (DeepSeek)
 and blank food notes with the **food populate**, both
 once `deepseek_api_key` sits in the same config
 file - without the key the buttons are simply not offered, exactly like
-the legacy pages behave. The IQAir table reads the local
+the legacy pages behave. The detail page closes with **Transport &
+Direct Connections**: the airport card and the direct flight routes
+(plus the high-speed rail connections for Chinese cities), researched
+by DeepSeek on demand and cached per destination in
+`flight_routes_cache/` (the `flight_routes_cache` path in the config,
+a per-device file like the banner photos) - sorted by duration, with
+the in-planner filter, the search and the airline colors from the
+bundled snapshot, and a Wishlist link that opens the matching
+destination. The IQAir table reads the local
 ranking snapshot (`iqair_cache/world_cities.json`, the path
 from `iqair_snapshot` in the config) - a per-device file like
 the banner photos, so the table stays hidden where there is no

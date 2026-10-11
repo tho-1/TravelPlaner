@@ -380,7 +380,7 @@ class DeepSeekClient {
         throw const DeepSeekError(
             'DeepSeek returned an invalid flight route list.');
       }
-      result['last_updated'] = _today();
+      result['last_updated'] = todayLabel();
       return result;
     } on DeepSeekError {
       // The route-list validation's own error, not a parse failure.
@@ -452,8 +452,8 @@ $hsrRule
 
 /// `datetime.now().strftime("%d %b %Y")` -- the
 /// date the research was done, stamped onto the
-/// cached result.
-String _today() {
+/// cached result and shown as the last-updated.
+String todayLabel() {
   const months = <String>[
     'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',

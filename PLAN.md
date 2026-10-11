@@ -911,6 +911,88 @@ tests; `flutter analyze` clean.
 
 ---
 
+## 0l. Parity session 2026-10-11 (11) - transport routes, the section (D10b)
+
+The second half of the Transport & Direct
+Connections: the rendering, ported from
+`flight_routes.render_flight_routes_section`
+and its two tabs.
+
+The section renders the research button
+(the label depends on whether the city is
+Chinese and whether research exists), the
+last-updated line, the airport card (the
+legacy's blue-bordered "Primary Airport"
+box with the IATA badge), the per-tab
+filter and search, and the flights and
+high-speed trains tables — the pure
+`queryFlightRows` / `queryTrainRows`
+output, with the airline colors, the
+Wishlist link, the Prio and the Review
+score per row. The Wishlist link opens the
+matching destination through an
+`onOpenDestination` callback, so the
+section never imports the destination page
+(the caller owns the navigation). The
+section sits after the gallery, where the
+legacy renders it.
+
+Two details the port keeps from the legacy
+that the first draft had flattened: the tab
+labels carry the route counts, and the
+empty states are distinguished — "no direct
+flight routes were found" (no research
+result) versus "no flight routes match the
+current filter/search" (the filter or the
+search emptied the list), the same
+never-ambiguous-no-results rule the
+workbook filters follow. The header is a
+`Wrap`, not a `Row`: the research button
+is wider than the space next to the title
+on a phone screen, and a `Row` overflowed
+it by 27 px — the layout bug the screens
+harness exists to catch.
+
+**A test-harness landmine, found and
+worked around.** The flutter test binding's
+asset cache never completes a *second*
+load of the same asset: awaiting any
+future that completed in an earlier test
+hangs forever (verified with a bare
+`Completer` — it is not asset-specific).
+The section's `_load` awaits
+`TursoConfig.load()` and `AirlineColors.load()`,
+so only the first widget test in a file
+could ever finish; the existing pages
+survive only because their config loads
+are fire-and-forget and nobody awaits
+them. Memoizing the loaders does **not**
+help — awaiting the memoized future hangs
+the same way. The fix is the codebase's
+established seam pattern: the section
+takes `config` and `colors` parameters
+(like `aiClient` / `aiConfig`), so a test
+pumps it without touching `rootBundle` at
+all. Any future widget test that awaits a
+`rootBundle` load more than once per file
+will hit the same hang.
+
+Covered by `flight_routes_section_test.dart`
+(8 tests: the empty states, the airport
+card, the duration-sorted table with the
+Prio/Reviews match and the unmatched dash,
+the in-planner filter, the search with its
+empty state, the China trains tab with the
+hub card, the research flow with a faked
+API and the cache write, and the wishlist
+link — which needs a scroll first, because
+the table is wider than the phone surface
+and the Wishlist column starts off-screen).
+The mobile suite is 299 tests;
+`flutter analyze` clean.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

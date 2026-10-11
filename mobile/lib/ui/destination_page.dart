@@ -29,6 +29,7 @@ import '../turso/config.dart';
 import 'climate_chart.dart';
 import 'aqi_chart.dart';
 import 'iqair_table.dart';
+import 'flight_routes_section.dart';
 import 'world_map_page.dart';
 
 class DestinationPage extends StatefulWidget {
@@ -425,6 +426,20 @@ class _DestinationPageState extends State<DestinationPage> {
             _ClimateSection(profile: profile),
             _GallerySection(
                 destinationName: dest.name, picturesDir: widget.picturesDir),
+            // The legacy renders the transport
+            // connections after the gallery.
+            FlightRoutesSection(
+              repository: widget.repository,
+              destination: dest,
+              onOpenDestination: (destination) =>
+                  Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => DestinationPage(
+                  repository: widget.repository,
+                  destination: destination,
+                  onChanged: widget.onChanged,
+                ),
+              )),
+            ),
           ],
         ),
       ),
