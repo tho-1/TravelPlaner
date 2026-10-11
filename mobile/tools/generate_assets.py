@@ -59,6 +59,10 @@ def main() -> None:
     _write(ROOT / "mobile" / "assets" / "city_coordinates.json", coordinates)
     print(f"coordinates: {len(coordinates)}")
 
+    airline_colors = _airline_colors()
+    _write(ROOT / "mobile" / "assets" / "airline_colors.json", airline_colors)
+    print(f"airline colors: {len(airline_colors)}")
+
 
 def _coordinates() -> list[dict]:
     """The coordinate table, one entry per row.
@@ -89,6 +93,23 @@ def _coordinates() -> list[dict]:
         })
     entries.sort(key=lambda item: item["name"])
     return entries
+
+
+def _airline_colors() -> dict[str, str]:
+    """The airline colors from the workbook's Airlines
+    sheet, keyed by the mobile app's cache key (the
+    diacritic-folding ``_normalize_key``), so the app's
+    ``normalizeKey`` matches. Airlines without a color
+    are skipped -- the app leaves those uncolored."""
+    import flight_routes
+    from data_utils import load_airlines_color_map
+
+    color_map = load_airlines_color_map()
+    return {
+        flight_routes._normalize_key(info["name"]): info["color"]
+        for info in color_map.values()
+        if info.get("color")
+    }
 
 
 def _write(path: Path, payload: dict) -> None:

@@ -855,6 +855,62 @@ suite is 262 tests; `flutter analyze` clean.
 
 ---
 
+## 0k. Parity session 2026-10-11 (10) - transport routes, data layer (D10a)
+
+The first half of the Transport & Direct
+Connections: the pure logic, the models, the
+DeepSeek research and the per-device cache —
+everything except the rendering.
+
+The cache key, the duration parser and the
+China determination are ported from
+`flight_routes.py` (`_normalize_key`,
+`_parse_duration_minutes`, the `is_china`
+check), and the route models parse the JSON
+DeepSeek returns. The flights and trains
+tables are built by pure functions that sort
+by duration, narrow by the in-planner filter
+and the search, and match each route to the
+catalogue (for the Wishlist link, the Prio
+and the Review score) — the
+`processed_rows` -> `sort_values` -> filter
+pipeline the legacy runs on the DataFrame.
+
+The research is the legacy's
+`generate_flight_routes` ported verbatim:
+the aviation system prompt, the flight-route
+template with the high-speed rail parts
+inserted for Chinese cities, the
+`json_object` payload at temperature 0.1,
+and the validation that the routes are a
+list. The result is cached as one JSON file
+per destination in `flight_routes_cache/`
+(a new `flight_routes_cache` path in
+`turso_config.json`, the same per-device
+pattern as `pictures_dir`), so the desktop
+app shares the legacy's cache and the phone
+researches afresh.
+
+The airline colors come from the workbook's
+Airlines sheet, bundled as a generated
+`assets/airline_colors.json` (a new step in
+`tools/generate_assets.py`, keyed by the
+diacritic-folding cache key so the app's
+`normalizeKey` matches — the legacy keys its
+color map by a non-folding normalizer and
+looks up with a folding one, a mismatch the
+port does not carry over). The colors are a
+snapshot a regeneration refreshes.
+
+Covered by `flight_routes_test.dart` (29
+tests: the key, the parser, the China check,
+the models, the sort/filter/search, the
+colors, the cache round-trip and the request
+with a faked API). The mobile suite is 291
+tests; `flutter analyze` clean.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

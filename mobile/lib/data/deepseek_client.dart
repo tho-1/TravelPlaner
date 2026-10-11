@@ -25,6 +25,7 @@ import 'package:http/http.dart' as http;
 
 import '../models/destination_profile.dart';
 import 'ai_config.dart';
+import 'flight_routes.dart' show isChinaDestination;
 
 class DeepSeekError implements Exception {
   final String message;
@@ -142,6 +143,40 @@ Rules:
 - The description must be one paragraph containing 5 to 10 complete sentences.
 - Discuss the typical local food, not only one restaurant or isolated dish.
 ''';
+
+/// The transport system prompt, ported verbatim
+/// from `deepseek_client.generate_flight_routes`
+/// -- the prompt is the project's asset.
+const flightRoutesSystemPrompt =
+    'You are a professional aviation network and '
+    'high-speed rail transit analyst. Return only valid JSON.';
+
+/// The high-speed rail schema block, inserted
+/// for Chinese destinations only.
+const _hsrSchema = '''
+  "train_stations": ["Primary High-Speed Railway Stations (e.g. Nanchang West Railway Station / 南昌西站, Nanchang Railway Station / 南昌站)"],
+  "hsr_routes": [
+    {
+      "destination_city": "City name (e.g. Changsha)",
+      "destination_station": "Arrival Station (e.g. Changsha South)",
+      "origin_station": "Departure Station (e.g. Nanchang West)",
+      "duration": "Typical Travel Time (e.g. 1h 15m - 1h 35m)",
+      "train_types": "G-Train (High-Speed 300-350 km/h) / D-Train",
+      "frequency_notes": "e.g. 30+ daily trains (every 15-30 mins)"
+    }
+  ],''';
+
+/// The high-speed rail intro line, inserted
+/// for Chinese destinations only.
+const _hsrIntro =
+    'Also research all major High-Speed Railway (HSR / 高铁/动车) '
+    'connections from this city to other Chinese cities.';
+
+/// The high-speed rail rule line, inserted
+/// for Chinese destinations only.
+const _hsrRule =
+    '- Provide 15 to 30 major direct High-Speed Rail (HSR) connections '
+    'to other prominent Chinese cities with accurate travel times.';
 
 /// Re-exported from the profile parser: the months the
 /// prompt template names, in the workbook's own order.
@@ -280,6 +315,82 @@ class DeepSeekClient {
     }
   }
 
+  /// Ask DeepSeek for the direct flight routes
+  /// (inbound and outbound) and, for Chinese
+  /// destinations, the high-speed rail
+  /// connections. The Dart port of
+  /// `deepseek_client.generate_flight_routes`
+  /// -- the same payload shape and the same
+  /// validation (the routes must be a list).
+  Future<Map<String, dynamic>> generateFlightRoutes({
+    required String destination,
+    required String country,
+  }) async {
+    if (!config.isConfigured) {
+      throw const DeepSeekError(
+        'The DeepSeek API key is not configured. Add '
+        '"deepseek_api_key" to assets/turso_config.json '
+        '(git-ignored) and try again.',
+      );
+    }
+    final payload = {
+      'model': config.model.isEmpty ? AiConfig.defaultModel : config.model,
+      'messages': [
+        {'role': 'system', 'content': flightRoutesSystemPrompt},
+        {
+          'role': 'user',
+          'content': flightRoutesPrompt(
+            destination,
+            country,
+            isChinaDestination(destination, country),
+          ),
+        },
+      ],
+      'response_format': {'type': 'json_object'},
+      'temperature': 0.1,
+    };
+    final http.Response response;
+    try {
+      response = await httpClient
+          .post(
+            Uri.parse(deepseekApiUrl),
+            headers: {
+              'Authorization': 'Bearer ${config.apiKey}',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(payload),
+          )
+          .timeout(requestTimeout);
+    } catch (error) {
+      throw DeepSeekError(
+          'Could not reach the DeepSeek API (${error.runtimeType}).');
+    }
+    if (response.statusCode != 200) {
+      throw DeepSeekError(
+        'DeepSeek API request failed (HTTP ${response.statusCode}): '
+        '${_snippet(response.body)}',
+      );
+    }
+    try {
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      final content = ((data['choices'] as List).first
+          as Map)['message']['content'] as String;
+      final result = extractJson(content);
+      if (result['routes'] is! List) {
+        throw const DeepSeekError(
+            'DeepSeek returned an invalid flight route list.');
+      }
+      result['last_updated'] = _today();
+      return result;
+    } on DeepSeekError {
+      // The route-list validation's own error, not a parse failure.
+      rethrow;
+    } catch (error) {
+      throw DeepSeekError('DeepSeek returned an unparseable response '
+          '(${error.runtimeType}).');
+    }
+  }
+
   static String userPrompt(
       String destination, String country, String continent) {
     return userTemplate
@@ -290,6 +401,66 @@ class DeepSeekClient {
 
   static String _snippet(String body) =>
       body.length <= 300 ? body : body.substring(0, 300);
+}
+
+/// Build the transport research prompt: the
+/// flight-route template with the destination
+/// and country substituted, and the high-speed
+/// rail parts inserted for Chinese cities.
+String flightRoutesPrompt(
+    String destination, String country, bool isChina) {
+  final dest = destination.trim();
+  final ctry = country.trim();
+  final hsrIntro = isChina ? _hsrIntro : '';
+  final hsrSchema = isChina ? _hsrSchema : '';
+  final hsrRule = isChina ? _hsrRule : '';
+  return '''Research all major direct passenger flight routes (inbound and outbound) and operating airlines departing from or arriving at $dest, $ctry.
+$hsrIntro
+
+Return ONLY this JSON object:
+{
+  "airport_name": "Primary Airport Name (e.g. Nanchang Changbei International Airport)",
+  "iata_code": "IATA code (e.g. KHN)",
+  "city": "$dest",
+  "country": "$ctry",$hsrSchema
+  "routes": [
+    {
+      "destination_city": "City name (e.g. Shanghai)",
+      "destination_country": "Country name (e.g. China)",
+      "destination_iata": "Airport code(s) (e.g. SHA / PVG)",
+      "airlines": ["Airline A", "Airline B"],
+      "flight_time": "Estimated flight time (e.g. 1h 45m)",
+      "route_type": "Domestic" | "International" | "Regional",
+      "frequency_notes": "e.g. Multiple flights daily / Daily / 3x weekly / Seasonal"
+    }
+  ]
+}
+
+Rules:
+- Include all major direct non-stop destinations that regularly have passenger service from this city's airport(s).
+- Direct passenger routes operate bidirectionally (inbound and outbound).
+- Ensure the operating airlines list and flight_time estimate (e.g. "2h 15m") are accurate for each route.
+- Set route_type appropriately:
+  * "Domestic" for domestic flights within the same country
+  * "Regional" for Hong Kong, Macau, Taiwan (if applicable) or close regional dependencies
+  * "International" for cross-border international destinations
+- Provide between 15 to 45 direct flight routes if the airport is a medium/large hub, or all known direct routes if it is a smaller airport.
+$hsrRule
+- Return ONLY valid JSON.
+''';
+}
+
+/// `datetime.now().strftime("%d %b %Y")` -- the
+/// date the research was done, stamped onto the
+/// cached result.
+String _today() {
+  const months = <String>[
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ];
+  final now = DateTime.now();
+  return '${now.day.toString().padLeft(2, '0')} '
+      '${months[now.month - 1]} ${now.year}';
 }
 
 /// The food profile `generate_food_profile` returns:

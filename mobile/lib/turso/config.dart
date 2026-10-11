@@ -52,6 +52,14 @@ class TursoConfig {
   /// stays hidden there.
   final String picturesDir;
 
+  /// The transport routes cache folder
+  /// (`flight_routes_cache/`), read and
+  /// written with `dart:io` on the desktop.
+  /// Optional: without it every open
+  /// researches afresh — the same per-device
+  /// pattern as the Pictures folder.
+  final String flightRoutesCache;
+
   const TursoConfig({
     required this.url,
     required this.token,
@@ -59,6 +67,7 @@ class TursoConfig {
     this.benefitsToken = '',
     this.iqairSnapshot = '',
     this.picturesDir = '',
+    this.flightRoutesCache = '',
   });
 
   bool get isConfigured => url.trim().isNotEmpty && token.trim().isNotEmpty;
@@ -91,6 +100,8 @@ class TursoConfig {
             (map['iqair_snapshot'] as String?)?.trim() ?? '',
         picturesDir:
             (map['pictures_dir'] as String?)?.trim() ?? '',
+        flightRoutesCache:
+            (map['flight_routes_cache'] as String?)?.trim() ?? '',
       );
     } catch (_) {
       return const TursoConfig(
