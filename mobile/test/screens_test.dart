@@ -18,6 +18,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:travel_planner/data/benefits_repository.dart';
 import 'package:travel_planner/data/destination_repository.dart';
+import 'package:travel_planner/data/geocode_repository.dart';
 import 'package:travel_planner/data/trip_repository.dart';
 import 'package:travel_planner/ui/catalogue_page.dart';
 import 'package:travel_planner/ui/destination_page.dart';
@@ -130,67 +131,117 @@ void main() {
     await render(tester, WorldMapPage(repository: repository));
   });
 
+  /// The trips editor: the trips repository, the
+  /// catalogue the add-stop panel and the month
+  /// suggestions read, and a cache-less geocoder.
+  TripsPage tripsPage(FakeTurso fake) => TripsPage(
+        repository: TripRepository(
+            TursoClient(_config, httpClient: fake.client())),
+        destinations: DestinationRepository(
+            TursoClient(_config, httpClient: fake.client())),
+        geocoder: GeocodeRepository(''),
+      );
+
   testWidgets('the trips page renders its problem view', (tester) async {
     final fake = FakeTurso((_) => pipelineError('trips table missing'));
-    await render(
-      tester,
-      TripsPage(
-        repository:
-            TripRepository(TursoClient(_config, httpClient: fake.client())),
-      ),
-    );
+    await render(tester, tripsPage(fake));
   });
 
-  testWidgets('the trips page renders with data', (tester) async {
-    final fake = FakeTurso((_) => okRows(
-          ['trip_id', 'name', 'data'],
-          [
+  testWidgets('the trips page renders the editor with a route',
+      (tester) async {
+    final fake = FakeTurso((statements) {
+      // The trips load pipeline: four SELECTs in one
+      // request, answered with four results.
+      if (statements.length == 4 &&
+          statements.first.startsWith('SELECT * FROM trips')) {
+        return okMulti([
+          (['id', 'name', 'created', 'active_variant_id'], [
+            ['t1', 'Italy 2026', '2026-01-01T10:00:00', 'v1'],
+          ]),
+          (['id', 'trip_id', 'name', 'notes', 'rating', 'months',
+            'comment'], [
+            ['v1', 't1', 'Two cities', 'notes', 4,
+                '["April","May"]', ''],
+          ]),
+          (['id', 'variant_id', 'kind', 'name', 'country', 'lat',
+            'lon', 'role', 'arrival_date', 'departure_date',
+            'arrival_time', 'departure_time', 'nights', 'notes'], [
             [
-              't1',
-              'Italy 2026',
-              jsonEncode({
-                'name': 'Italy 2026',
-                'variants': [
-                  {
-                    'name': 'Two cities',
-                    'stops': [
-                      {
-                        'ref': {
-                          'kind': 'destination',
-                          'name': 'Rome',
-                          'country': 'Italy',
-                        },
-                        'nights': 3,
-                      },
-                      {
-                        'ref': {
-                          'kind': 'destination',
-                          'name': 'Florence',
-                          'country': 'Italy',
-                        },
-                        'nights': 3,
-                      },
-                    ],
-                    'legs': [
-                      {
-                        'from': 'FRA',
-                        'to': 'FCO',
-                        'mode': 'Flight',
-                      },
-                    ],
-                  },
-                ],
-              }),
+              's1', 'v1', 'gateway', 'Frankfurt', 'Germany', 50.11,
+              8.68, 'origin', null, '2027-04-01', null, '18:45',
+              null, ''
             ],
+            [
+              's2', 'v1', 'destination', 'Rome', 'Italy', 41.9, 12.5,
+              'stop', '2027-04-01', '2027-04-04', '09:30', '18:00',
+              3, 'colosseum'
+            ],
+            [
+              's3', 'v1', 'destination', 'Florence', 'Italy', 43.77,
+              11.26, 'stop', '2027-04-04', '2027-04-06', '09:00',
+              null, 2, ''
+            ],
+          ]),
+          (['variant_id', 'position', 'mode', 'note'], [
+            ['v1', 0, 'flight', ''],
+            ['v1', 1, 'train', ''],
+          ]),
+        ]);
+      }
+      if (statements.first.startsWith('SELECT * FROM destinations')) {
+        return okRows(
+          ['destination', 'country', 'data'],
+          [
+            ['Rome', 'Italy', jsonEncode([
+              ['Destination', 'Rome'],
+              ['April', 'ideal'],
+            ])],
           ],
-        ));
-    await render(
-      tester,
-      TripsPage(
-        repository:
-            TripRepository(TursoClient(_config, httpClient: fake.client())),
-      ),
-    );
+        );
+      }
+      return pipelineError('unexpected statement');
+    });
+    await render(tester, tripsPage(fake));
+    // The editor shows the trip, its stops and the
+    // transport legs, not a "read-only" hint. The
+    // stop cards carry the index and the country
+    // ("1. Frankfurt · Germany"), so the city
+    // names are matched by content.
+    expect(find.text('Italy 2026'), findsWidgets);
+    expect(find.textContaining('Frankfurt'), findsWidgets);
+    expect(find.textContaining('Rome'), findsWidgets);
+    expect(find.textContaining('Florence'), findsWidgets);
+    expect(find.byType(TabBar), findsOneWidget);
+  });
+
+  testWidgets('the trips page renders the compare tab', (tester) async {
+    final fake = FakeTurso((statements) {
+      // The trips load pipeline: four SELECTs in one
+      // request, answered with four results.
+      if (statements.length == 4 &&
+          statements.first.startsWith('SELECT * FROM trips')) {
+        return okMulti([
+          (['id', 'name', 'created', 'active_variant_id'], [
+            ['t1', 'Italy 2026', '2026-01-01T10:00:00', 'v1'],
+          ]),
+          (['id', 'trip_id', 'name', 'notes', 'rating', 'months',
+            'comment'], [
+            ['v1', 't1', 'Two cities', '', 4, '[]', ''],
+            ['v2', 't1', 'Two cities alt', '', 3, '[]', ''],
+          ]),
+          (['id', 'variant_id', 'kind', 'name', 'country', 'lat',
+            'lon', 'role', 'arrival_date', 'departure_date',
+            'arrival_time', 'departure_time', 'nights', 'notes'], []),
+          (['variant_id', 'position', 'mode', 'note'], []),
+        ]);
+      }
+      return okEmpty(4);
+    });
+    await render(tester, tripsPage(fake));
+    await tester.tap(find.text('Compare'));
+    await tester.pumpAndSettle();
+    expect(find.byType(DataTable), findsOneWidget);
+    expect(find.text('Two cities alt'), findsWidgets);
   });
 
   testWidgets('the app shell renders all tabs', (tester) async {

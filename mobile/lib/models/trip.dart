@@ -30,6 +30,15 @@ class StopRef {
         lat: (row['lat'] as num?)?.toDouble(),
         lon: (row['lon'] as num?)?.toDouble(),
       );
+
+  /// The storage shape (`itinerary.models.make_ref`).
+  Map<String, Object?> toJson() => {
+        'kind': kind,
+        'name': name,
+        'country': country,
+        'lat': lat,
+        'lon': lon,
+      };
 }
 
 class Stop {
@@ -66,6 +75,21 @@ class Stop {
         role: (row['role'] as String?) ?? 'stop',
         notes: (row['notes'] as String?) ?? '',
       );
+
+  /// The storage shape (`itinerary.models.make_stop`):
+  /// the ref nested under `ref`, the dates and times
+  /// as plain strings.
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'ref': ref.toJson(),
+        'arrival_date': arrivalDate,
+        'departure_date': departureDate,
+        'arrival_time': arrivalTime,
+        'departure_time': departureTime,
+        'nights': nights,
+        'role': role,
+        'notes': notes,
+      };
 }
 
 class Leg {
@@ -78,6 +102,9 @@ class Leg {
         mode: (row['mode'] as String?) ?? 'flight',
         note: (row['note'] as String?) ?? '',
       );
+
+  /// The storage shape (`itinerary.models.make_leg`).
+  Map<String, Object?> toJson() => {'mode': mode, 'note': note};
 }
 
 class Variant {
@@ -132,6 +159,20 @@ class Variant {
       return [];
     }
   }
+
+  /// The storage shape (`itinerary.models.make_variant`):
+  /// the months as the JSON list the `variants` table
+  /// keeps, the stops and legs in their stored order.
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'name': name,
+        'notes': notes,
+        'rating': rating,
+        'months': months,
+        'comment': comment,
+        'stops': [for (final stop in stops) stop.toJson()],
+        'legs': [for (final leg in legs) leg.toJson()],
+      };
 }
 
 class Trip {
@@ -155,4 +196,13 @@ class Trip {
     }
     return variants.isEmpty ? null : variants.first;
   }
+
+  /// The storage shape (`itinerary.models.make_trip`).
+  Map<String, Object?> toJson() => {
+        'id': id,
+        'name': name,
+        'created': created,
+        'active_variant_id': activeVariantId,
+        'variants': [for (final variant in variants) variant.toJson()],
+      };
 }

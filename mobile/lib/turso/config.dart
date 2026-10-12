@@ -60,6 +60,14 @@ class TursoConfig {
   /// pattern as the Pictures folder.
   final String flightRoutesCache;
 
+  /// The itinerary geocode cache folder
+  /// (`itinerary_cache/`), read and written
+  /// with `dart:io` on the desktop. Optional:
+  /// without it every custom-city search
+  /// queries Open-Meteo again — the same
+  /// per-device pattern as the routes cache.
+  final String geocodeCache;
+
   const TursoConfig({
     required this.url,
     required this.token,
@@ -68,6 +76,7 @@ class TursoConfig {
     this.iqairSnapshot = '',
     this.picturesDir = '',
     this.flightRoutesCache = '',
+    this.geocodeCache = '',
   });
 
   bool get isConfigured => url.trim().isNotEmpty && token.trim().isNotEmpty;
@@ -102,6 +111,8 @@ class TursoConfig {
             (map['pictures_dir'] as String?)?.trim() ?? '',
         flightRoutesCache:
             (map['flight_routes_cache'] as String?)?.trim() ?? '',
+        geocodeCache:
+            (map['geocode_cache'] as String?)?.trim() ?? '',
       );
     } catch (_) {
       return const TursoConfig(

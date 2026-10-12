@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 
 import '../data/benefits_repository.dart';
 import '../data/destination_repository.dart';
+import '../data/geocode_repository.dart';
 import '../data/trip_repository.dart';
 import '../turso/config.dart';
 import '../turso/pipeline_client.dart';
@@ -94,6 +95,7 @@ class _HomeShellState extends State<HomeShell> {
   late final DestinationRepository destinations;
   late final TripRepository trips;
   late final BenefitsRepository benefits;
+  late final GeocodeRepository geocoder;
   var _tab = 0;
 
   /// The width at which the shell switches from the
@@ -163,6 +165,7 @@ class _HomeShellState extends State<HomeShell> {
     destinations = DestinationRepository(client);
     trips = TripRepository(client);
     benefits = BenefitsRepository(widget.config);
+    geocoder = GeocodeRepository(widget.config.geocodeCache);
   }
 
   @override
@@ -173,7 +176,11 @@ class _HomeShellState extends State<HomeShell> {
       index: _tab,
       children: [
         CataloguePage(repository: destinations),
-        TripsPage(repository: trips),
+        TripsPage(
+          repository: trips,
+          destinations: destinations,
+          geocoder: geocoder,
+        ),
         WeekendFinderPage(benefits: benefits, destinations: destinations),
         WorldMapPage(repository: destinations),
       ],

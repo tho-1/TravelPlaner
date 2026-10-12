@@ -6,5 +6,7 @@
   "deepseek_api_key": "PASTE_THE_DEEPSEEK_KEY_HERE",
   "deepseek_model": "deepseek-chat",
   "iqair_snapshot": "C:\\PATH\\TO\\iqair_cache\\world_cities.json",
-  "pictures_dir": "C:\\PATH\\TO\\Pictures"
+  "pictures_dir": "C:\\PATH\\TO\\Pictures",
+  "flight_routes_cache": "C:\\PATH\\TO\\flightroutes-app\\flight_routes_cache",
+  "geocode_cache": "C:\\PATH\\TO\\itinerary_cache"
 }
