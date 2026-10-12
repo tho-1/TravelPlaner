@@ -246,4 +246,65 @@ void main() {
         findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('a tap on a country without destinations is ignored, '
+      'a dataset spelling resolves to the catalogue', (tester) async {
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    await binding.setSurfaceSize(const Size(420, 1600));
+    addTearDown(() => binding.setSurfaceSize(null));
+    String months(String rating) => jsonEncode([
+          for (final month in [
+            'January', 'February', 'March', 'April', 'May', 'June', //
+            'July', 'August', 'September', 'October', 'November', 'December',
+          ])
+            [month, rating],
+        ]);
+    // One country the catalogue holds ("United States",
+    // with a city) and one it does not ("United States of
+    // America" is only the dataset's shape name;
+    // Antarctica has no destinations at all).
+    final fake = FakeTurso((_) => okRows(
+          ['destination', 'country', 'visited', 'data'],
+          [
+            ['New York', 'United States', null, months('ok')],
+          ],
+        ));
+    await tester.pumpWidget(MaterialApp(
+      home: WorldMapPage(
+        repository: DestinationRepository(
+          TursoClient(
+            const TursoConfig(
+                url: 'https://travel-tz123.aws-eu-north-1.turso.io',
+                token: 'token'),
+            httpClient: fake.client(),
+          ),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 5 && find.byType(WorldMapView).evaluate().isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    // The tap seam the geometry hit test drives: the name
+    // that arrives is the shape's dataset name.
+    final view = tester.widget<WorldMapView>(find.byType(WorldMapView));
+    expect(view.onCountryTap, isNotNull);
+
+    // Antarctica: no destinations -- the tap is ignored,
+    // it must not throw the null check the old caption
+    // carried.
+    view.onCountryTap!('Antarctica');
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('destinations in'), findsNothing);
+
+    // The dataset's long spelling resolves to the
+    // catalogue's "United States" and selects it.
+    view.onCountryTap!('United States of America');
+    await tester.pumpAndSettle();
+    expect(find.textContaining('destinations in United States match'),
+        findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

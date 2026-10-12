@@ -19,6 +19,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../data/ai_config.dart';
+import '../data/app_dirs.dart';
 import '../data/deepseek_client.dart';
 import '../data/destination_repository.dart';
 import '../data/flight_routes.dart';
@@ -84,7 +85,8 @@ class _FlightRoutesSectionState extends State<FlightRoutesSection> {
 
   Future<void> _load() async {
     final config = widget.config ?? await TursoConfig.load();
-    final dir = widget.cacheDir ?? config.flightRoutesCache;
+    final dir = await perDeviceCacheDir(
+        widget.cacheDir ?? config.flightRoutesCache);
     final cached = FlightRoutesRepository(dir).load(widget.destination.name);
     final (catalogue, _) = await widget.repository.loadDestinations();
     final colors = widget.colors ?? await AirlineColors.load();
@@ -99,7 +101,8 @@ class _FlightRoutesSectionState extends State<FlightRoutesSection> {
   Future<void> _research() async {
     setState(() => _researching = true);
     final config = widget.config ?? await TursoConfig.load();
-    final dir = widget.cacheDir ?? config.flightRoutesCache;
+    final dir = await perDeviceCacheDir(
+        widget.cacheDir ?? config.flightRoutesCache);
     final client =
         widget.aiClient ?? DeepSeekClient(widget.aiConfig ?? await AiConfig.load());
     try {
@@ -107,15 +110,22 @@ class _FlightRoutesSectionState extends State<FlightRoutesSection> {
         destination: widget.destination.name,
         country: widget.destination.country ?? '',
       );
-      FlightRoutesRepository(dir).save(widget.destination.name, result);
+      // A failed save is surfaced, never reported as
+      // success: the writer contract is that false
+      // means "nothing was written".
+      final saved = FlightRoutesRepository(dir).save(
+          widget.destination.name, result);
       final (catalogue, _) = await widget.repository.loadDestinations();
       if (!mounted) return;
       setState(() {
         _cached = result;
         _plannerLookup = buildPlannerLookup(catalogue);
       });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Transport connections updated'),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(saved
+            ? 'Transport connections updated'
+            : 'Researched, but not saved on this device '
+                '-- it will be researched again next time'),
       ));
     } on DeepSeekError catch (error) {
       if (!mounted) return;

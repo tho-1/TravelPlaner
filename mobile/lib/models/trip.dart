@@ -71,7 +71,7 @@ class Stop {
         departureDate: row['departure_date'] as String?,
         arrivalTime: row['arrival_time'] as String?,
         departureTime: row['departure_time'] as String?,
-        nights: (row['nights'] as int?),
+        nights: _asInt(row['nights']),
         role: (row['role'] as String?) ?? 'stop',
         notes: (row['notes'] as String?) ?? '',
       );
@@ -143,7 +143,7 @@ class Variant {
       id: (row['id'] as String?) ?? '',
       name: (row['name'] as String?) ?? 'Variant',
       notes: (row['notes'] as String?) ?? '',
-      rating: (row['rating'] as int?),
+      rating: _asInt(row['rating']),
       months: months,
       comment: (row['comment'] as String?) ?? '',
       stops: stops,
@@ -214,3 +214,10 @@ class Trip {
         'variants': [for (final variant in variants) variant.toJson()],
       };
 }
+
+/// A stored cell can hold a REAL or TEXT value
+/// (SQLite's dynamic typing); an unchecked
+/// `as int?` cast would throw and take the whole
+/// trips list with it.
+int? _asInt(Object? value) =>
+    value is int ? value : value is num ? value.toInt() : null;

@@ -60,11 +60,19 @@ class IqairRepository {
       }
       _cache = cities;
       return cities;
-    } catch (_) {
-      // A malformed snapshot is the same as a missing
-      // one: the table hides rather than erroring.
+    } on FormatException {
+      // A malformed snapshot is the same as a
+      // missing one: the table hides rather than
+      // erroring, and the answer is stable, so
+      // it is cached.
       _cache = const [];
       return _cache!;
+    } catch (_) {
+      // A transient read error (the legacy app is
+      // rebuilding the snapshot right now) must
+      // not be cached as "no data" -- the next
+      // call should see the finished file.
+      return const [];
     }
   }
 }

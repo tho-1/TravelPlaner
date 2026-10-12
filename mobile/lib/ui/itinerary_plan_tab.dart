@@ -168,6 +168,13 @@ class _StopsColumn extends StatelessWidget {
           ),
         for (var i = 0; i < stops.length; i++) ...[
           _StopCard(
+            // Keyed by the stop's id, not its
+            // position: the editor's pending
+            // values must follow the stop through
+            // a reorder or a variant switch, or
+            // a save writes them into whichever
+            // stop sits at the position now.
+            key: ValueKey(stops[i].id),
             index: i,
             stop: stops[i],
             total: stops.length,
@@ -186,6 +193,10 @@ class _StopsColumn extends StatelessWidget {
         ],
         const SizedBox(height: 8),
         _AddStopPanel(
+          // Keyed by the variant: the panel's
+          // pending search and selection belong
+          // to the variant they were typed for.
+          key: ValueKey(variant.id),
           variant: variant,
           geocoder: geocoder,
           catalogue: catalogue,
@@ -210,6 +221,7 @@ class _StopCard extends StatelessWidget {
   final void Function(String stopId) onToggleHighlight;
 
   const _StopCard({
+    super.key,
     required this.index,
     required this.stop,
     required this.total,
@@ -743,6 +755,7 @@ class _AddStopPanel extends StatefulWidget {
   final void Function(StopRef ref, String role, int? nights) onAddStop;
 
   const _AddStopPanel({
+    super.key,
     required this.variant,
     required this.geocoder,
     required this.catalogue,
@@ -792,12 +805,29 @@ class _AddStopPanelState extends State<_AddStopPanel> {
     });
   }
 
+  /// The dropdown's value must be one of the
+  /// options; a stale selection (the catalogue
+  /// changed) falls back to the first name.
+  /// The visible selection is the effective
+  /// one: the Add button and `_add` use it,
+  /// so a displayed destination is always the
+  /// one that gets added.
+  String get _effectiveDestination {
+    final names = [
+      for (final dest in widget.catalogue) dest.name,
+    ];
+    return names.contains(_destination)
+        ? _destination
+        : (names.isNotEmpty ? names.first : '');
+  }
+
   void _add() {
     switch (_source) {
       case 0: // workbook destination
-        if (_destination.isEmpty) return;
+        final destination = _effectiveDestination;
+        if (destination.isEmpty) return;
         widget.onAddStop(
-          StopRef(kind: 'destination', name: _destination),
+          StopRef(kind: 'destination', name: destination),
           _role,
           _staysOvernight && _nights > 0 ? _nights : null,
         );
@@ -834,12 +864,7 @@ class _AddStopPanelState extends State<_AddStopPanel> {
     // The dropdown's value must be one of the
     // options; a stale selection (the catalogue
     // changed) falls back to the first name.
-    final effectiveDestination =
-        destinationNames.contains(_destination)
-            ? _destination
-            : (destinationNames.isNotEmpty
-                ? destinationNames.first
-                : '');
+    final effectiveDestination = _effectiveDestination;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -1000,7 +1025,7 @@ class _AddStopPanelState extends State<_AddStopPanel> {
             const SizedBox(height: 8),
             FilledButton(
               onPressed: _source == 0
-                  ? _destination.isEmpty
+                  ? _effectiveDestination.isEmpty
                       ? null
                       : _add
                   : _source == 1

@@ -109,33 +109,49 @@ class _CataloguePageState extends State<CataloguePage> {
         ],
       ),
     );
-    if (choice == null) return;
-    final (mode, withAi) = choice;
-    final name = nameController.text.trim();
-    if (name.isEmpty) return;
-    final country = countryController.text.trim().isEmpty
-        ? 'Unknown'
-        : countryController.text.trim();
-    final continent = continentController.text.trim().isEmpty
-        ? 'Unknown'
-        : continentController.text.trim();
+    try {
+      if (choice == null) return;
+      final (mode, withAi) = choice;
+      final name = nameController.text.trim();
+      if (name.isEmpty) {
+        // A blank name is not an add: say so instead of
+        // silently doing nothing (the buttons stay
+        // enabled, so this path is reachable).
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('A name is required -- nothing was added.'),
+        ));
+        return;
+      }
+      final country = countryController.text.trim().isEmpty
+          ? 'Unknown'
+          : countryController.text.trim();
+      final continent = continentController.text.trim().isEmpty
+          ? 'Unknown'
+          : continentController.text.trim();
 
-    final added = await widget.repository.addDestination(
-      name: name,
-      country: country,
-      continent: continent,
-    );
-    if (!mounted) return;
-    if (!added) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Could not add the destination -- it exists already, '
-            'or the write failed.'),
-      ));
-      return;
-    }
-    _reload();
-    if (withAi) {
-      await _populate(name, country, continent);
+      final added = await widget.repository.addDestination(
+        name: name,
+        country: country,
+        continent: continent,
+      );
+      if (!mounted) return;
+      if (!added) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'Could not add the destination -- it exists already, '
+              'or the write failed.'),
+        ));
+        return;
+      }
+      _reload();
+      if (withAi) {
+        await _populate(name, country, continent);
+      }
+    } finally {
+      nameController.dispose();
+      countryController.dispose();
+      continentController.dispose();
     }
   }
 

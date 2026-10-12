@@ -451,7 +451,15 @@ TripTotals totals(Variant variant) {
     final arrival = _parseDateOnly(stop.arrivalDate);
     final departure = _parseDateOnly(stop.departureDate);
     if (arrival != null && departure != null && departure.isAfter(arrival)) {
-      nights += departure.difference(arrival).inDays;
+      // Calendar days, not elapsed time: the
+      // spring-forward night is 23 h, which
+      // would floor a one-night span to zero.
+      // UTC midnights have no DST.
+      nights += DateTime.utc(departure.year, departure.month,
+              departure.day)
+          .difference(DateTime.utc(
+              arrival.year, arrival.month, arrival.day))
+          .inDays;
       nightsKnown = true;
     }
   }
@@ -469,8 +477,16 @@ TripTotals totals(Variant variant) {
   }
   final dates = <String>[
     for (final stop in variant.stops) ...[
-      if (stop.arrivalDate != null) stop.arrivalDate!,
-      if (stop.departureDate != null) stop.departureDate!,
+      // An empty string is "unset", not a date:
+      // the legacy's truthy checks skip it, and
+      // including it would put a blank in the
+      // date-range caption.
+      if (stop.arrivalDate != null &&
+          stop.arrivalDate!.isNotEmpty)
+        stop.arrivalDate!,
+      if (stop.departureDate != null &&
+          stop.departureDate!.isNotEmpty)
+        stop.departureDate!,
     ],
   ]..sort();
   return TripTotals(
@@ -487,12 +503,26 @@ TripTotals totals(Variant variant) {
 
 /// `date.fromisoformat`: a date-only ISO string, or null.
 /// A datetime string is not a date and is skipped --
-/// exactly the legacy's `ValueError` path.
+/// exactly the legacy's `ValueError` path. An invalid
+/// calendar date ("2026-02-30") is rejected too: the
+/// legacy's `fromisoformat` raises for it, while
+/// `DateTime.tryParse` silently normalizes it to
+/// March 2nd -- so the parsed date must format back
+/// to the input, or the value is not a real date.
 DateTime? _parseDateOnly(String? value) {
   if (value == null || value.isEmpty) return null;
   if (!_dateOnly.hasMatch(value)) return null;
-  return DateTime.tryParse(value);
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) return null;
+  return _isoDate(parsed) == value ? parsed : null;
 }
+
+/// The canonical form of a date-only value, the
+/// shape the editor writes and the regex accepts.
+String _isoDate(DateTime date) =>
+    '${date.year.toString().padLeft(4, '0')}'
+    '-${date.month.toString().padLeft(2, '0')}'
+    '-${date.day.toString().padLeft(2, '0')}';
 
 /// The "⚠️ Check results" panel (`ops.warnings_for`):
 /// every way the route can be inconsistent -- missing
@@ -516,8 +546,14 @@ List<String> warningsFor(Variant variant) {
     }
     final arrival = stop.arrivalDate;
     final departure = stop.departureDate;
-    if (arrival != null && arrival.isNotEmpty &&
-        departure != null && departure.isNotEmpty) {
+    // An empty string is "unset", not a date: the
+    // legacy's truthy checks treat it as absent, so
+    // a departure without an arrival warns.
+    final hasArrival =
+        arrival != null && arrival.isNotEmpty;
+    final hasDeparture =
+        departure != null && departure.isNotEmpty;
+    if (hasArrival && hasDeparture) {
       final a = _parseDateOnly(arrival);
       final d = _parseDateOnly(departure);
       if (a == null || d == null) {
@@ -525,9 +561,8 @@ List<String> warningsFor(Variant variant) {
       } else if (d.isBefore(a)) {
         out.add("'$name': departure before arrival.");
       }
-    } else if (departure != null &&
-        departure.isNotEmpty &&
-        arrival == null &&
+    } else if (hasDeparture &&
+        !hasArrival &&
         stop.role != 'origin') {
       // origin stops legitimately have only a departure date
       out.add("'$name': departure date without arrival.");

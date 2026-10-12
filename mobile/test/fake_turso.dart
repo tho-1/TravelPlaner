@@ -89,18 +89,82 @@ http.Response okMulti(
 
 /// A 200 pipeline response with `count` empty ok results
 /// -- the shape write statements produce.
-http.Response okEmpty([int count = 1]) => http.Response.bytes(
+///
+/// `rowsAffected` stamps the pipeline API's
+/// `rows_affected` on every result: a DML statement
+/// reports the rows it touched, and the trip save's
+/// concurrency guard reads it (a conditional update
+/// that matched nothing affected zero rows).
+http.Response okEmpty([int count = 1, int? rowsAffected]) =>
+    http.Response.bytes(
       utf8.encode(
         jsonEncode({
           'results': [
             for (var i = 0; i < count; i++)
-              {'type': 'ok', 'response': {'result': <String, dynamic>{}}},
+              {
+                'type': 'ok',
+                'response': {
+                  'result': {
+                    'rows_affected': ?rowsAffected,
+                  },
+                },
+              },
           ],
         }),
       ),
       200,
       headers: {'content-type': 'application/json; charset=utf-8'},
     );
+
+/// A 200 pipeline response carrying one SELECT result
+/// whose cells arrive the way the real pipeline sends
+/// them: typed (`{"type": "integer", "value": "1"}`).
+/// Plain values inside `rows` (see [okRows]) are what a
+/// hand-written test writes; the real API never does.
+http.Response okRowsTyped(
+  List<String> columns,
+  List<List<Object?>> rows,
+) =>
+    okMultiTyped([(columns, rows)]);
+
+/// The [okMulti] shape with typed cells, the shape the
+/// real pipeline always sends.
+http.Response okMultiTyped(
+  List<(List<String>, List<List<Object?>>)> results,
+) =>
+    http.Response.bytes(
+      utf8.encode(
+        jsonEncode({
+          'results': [
+            for (final (columns, rows) in results)
+              {
+                'type': 'ok',
+                'response': {
+                  'result': {
+                    'cols': [
+                      for (final column in columns) {'name': column},
+                    ],
+                    'rows': [
+                      for (final row in rows)
+                        [for (final cell in row) _typedCell(cell)],
+                    ],
+                  },
+                },
+              },
+          ],
+        }),
+      ),
+      200,
+      headers: {'content-type': 'application/json; charset=utf-8'},
+    );
+
+/// The pipeline API's cell shape for one value.
+Map<String, Object?> _typedCell(Object? cell) {
+  if (cell == null) return {'type': 'null', 'value': null};
+  if (cell is int) return {'type': 'integer', 'value': '$cell'};
+  if (cell is double) return {'type': 'real', 'value': '$cell'};
+  return {'type': 'text', 'value': '$cell'};
+}
 
 /// How the pipeline API reports a failed statement: an
 /// error *inside* a 200 response.

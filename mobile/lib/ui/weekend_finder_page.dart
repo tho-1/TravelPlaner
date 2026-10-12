@@ -134,12 +134,23 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
       _result = null;
     });
     final repository = WeekendRepository(_activeProvider());
-    final search = await repository.search(_weekend, _windows, _benefits);
-    if (!mounted) return;
-    setState(() {
-      _result = search;
-      _searching = false;
-    });
+    try {
+      final search = await repository.search(_weekend, _windows, _benefits);
+      if (!mounted) return;
+      setState(() {
+        _result = search;
+        _searching = false;
+      });
+    } catch (error) {
+      // The provider errors surface as notes inside the
+      // result; this is for anything else, so a failure
+      // never leaves the spinner up forever.
+      if (!mounted) return;
+      setState(() => _searching = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('The search failed: $error'),
+      ));
+    }
   }
 
   @override
@@ -292,8 +303,14 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
               value: _limitSundayReturns,
               onChanged: (value) => setState(() {
                 _limitSundayReturns = value;
+                // Off must not keep the old bound: null
+                // means "keep current" in _copyWindows,
+                // which pinned the 20:00 limit while the
+                // switch claimed "any Sunday return
+                // counts". End of day (24:00) is every
+                // possible Sunday return.
                 _windows = _copyWindows(
-                    sundayReturnUntil: value ? 20 * 60 : null);
+                    sundayReturnUntil: value ? 20 * 60 : 24 * 60);
               }),
               contentPadding: EdgeInsets.zero,
             ),

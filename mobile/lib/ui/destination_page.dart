@@ -194,46 +194,54 @@ class _DestinationPageState extends State<DestinationPage> {
         _profile = DestinationProfile.from(_dest);
       }
     });
-    if (ok) widget.onChanged?.call();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(ok
-          ? 'Saved'
-          : 'Nothing written -- the read or the write failed. '
-              'Check the token and the connection.'),
-    ));
+    if (ok) {
+      widget.onChanged?.call();
+    } else {
+      // Success is visible in the field itself; only a
+      // failed write pops a bar. Every save used to pop
+      // "Saved", burying the one message that matters.
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Nothing written -- the read or the write failed. '
+            'Check the token and the connection.'),
+      ));
+    }
   }
 
   Future<void> _editPrio() async {
     final controller =
         TextEditingController(text: _dest.prio?.toString() ?? '');
-    final value = await showDialog<Object?>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Prio Thorsten'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          decoration:
-              const InputDecoration(hintText: '1-10, empty to clear'),
+    try {
+      final value = await showDialog<Object?>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Prio Thorsten'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            keyboardType: TextInputType.number,
+            decoration:
+                const InputDecoration(hintText: '1-10, empty to clear'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                final raw = controller.text.trim();
+                Navigator.pop(
+                    context, raw.isEmpty ? null : num.tryParse(raw) ?? raw);
+              },
+              child: const Text('Save'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, null),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              final raw = controller.text.trim();
-              Navigator.pop(
-                  context, raw.isEmpty ? null : num.tryParse(raw) ?? raw);
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-    if (value != null) _update('prio', value);
+      );
+      if (value != null) await _update('prio', value);
+    } finally {
+      controller.dispose();
+    }
   }
 
   /// Save the comment box. An empty box over an
@@ -280,7 +288,24 @@ class _DestinationPageState extends State<DestinationPage> {
     final dest = _dest;
     final profile = _profile;
     return Scaffold(
-      appBar: AppBar(title: Text(dest.name)),
+      appBar: AppBar(
+        title: Text(dest.name),
+        // The save's progress lives in the app bar:
+        // the page must stay usable where possible and
+        // never freeze without an explanation while
+        // the round-trip to the database runs.
+        actions: [
+          if (_busy)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+        ],
+      ),
       body: AbsorbPointer(
         absorbing: _busy,
         child: ListView(

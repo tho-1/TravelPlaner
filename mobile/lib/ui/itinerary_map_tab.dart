@@ -129,15 +129,6 @@ class _ItineraryMapTabState extends State<ItineraryMapTab> {
                 (lat: stop.ref.lat!, lon: stop.ref.lon!),
           ];
     final view = fitView(fitPoints.isEmpty ? _routePoints(variant) : fitPoints);
-    final width = MediaQuery.of(context).size.width;
-    final zoom = _zoomFor(view, width, _mapHeight);
-    // The tile mosaic's top-left corner in world
-    // pixels -- the same computation
-    // WorldMapView runs, so the route overlay
-    // lands exactly on the tiles.
-    final centre = worldPixels(view.latitude, view.longitude, zoom);
-    final topLeft =
-        Offset(centre.x - width / 2, centre.y - _mapHeight / 2);
     final routeTotals = totals(variant);
 
     return SingleChildScrollView(
@@ -210,28 +201,46 @@ class _ItineraryMapTabState extends State<ItineraryMapTab> {
               ],
             ),
           ),
-          WorldMapView(
-            latitude: view.latitude,
-            longitude: view.longitude,
-            zoom: zoom,
-            cities: const [],
-            countryFills: const {},
-            overlay: [
-              CustomPaint(
-                size: Size(width, _mapHeight),
-                painter: _RoutePainter(
-                  variant: variant,
-                  visibleModes: _visibleModes,
-                  showGateways: _showGateways,
-                  selectedStopId: widget.selectedStopId,
-                  centerLongitude: view.longitude,
-                  zoom: zoom,
-                  topLeft: topLeft,
-                ),
-              ),
-            ],
-            height: _mapHeight,
-            showCityLabels: false,
+          // The map measures its own width, not the
+          // window's: the desktop shell constrains pages
+          // narrower than the window, and a view fitted to
+          // the window width paints the route off the
+          // visible map.
+          LayoutBuilder(
+            builder: (context, mapConstraints) {
+              final width = mapConstraints.maxWidth;
+              final zoom = _zoomFor(view, width, _mapHeight);
+              // The tile mosaic's top-left corner in world
+              // pixels -- the same computation
+              // WorldMapView runs, so the route overlay
+              // lands exactly on the tiles.
+              final centre = worldPixels(view.latitude, view.longitude, zoom);
+              final topLeft = Offset(
+                  centre.x - width / 2, centre.y - _mapHeight / 2);
+              return WorldMapView(
+                latitude: view.latitude,
+                longitude: view.longitude,
+                zoom: zoom,
+                cities: const [],
+                countryFills: const {},
+                overlay: [
+                  CustomPaint(
+                    size: Size(width, _mapHeight),
+                    painter: _RoutePainter(
+                      variant: variant,
+                      visibleModes: _visibleModes,
+                      showGateways: _showGateways,
+                      selectedStopId: widget.selectedStopId,
+                      centerLongitude: view.longitude,
+                      zoom: zoom,
+                      topLeft: topLeft,
+                    ),
+                  ),
+                ],
+                height: _mapHeight,
+                showCityLabels: false,
+              );
+            },
           ),
           Padding(
             padding: const EdgeInsets.all(8),

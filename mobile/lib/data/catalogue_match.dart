@@ -21,6 +21,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../models/destination.dart';
+import 'text_norm.dart';
 
 /// Country code -> English name, generated from
 /// `airport_city.COUNTRY_NAMES` (the single source of
@@ -85,25 +86,18 @@ String cleanCityName(Object? raw) {
 }
 
 /// Lowercase alphanumeric key used for city-name matching.
+///
+/// Diacritics fold through the shared map (Zürich,
+/// São Paulo, Đà Nẵng): the airport table spells the
+/// Southeast-Asian cities ASCII ("Da Nang"), so both
+/// sides must fold to the same key. A local Latin-1
+/// table dropped the Vietnamese letters, which made
+/// every Vietnamese destination unmatched.
 String normalizeKey(Object? value) {
-  var text = (value ?? '').toString().toLowerCase();
-  for (final entry in _transliterations.entries) {
-    text = text.replaceAll(entry.key, entry.value);
-  }
+  final text =
+      stripDiacritics((value ?? '').toString().toLowerCase());
   return text.replaceAll(RegExp(r'[^a-z0-9]+'), '');
 }
-
-/// Latin-1 accents the city names actually use (Zürich,
-/// São Paulo, ...). An explicit table, not a heuristic.
-const _transliterations = <String, String>{
-  'ä': 'a', 'ö': 'o', 'ü': 'u', 'ß': 'ss',
-  'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
-  'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a', 'å': 'a',
-  'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
-  'ó': 'o', 'ò': 'o', 'ô': 'o', 'õ': 'o',
-  'ú': 'u', 'ù': 'u', 'û': 'u',
-  'ç': 'c', 'ñ': 'n', 'ý': 'y', 'ø': 'o', 'æ': 'ae',
-};
 
 /// The catalogue destinations, indexed for matching. Built
 /// once from a loaded destination list.
@@ -116,8 +110,13 @@ class CatalogueIndex {
       final city = cleanCityName(destination.name);
       final country = destination.country ?? '';
       if (city.isEmpty || country.isEmpty) continue;
-      _byCityCountry['${normalizeKey(city)}|${normalizeKey(country)}'] =
-          destination.name;
+      // First row wins, like the legacy's
+      // `setdefault`: the workbook holds two Suzhou
+      // rows, and the finder must link to the same
+      // one the legacy links to.
+      _byCityCountry.putIfAbsent(
+          '${normalizeKey(city)}|${normalizeKey(country)}',
+          () => destination.name);
       _byCity.putIfAbsent(normalizeKey(city), () => []).add(country);
     }
   }

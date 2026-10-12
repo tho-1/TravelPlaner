@@ -1,6 +1,6 @@
 # Travel Planner — Plan & Handoff
 
-Last updated: 2026-10-10.
+Last updated: 2026-10-12.
 
 **Read `AGENTS.md` first** (orientation, invariants, open items), then
 `README.md` (how to run it, where runtime data is written, the data-safety
@@ -990,6 +990,148 @@ the table is wider than the phone surface
 and the Wishlist column starts off-screen).
 The mobile suite is 299 tests;
 `flutter analyze` clean.
+
+---
+
+## 0m. Review fix pass 2026-10-12 — the verified review findings become fixes
+
+A full code review (application + test
+suite, all findings verified against the
+code before reporting) produced findings
+F1–F16; the user asked for them to be
+fixed in the recommended order. One
+commit batch carries them; the suite
+grew 371 → 389 tests, `flutter analyze`
+clean.
+
+**Data corruption / crashes.** The stop
+editors in the plan tab are keyed by the
+stop's id, so pending editor values
+follow the stop through a reorder or a
+variant switch — an unkeyed editor wrote
+stop 1's typed values into whichever
+stop sat at that position afterwards
+(regression test: type into stop 1,
+reorder, save, assert the right stop got
+the value). The map page ignores taps on
+countries the catalogue has no rows for
+(the legacy has no map tap at all) and
+resolves the shapes' dataset spellings
+back to the catalogue's via the reverse
+of the alias table — "United States of
+America" now selects "United States" —
+and the drill-down caption and dropdown
+are null-safe on top. The Turso client
+decodes the 200 body inside its error
+handling: a captive portal's HTML is the
+legacy's "Turso returned a non-JSON
+response", not a red screen. The missing
+map aliases landed (`United States`,
+`Bahamas`; the geometry test now expects
+184 registered keys).
+
+**The concurrency guard became real.**
+`saveTrip` no longer checks-then-writes
+in two requests: the upsert carries
+`WHERE trips.updated_at = <the stamp
+this copy saw>`, and the pipeline
+response's `rows_affected` (now surfaced
+on `StatementResult`) decides saved
+versus conflict — zero rows is another
+device's write winning, and the variant
+statements never run on a conflict. A
+copy that never saw a stamp guards with
+`IS NULL` (`= NULL` never matches in
+SQL — that would have made every save
+of such a copy a false conflict). The
+creation date is never rewritten. Tests:
+conflict touches nothing else, failed
+upsert aborts, first save inserts, the
+IS NULL shape; the fake Turso grew
+`rows_affected` stamps and a typed-cells
+helper (`okRowsTyped`/`okMultiTyped`),
+so the pipeline's real `{"type":
+"integer", "value": "1"}` cells are
+finally covered end to end.
+
+**Wrong results.** The Sunday-returns
+toggle off now passes end-of-day (24:00)
+instead of null ("keep current" pinned
+the 20:00 bound while the switch claimed
+any return counts), and the timetable's
+Sunday fetch window honours the bound so
+the "flights read" count stays honest.
+Nights are calendar days (UTC midnights,
+no DST) in both the totals and the
+finder. A date that does not round-trip
+("2026-02-30") is rejected with the
+warning instead of silently normalised
+to March 2nd; empty-string dates are
+"unset" everywhere. The reviews filter
+compares the raw count, not the rounded
+one. Diacritics fold through the shared
+map — Vietnamese names match the
+catalogue index, Romanian ș/ț fold
+instead of vanishing. Dart's unstable
+sort got explicit index tiebreakers so
+tied options and tied airline captions
+order like the legacy's `sorted()`.
+
+**Feedback and the low bundle.** The
+destination page shows its save progress
+in the app bar and pops a bar only on
+failure (the "Saved" bar used to bury
+real errors; the failure path has a
+test). Deleting a variant asks first,
+like deleting a trip and removing a
+stop. Both maps measure their own width
+(`LayoutBuilder`) — the desktop shell
+constrains pages to 1100 px, and
+window-width geometry displaced the
+route overlay and the tap target. The
+export dialogs fill the available width
+instead of a fixed 640 px that overflowed
+phones. The add-stop panel adds the
+destination it displays (a displayed
+selection is always the effective one;
+test included), the map caption resets
+when tiles load again and its post-frame
+writes check `mounted`, the blank-name
+add says so instead of silently doing
+nothing, the dialog text controllers are
+disposed, a transient IQAir read error
+is not cached as "no data", a nameless
+geocode result falls back to the query,
+the airport asset load and the finder's
+search cannot hang the spinner, the
+flight-routes cache writes through a
+temp file, the catalogue index keeps the
+first duplicate city (the legacy's
+`setdefault`), multi-comma numbers
+partition at the first comma like the
+legacy, and `.5` rounding is banker's
+rounding.
+
+**Product decision taken** (the review's
+§4, applied per "fix as you
+recommend"): researched transport
+connections persist on the phone in the
+app's documents directory
+(`data/app_dirs.dart`, `path_provider`
+— the second plugin after `url_launcher`,
+consistent with the G4 decision). The
+save result is surfaced either way:
+"updated", or "researched, but not
+saved on this device".
+
+**Deliberately not done.** Moving the
+geocode cache read onto an isolate (the
+review's own check showed the search is
+submit-triggered, so the premise was
+wrong), and the summary table's
+"Earliest out" mislabel (both apps share
+it — recorded, not "fixed" into a
+divergence).
 
 ---
 

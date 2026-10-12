@@ -32,7 +32,15 @@ class StatementResult {
   final List<String> columns;
   final List<List<dynamic>> rows;
 
-  const StatementResult(this.columns, this.rows);
+  /// The rows a DML statement affected, when the
+  /// pipeline API reports it (writes do, reads
+  /// don't). The trip save's concurrency guard
+  /// reads it: a conditional update that matched
+  /// nothing affected zero rows.
+  final int? rowsAffected;
+
+  const StatementResult(this.columns, this.rows,
+      {this.rowsAffected});
 
   /// The rows as maps, the shape the repositories consume.
   List<Map<String, dynamic>> get asMaps => [
@@ -116,9 +124,18 @@ class TursoClient {
     // JSON is UTF-8 by definition (RFC 8259); decoding the
     // bytes explicitly avoids the http package's latin1
     // default, which would mangle non-ASCII city names.
-    final body = jsonDecode(utf8.decode(response.bodyBytes))
-        as Map<String, dynamic>?;
-    return _parseResponse(body);
+    // A 200 with a non-JSON body -- a captive portal, a
+    // proxy error page -- is the same failure as an
+    // unreachable host: the legacy returns a problem,
+    // never a throw (turso_db.py).
+    try {
+      final body = jsonDecode(utf8.decode(response.bodyBytes))
+          as Map<String, dynamic>?;
+      return _parseResponse(body);
+    } catch (_) {
+      return (<StatementResult>[],
+          ['Turso returned a non-JSON response']);
+    }
   }
 
   /// A read statement. Returns the rows as maps; an empty
@@ -172,10 +189,19 @@ class TursoClient {
           rows.add([for (final cell in row) _cellValue(cell)]);
         }
       }
-      results.add(StatementResult(columns, rows));
+      results.add(StatementResult(columns, rows,
+          rowsAffected: _affected(result?['rows_affected'])));
     }
     return (results, problems);
   }
+
+  /// The pipeline API reports `rows_affected` for a
+  /// DML statement, as a number or as a string.
+  static int? _affected(Object? value) => value is int
+      ? value
+      : value is String
+          ? int.tryParse(value)
+          : null;
 
   /// Normalise one pipeline-API cell to a plain Dart value.
   /// Without this every read would hand the app

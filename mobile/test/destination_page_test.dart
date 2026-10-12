@@ -140,7 +140,8 @@ void main() {
     expect(find.textContaining('being populated'), findsOneWidget);
   });
 
-  testWidgets('a comment write reports success', (tester) async {    // updateField is a read-modify-write: one SELECT for the
+  testWidgets('a comment write updates the field and stays quiet',
+      (tester) async {    // updateField is a read-modify-write: one SELECT for the
     // read, one upsert for the write; the fake answers both.
     var selects = 0;
     var writes = 0;
@@ -170,7 +171,38 @@ void main() {
 
     expect(selects, greaterThanOrEqualTo(1));
     expect(writes, greaterThanOrEqualTo(1));
-    expect(find.text('Saved'), findsOneWidget);
+    // Success shows in the field itself; the page does
+    // not pop a "Saved" bar on every write -- the one
+    // bar it pops is the failure.
+    expect(find.text('Saved'), findsNothing);
+    expect(find.text('Nothing written'), findsNothing);
+  });
+
+  testWidgets('a failed write pops the problem instead of staying silent',
+      (tester) async {
+    final fake = FakeTurso((statements) {
+      final statement = statements.single;
+      if (statement.startsWith('SELECT')) {
+        return okRows(['destination', 'data'], [
+          ['Alexandria', jsonEncode([['Comment', 'old']])],
+        ]);
+      }
+      return pipelineError('read-only database');
+    });
+    final repository = repositoryFor(fake);
+
+    await tester.pumpWidget(MaterialApp(
+      home: DestinationPage(repository: repository, destination: alexandria()),
+    ));
+    await tester.pumpAndSettle();
+
+    await scrollTo(tester, find.byType(TextField));
+    await tester.enterText(find.byType(TextField), 'Beach day');
+    await scrollTo(tester, find.widgetWithIcon(FilledButton, Icons.save_outlined));
+    await tester.tap(find.widgetWithIcon(FilledButton, Icons.save_outlined));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Nothing written'), findsOneWidget);
   });
 
   testWidgets('the AI populate applies the profile and reports it',
@@ -261,7 +293,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(writes, greaterThanOrEqualTo(1));
-    expect(find.text('Saved'), findsOneWidget);
+    expect(find.text('Saved'), findsNothing);
   });
 
   testWidgets('clearing a comment asks before deleting it',
@@ -307,7 +339,7 @@ void main() {
     await tester.tap(find.text('Yes, delete it'));
     await tester.pumpAndSettle();
     expect(writes, greaterThanOrEqualTo(1));
-    expect(find.text('Saved'), findsOneWidget);
+    expect(find.text('Saved'), findsNothing);
   });
 
   testWidgets('no matching photo keeps the typography header',

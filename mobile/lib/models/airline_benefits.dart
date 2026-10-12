@@ -37,13 +37,15 @@ const benefitColumns = <String>[
   'confirmed_booking',
 ];
 
-const yesValues = {'yes', 'y', 'true', '1', 'x'};
+const yesValues = {'yes', 'y', 'true', '1', 'ja', 'x'};
 
 /// Only an explicit yes counts. `unknown` is not a yes.
+/// The legacy's set exactly (`_is_yes`): "ja" is a yes,
+/// and a numeric 1.0 is not -- `toString` makes it
+/// "1.0", which the set rejects.
 bool isYes(Object? value) {
   if (value == null) return false;
   if (value is bool) return value;
-  if (value is num) return value == 1;
   return yesValues.contains(value.toString().trim().toLowerCase());
 }
 
@@ -200,6 +202,19 @@ String normalizeAirline(Object? value) {
   for (final entry in transliterations.entries) {
     text = text.replaceAll(entry.key, entry.value);
   }
+  // Dotted legal forms first, as whole units: "S.A."
+  // would otherwise split into "s" and "a" and then
+  // look like two real words (the legacy's regex,
+  // airline_benefits.py).
+  text = text.replaceAll(
+    RegExp(
+      r'\b(?:s\.?a\.?|n\.?v\.?|b\.?v\.?|a\.?g\.?|g\.?b\.?r\.?|'
+      r'a\.?s\.?|s\.?a\.?r\.?l\.?|k\.?g\.?|l\.?t\.?d\.?|'
+      r'p\.?l\.?c\.?|l\.?l\.?c\.?)\b',
+      caseSensitive: false,
+    ),
+    ' ',
+  );
   text = text.replaceAll(RegExp(r'[^a-z0-9]+'), ' ');
   final words = text.split(' ').where((w) => w.isNotEmpty).toList();
   final kept = <String>[];

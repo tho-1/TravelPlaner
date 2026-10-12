@@ -8,8 +8,10 @@
 /// are decomposed with an explicit map. Characters
 /// outside the maps are left for the caller's
 /// non-alphanumeric collapse to replace with a
-/// space — the same miss the Python side's
-/// `unicodedata.normalize("NFKD", ...)` records.
+/// space -- the Python side's `unicodedata.normalize`
+/// folds those too, so the maps must cover every
+/// block the names actually use (Latin-1,
+/// Extended-A, Extended-B, Vietnamese).
 library;
 
 /// Decompose the accented Latin characters to
@@ -18,7 +20,10 @@ String stripDiacritics(String value) {
   final buffer = StringBuffer();
   for (var i = 0; i < value.length; i++) {
     final char = value[i];
-    buffer.write(_diacritics[char] ?? _vietnamese[char] ?? char);
+    buffer.write(_diacritics[char] ??
+        _vietnamese[char] ??
+        _romanian[char] ??
+        char);
   }
   return buffer.toString();
 }
@@ -69,6 +74,17 @@ const _diacritics = <String, String>{
   'Ů': 'U', 'ů': 'u', 'Ű': 'U', 'ű': 'u', 'Ų': 'U', 'ų': 'u',
   'Ŵ': 'W', 'ŵ': 'w', 'Ŷ': 'Y', 'ŷ': 'y', 'Ÿ': 'Y',
   'Ź': 'Z', 'ź': 'z', 'Ż': 'Z', 'ż': 'z', 'Ž': 'Z', 'ž': 'z',
+};
+
+/// Romanian (Latin Extended-B): the catalogue's
+/// Romanian destinations (Iași, Brașov, Constanța)
+/// carry ș and ț, which the Python side's NFKD
+/// folds to s and t. Dropping them instead
+/// ("Iași" -> "iai") breaks the IQAir and picture
+/// matching for every Romanian city.
+const _romanian = <String, String>{
+  'Ș': 'S', 'ș': 's',
+  'Ț': 'T', 'ț': 't',
 };
 
 /// The Vietnamese letters (Latin Extended-B and the

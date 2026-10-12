@@ -53,6 +53,15 @@ class CountryShape {
 const countryAliases = <String, String>{
   'Tanzania': 'United Republic of Tanzania',
   'UAE': 'United Arab Emirates',
+  // The dataset's English names are longer than the
+  // catalogue's Country column: the legacy resolves
+  // both spellings to the same ISO-3 code
+  // (COUNTRY_ISO3_MAP in world_map.py). Without
+  // these, the choropleth leaves the United States
+  // and the Bahamas unpainted while their cities
+  // are plotted.
+  'United States': 'United States of America',
+  'Bahamas': 'The Bahamas',
 };
 
 /// The loaded geometry, indexed like the Python side's

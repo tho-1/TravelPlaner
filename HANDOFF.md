@@ -62,6 +62,25 @@ records, the same seven qualifying airlines), the real catalogue (144/144
 coordinates) and the real Alexandria profile. `turso_config.json` now also
 carries `benefits_*` and `deepseek_api_key`.
 
+## The review fix pass (2026-10-12)
+
+A full code review produced findings F1–F16; all were fixed in one
+batch (recorded in `PLAN.md` §0m). The ones worth remembering: the
+plan tab's stop editors are keyed by stop id (an unkeyed editor wrote
+pending values into the stop that later sat at the same position —
+data corruption), the trip save's concurrency guard is now one
+conditional statement (`WHERE trips.updated_at = <stamp>` +
+`rows_affected`; `IS NULL` for stamp-less copies) instead of a
+check-then-write race, a 200 with a non-JSON body is a problem
+message instead of a crash, the map tap is guarded and resolves the
+dataset's country spellings to the catalogue's, and researched
+transport connections now persist on the phone (`data/app_dirs.dart`,
+`path_provider` — the app's documents directory when no cache path is
+configured; user decision applied from the review's §4). Suite:
+371 → 389 tests, `flutter analyze` clean. The review's deferred item
+(capture Xiaomi logs for the F2/F4 crash paths) is moot — both crash
+paths are fixed and covered by tests.
+
 ## Bugs found and fixed this session (don't re-litigate)
 
 * **`normalize_text` is lossy on both sides.** `data_utils.normalize_text`

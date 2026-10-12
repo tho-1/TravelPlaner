@@ -51,17 +51,26 @@ class GeocodeResult {
     this.lon,
   });
 
-  factory GeocodeResult.fromJson(Map<String, dynamic> json) =>
-      GeocodeResult(
-        name: '${json['name']}',
-        country: json['country'] as String?,
-        admin1: json['admin1'] as String?,
+  factory GeocodeResult.fromJson(Map<String, dynamic> json,
+      {String? fallbackName}) {
+    // The API names every result, but one without
+    // a name would render as the literal "null" --
+    // fall back to the query, like the legacy's
+    // `r.get("name", query)`.
+    final name = (json['name'] as String?)?.trim();
+    return GeocodeResult(
+      name: name != null && name.isNotEmpty
+          ? name
+          : (fallbackName ?? ''),
+      country: json['country'] as String?,
+      admin1: json['admin1'] as String?,
       // The API's field names are latitude/longitude; the
       // legacy maps them onto the lat/lon shape it uses
       // everywhere else.
       lat: (json['latitude'] as num?)?.toDouble(),
       lon: (json['longitude'] as num?)?.toDouble(),
-      );
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'name': name,
@@ -113,7 +122,8 @@ class GeocodeRepository {
           for (final entry in results)
             if (entry is Map)
               GeocodeResult.fromJson(
-                  Map<String, dynamic>.from(entry)),
+                  Map<String, dynamic>.from(entry),
+                  fallbackName: trimmed),
         ];
       }
     }
@@ -143,7 +153,8 @@ class GeocodeRepository {
         for (final entry in raw is List ? raw : [])
           if (entry is Map)
             GeocodeResult.fromJson(
-                Map<String, dynamic>.from(entry)),
+                Map<String, dynamic>.from(entry),
+                fallbackName: trimmed),
       ];
     } catch (_) {
       // Transient network error: don't cache the

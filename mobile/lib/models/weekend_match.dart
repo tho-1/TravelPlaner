@@ -262,10 +262,17 @@ bool _sameDay(DateTime a, DateTime b) =>
 /// Nights between landing and taking off, floored at zero: an overnight
 /// return that lands the morning it departed is a same-day trip, not a
 /// negative stay.
+///
+/// Calendar days, not elapsed time: `DateTime.difference`
+/// measures hours, and the spring-forward night is 23 h,
+/// which would floor a one-night stay to zero. UTC
+/// midnights have no DST, so their difference is exactly
+/// the number of calendar nights -- what the legacy's
+/// date subtraction computes.
 int nightsAway(Flight outFlight, Flight backFlight) {
-  final out = DateTime(
-      outFlight.arrival.year, outFlight.arrival.month, outFlight.arrival.day);
-  final back = DateTime(backFlight.departure.year,
+  final out = DateTime.utc(outFlight.arrival.year,
+      outFlight.arrival.month, outFlight.arrival.day);
+  final back = DateTime.utc(backFlight.departure.year,
       backFlight.departure.month, backFlight.departure.day);
   final nights = back.difference(out).inDays;
   return nights < 0 ? 0 : nights;
@@ -456,16 +463,29 @@ List<TripOption> _bestOptions(List<TripOption> pairs, int limit) {
     }
   }
 
-  final ordered = [...pairs]..sort((a, b) {
-      final byNights = a.nights.compareTo(b.nights);
-      if (byNights != 0) return byNights;
-      final byDay = dayRank(a.backFlight.arrival)
-          .compareTo(dayRank(b.backFlight.arrival));
-      if (byDay != 0) return byDay;
-      final byOut = a.outFlight.departure.compareTo(b.outFlight.departure);
-      if (byOut != 0) return byOut;
-      return a.backFlight.departure.compareTo(b.backFlight.departure);
-    });
+  // Dart's List.sort is not stable, Python's sorted is:
+  // two options with an identical rank key keep their
+  // input order here (the original index is the final
+  // tiebreaker), so the chosen option set matches the
+  // legacy's on ties.
+  final ranked = <(int, TripOption)>[
+    for (var i = 0; i < pairs.length; i++) (i, pairs[i]),
+  ];
+  ranked.sort((a, b) {
+    final byNights = a.$2.nights.compareTo(b.$2.nights);
+    if (byNights != 0) return byNights;
+    final byDay = dayRank(a.$2.backFlight.arrival)
+        .compareTo(dayRank(b.$2.backFlight.arrival));
+    if (byDay != 0) return byDay;
+    final byOut =
+        a.$2.outFlight.departure.compareTo(b.$2.outFlight.departure);
+    if (byOut != 0) return byOut;
+    final byBack =
+        a.$2.backFlight.departure.compareTo(b.$2.backFlight.departure);
+    if (byBack != 0) return byBack;
+    return a.$1.compareTo(b.$1);
+  });
+  final ordered = [for (final entry in ranked) entry.$2];
 
   final seen = <String>{};
   final outCount = <String, int>{};
@@ -488,10 +508,20 @@ List<TripOption> _bestOptions(List<TripOption> pairs, int limit) {
 String describeRule(Map<String, int> rejected) {
   if (rejected.isEmpty) return '';
   final total = rejected.values.fold(0, (a, b) => a + b);
-  final top = (rejected.entries.toList()
-        ..sort((a, b) => b.value.compareTo(a.value)))
+  // Stable on ties (the original order wins), like the
+  // legacy's sorted(): the caption names the same
+  // airlines the legacy names when counts tie.
+  final entries = rejected.entries.toList();
+  final ranked = <(int, MapEntry<String, int>)>[
+    for (var i = 0; i < entries.length; i++) (i, entries[i]),
+  ];
+  ranked.sort((a, b) {
+    final byCount = b.$2.value.compareTo(a.$2.value);
+    return byCount != 0 ? byCount : a.$1.compareTo(b.$1);
+  });
+  final top = ranked
       .take(4)
-      .map((entry) => '${entry.key} (${entry.value})')
+      .map((entry) => '${entry.$2.key} (${entry.$2.value})')
       .join(', ');
   final more = rejected.length <= 4 ? '' : ', +${rejected.length - 4} more';
   return '$total outbound flight(s) dropped for airlines without '

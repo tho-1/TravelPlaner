@@ -381,9 +381,16 @@ class FraportBoardProvider implements FlightBoardProvider {
       return (at(day, 0, 0).add(satAfter), at(weekend.sunday, 0, 0));
     }
     if (_same(day, weekend.sunday)) {
-      // Return Sunday: lands any time (the app has no
-      // Sunday-until control; Monday 00:00 is the bound).
-      return (at(day, 0, 0), at(weekend.monday, 0, 0));
+      // Return Sunday: lands by the Sunday bound.
+      // Off (null) means any Sunday return counts:
+      // 24:00 is Monday 00:00, so the walk covers
+      // exactly what the matcher keeps -- and the
+      // "flights read" count stays honest.
+      return (
+        at(day, 0, 0),
+        at(day, 0, 0).add(
+            Duration(minutes: windows.sundayReturnUntil ?? 24 * 60)),
+      );
     }
     if (_same(day, weekend.monday)) {
       // Return Monday: lands before the Monday bound.

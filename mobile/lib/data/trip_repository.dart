@@ -106,35 +106,55 @@ class TripRepository {
   /// generates -- the stops table's primary key needs it.
   ///
   /// The optimistic-concurrency guard (E10): the trip's
-  /// `updated_at` is compared with the live row first,
-  /// exactly like the legacy compares the trips.json
-  /// signature at save time
-  /// (`storage._assert_not_stale`). A trip another session
-  /// saved since this copy was loaded is never overwritten
-  /// silently -- the caller offers "Reload latest data"
-  /// instead.
+  /// `updated_at` is compared with the live row, exactly
+  /// like the legacy compares the trips.json signature at
+  /// save time (`storage._assert_not_stale`). A trip
+  /// another session saved since this copy was loaded is
+  /// never overwritten silently -- the caller offers
+  /// "Reload latest data" instead.
+  ///
+  /// The comparison and the write are one statement: the
+  /// upsert's `WHERE trips.updated_at = ...` turns the
+  /// update into a no-op (zero affected rows) when another
+  /// device saved in between, which a separate check and
+  /// write cannot guarantee -- a save could land between
+  /// the two requests. The variant statements run only
+  /// after the trip row is confirmed written, so a
+  /// conflict never deletes and re-inserts the variants.
   Future<TripSaveStatus> saveTrip(Trip trip) async {
     final tripId = trip.id;
     if (tripId.isEmpty) return TripSaveStatus.failed;
-    final (current, checkProblems) = await client.query(
-        'SELECT updated_at FROM trips WHERE id = ${_sqlValue(tripId)}');
-    if (checkProblems.isNotEmpty) return TripSaveStatus.failed;
-    if (current.isNotEmpty &&
-        current.first['updated_at'] != trip.updatedAt) {
-      return TripSaveStatus.conflict;
-    }
     final now = utcNow();
-    final statements = <String>[
+    // `= NULL` never matches in SQL: a copy that saw no
+    // stamp (a row saved before the column existed) must
+    // compare with IS, or its every save would be a
+    // false conflict.
+    final expectedStamp = trip.updatedAt == null
+        ? 'WHERE trips.updated_at IS NULL'
+        : 'WHERE trips.updated_at = ${_sqlValue(trip.updatedAt)}';
+    final (upserts, upsertProblems) = await client.runPipeline([
       'INSERT INTO trips (id, name, created, active_variant_id, '
           'updated_at) VALUES ('
           '${_sqlValue(tripId)}, ${_sqlValue(trip.name)}, '
           '${_sqlValue(trip.created)}, '
           '${_sqlValue(trip.activeVariantId)}, ${_sqlValue(now)}) '
           'ON CONFLICT(id) DO UPDATE SET name = excluded.name, '
-          'created = excluded.created, '
           'active_variant_id = excluded.active_variant_id, '
-          'updated_at = excluded.updated_at',
-    ];
+          'updated_at = excluded.updated_at '
+          // The creation date is never rewritten: a copy
+          // without one (an older export) must not NULL
+          // the stored date.
+          '$expectedStamp',
+    ]);
+    if (upsertProblems.isNotEmpty) return TripSaveStatus.failed;
+    // Zero affected rows: the trip changed since this copy
+    // was loaded (or the stored updated_at is unknown to
+    // this copy) -- another device's write wins and the
+    // caller offers a reload.
+    if (upserts.first.rowsAffected == 0) {
+      return TripSaveStatus.conflict;
+    }
+    final statements = <String>[];
     for (final variant in trip.variants) {
       final variantId = variant.id;
       if (variantId.isEmpty) continue;

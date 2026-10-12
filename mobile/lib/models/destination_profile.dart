@@ -66,10 +66,15 @@ double? coerceNumber(Object? value) {
     // 1,234.56 -> thousands separator is a comma
     token = token.replaceAll(',', '');
   } else if (token.contains(',')) {
-    // 1,234 -> thousands; 8,5 -> decimal comma
-    final parts = token.split(',');
-    final head = parts[0];
-    final tail = parts.length > 1 ? parts[1] : '';
+    // 1,234 -> thousands; 8,5 -> decimal comma.
+    // Partition at the FIRST comma, like the legacy:
+    // "1,234,567" leaves a "234,567" tail, which is
+    // neither a 3-digit thousands group nor a plain
+    // decimal comma -- unparseable, so null, exactly
+    // the legacy's answer.
+    final firstComma = token.indexOf(',');
+    final head = token.substring(0, firstComma);
+    final tail = token.substring(firstComma + 1);
     final headIsInt = RegExp(r'^[+-]?\d+$').hasMatch(head);
     token = (tail.length == 3 && headIsInt)
         ? token.replaceAll(',', '')
@@ -197,7 +202,7 @@ class DestinationProfile {
   final String? foodDescription;
   final String? foodDishes;
 
-  final int? reviewsCount;
+  final double? reviewsCount;
   final String? dataStatus;
 
   final List<MonthRating> months;
@@ -294,7 +299,12 @@ class DestinationProfile {
       foodSpiciness: text('Food - Spicyness'),
       foodDescription: text('Food - Description'),
       foodDishes: text('Food - Main Dishes'),
-      reviewsCount: reviews == null ? null : coerceNumber(reviews)?.round(),
+      // The raw value, not a rounded one: the
+      // reviews filter compares it against a
+      // continuous slider, and rounding first
+      // would hide a 7.3 when the slider sits
+      // at 7.2 -- a destination the legacy keeps.
+      reviewsCount: reviews == null ? null : coerceNumber(reviews),
       dataStatus: text('Data Status'),
       months: months,
       climate: climate,

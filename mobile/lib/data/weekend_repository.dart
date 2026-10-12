@@ -28,17 +28,25 @@ class AirportLookup {
 
   static Future<void> ensureLoaded() async {
     if (_loaded) return;
-    final text = await rootBundle.loadString('assets/airports.json');
-    final decoded = jsonDecode(text) as Map<String, dynamic>;
-    for (final entry in decoded.entries) {
-      final pair = entry.value;
-      if (pair is List && pair.length >= 2) {
-        final city = '${pair[0]}'.trim();
-        final country = '${pair[1]}'.trim();
-        if (city.isNotEmpty) {
-          _table[entry.key] = (city, country);
+    try {
+      final text = await rootBundle.loadString('assets/airports.json');
+      final decoded = jsonDecode(text) as Map<String, dynamic>;
+      for (final entry in decoded.entries) {
+        final pair = entry.value;
+        if (pair is List && pair.length >= 2) {
+          final city = '${pair[0]}'.trim();
+          final country = '${pair[1]}'.trim();
+          if (city.isNotEmpty) {
+            _table[entry.key] = (city, country);
+          }
         }
       }
+    } catch (_) {
+      // A missing or malformed asset leaves the
+      // table empty: airports then key under
+      // their own code, which the matcher handles
+      // (unknown is not a failure), instead of
+      // throwing into the finder's search.
     }
     _loaded = true;
   }

@@ -8,6 +8,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../data/app_dirs.dart';
 import '../data/benefits_repository.dart';
 import '../data/destination_repository.dart';
 import '../data/geocode_repository.dart';
@@ -22,6 +23,9 @@ import 'world_map_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // The per-device cache directories (the phone's
+  // app-documents fallback) before the first frame.
+  await initAppDirs();
   runApp(TravelPlannerApp(config: await TursoConfig.load()));
 }
 

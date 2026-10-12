@@ -47,7 +47,11 @@ class FlightRoutesRepository {
 
   /// Persist the research. Best effort: a
   /// failure to write is a false return, never
-  /// a crash.
+  /// a crash. The write goes through a temporary
+  /// file and a rename, like the geocode cache:
+  /// a crash mid-write must not leave a
+  /// truncated JSON behind (a later load would
+  /// silently lose the entry).
   bool save(String destinationName, Map<String, dynamic> data) {
     if (!isConfigured) return false;
     final key = normalizeKey(destinationName);
@@ -57,7 +61,17 @@ class FlightRoutesRepository {
       if (!dir.existsSync()) {
         dir.createSync(recursive: true);
       }
-      File('$cacheDir/$key.json').writeAsStringSync(jsonEncode(data));
+      final path = File('$cacheDir/$key.json');
+      final tmp = File('$cacheDir/$key.json.tmp');
+      tmp.writeAsStringSync(jsonEncode(data));
+      try {
+        tmp.renameSync(path.path);
+      } on FileSystemException {
+        // Atomic replace is not available on
+        // every platform; a direct write is the
+        // fallback (the cache is best-effort).
+        path.writeAsStringSync(jsonEncode(data));
+      }
       return true;
     } catch (_) {
       return false;

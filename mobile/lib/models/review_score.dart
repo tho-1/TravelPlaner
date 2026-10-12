@@ -15,6 +15,8 @@
 ///   0-10 scale with one decimal.
 library;
 
+import 'dart:math' as math;
+
 const aspects = <String>[
   'Scenery & atmosphere',
   'Things to do',
@@ -104,26 +106,47 @@ class DestinationReviewData {
   Map<String, Object?> calculateFinalScores() {
     final aspect = calculateAspectScore();
     final platform = calculatePlatformScore();
-    var score100 = (50 + 50 * (0.6 * aspect + 0.4 * platform)).round();
+    var score100 =
+        _roundEven(50 + 50 * (0.6 * aspect + 0.4 * platform), 0)
+            .toInt();
     score100 = score100.clamp(0, 100);
-    final score10 = double.parse((score100 / 10.0).toStringAsFixed(1));
+    final score10 = _roundEven(score100 / 10.0, 1);
     return {
       'Destination': destinationName,
       'Country': country,
       'Final Score (0-100)': score100,
       'Review Score (0-10)': score10,
-      'S_aspect': double.parse(aspect.toStringAsFixed(3)),
-      'S_platform': double.parse(platform.toStringAsFixed(3)),
+      'S_aspect': _roundEven(aspect, 3),
+      'S_platform': _roundEven(platform, 3),
       'Total Reviews Analyzed': totalReviewsAnalyzed,
       'Confidence':
           totalReviewsAnalyzed >= 25 ? 'High' : 'Low Confidence',
       'Date Range': dateRange,
       'Aspect Scores': {
         for (final aspect in aspects)
-          aspect: double.parse(
-              ((aspectCounts[aspect] ?? const AspectSentiment()).score)
-                  .toStringAsFixed(3)),
+          aspect: _roundEven(
+              (aspectCounts[aspect] ?? const AspectSentiment()).score,
+              3),
       },
     };
   }
+}
+
+/// Banker's rounding (half to even) at `places`
+/// decimals, the shape Python's `round()` has.
+/// Dart's `round()` and `toStringAsFixed` round
+/// half away from zero, which changes the reported
+/// score on an exact tie (62.5 -> 63 here, 62 in
+/// the legacy).
+double _roundEven(double value, int places) {
+  final scale = math.pow(10.0, places);
+  final scaled = value * scale;
+  final floor = scaled.floorToDouble();
+  final diff = scaled - floor;
+  final rounded = diff < 0.5
+      ? floor
+      : diff > 0.5
+          ? floor + 1
+          : (floor.toInt().isEven ? floor : floor + 1);
+  return rounded / scale;
 }

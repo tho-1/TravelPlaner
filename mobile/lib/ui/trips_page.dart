@@ -393,7 +393,10 @@ class _TripsPageState extends State<TripsPage> {
       builder: (context) => AlertDialog(
         title: const Text('Backup all trips'),
         content: SizedBox(
-          width: 640,
+          // Fill the dialog's available width instead of
+          // a fixed 640 px: the fixed width overflows a
+          // phone, whose dialog area is narrower.
+          width: double.maxFinite,
           height: 420,
           child: SingleChildScrollView(
             child: SelectableText(json),
@@ -426,7 +429,10 @@ class _TripsPageState extends State<TripsPage> {
       builder: (context) => AlertDialog(
         title: Text('Export "${trip.name}"'),
         content: SizedBox(
-          width: 640,
+          // Fill the dialog's available width instead of
+          // a fixed 640 px: the fixed width overflows a
+          // phone, whose dialog area is narrower.
+          width: double.maxFinite,
           height: 420,
           child: SingleChildScrollView(
             child: SelectableText(exportTrip(trip)),
@@ -774,7 +780,23 @@ class _ItineraryViewState extends State<_ItineraryView> {
                   IconButton(
                     icon: const Icon(Icons.delete_outline),
                     tooltip: 'Delete variant',
-                    onPressed: variants.length <= 1 ? null : onDeleteVariant,
+                    // The same confirmation a trip and a
+                    // stop get: the trash icon sits next
+                    // to the variant dropdown, and a
+                    // mis-tap must not delete the
+                    // variant with all its stops and
+                    // legs unasked.
+                    onPressed: variants.length <= 1
+                        ? null
+                        : () => _confirmDelete(
+                              context,
+                              title: 'Delete variant?',
+                              message:
+                                  'Delete "${active?.name ?? 'this variant'}" '
+                                  'with all its stops and legs? '
+                                  'This cannot be undone.',
+                              onConfirm: onDeleteVariant,
+                            ),
                   ),
                 ],
               ),
