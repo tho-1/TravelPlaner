@@ -79,7 +79,11 @@ class _TripsPageState extends State<TripsPage> {
     for (final trip in _trips) {
       if (trip.id == _activeTripId) return trip;
     }
-    return _trips.isEmpty ? null : _trips.first;
+    // Unreachable: every writer of `_activeTripId`
+    // (the refresh fixup, the trip switcher, the
+    // create flow) keeps it null or an id that is
+    // in `_trips`.
+    return null;
   }
 
   Future<void> _refresh() async {

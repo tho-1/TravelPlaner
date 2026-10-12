@@ -112,19 +112,22 @@ carries `benefits_*` and `deepseek_api_key`.
    API was the deliberate choice: the phone feature must not depend on a
    running PC. Rotate the key by editing `mobile/assets/turso_config.json`
    (`deepseek_api_key`) and rebuilding the app.
-4. **Parity remainder** (the user's end goal: nothing PC-side only):
-   the destination **galleries** (Unsplash is key-gated exactly like the AI
-   populate — the same pattern applies) and the remaining world-map filters
-   the legacy page has (month / travel condition). Trip **editing**, the
-   weekend finder's **CSV override + summary table**, the catalogue's
-   **country grouping** and the trips **JSON backup** (the legacy
-   sidebar's workbook download in its Turso-world shape: the whole
-   store, selectable + clipboard, no file plugin) landed 2026-10-12
-   (commits `9ac41b5`, `4685cbc`, `c003e8c`, `fb24070`, and the
-   backup commit). The backup's **restore** side is open: it is a
-   bulk write to the live database, so its shape is a user decision.
-   Each as repository + UI + tests, mirroring the legacy page's
-   data sources.
+4. **Parity: complete except the backup's restore side** (2026-10-12).
+   The full pass landed: the responsive shell (`9a61362`), the quick
+   wins (`0c4bdec`: catalogue filter sheet, research toggle, comment
+   delete, Sunday returns, benefits re-read), the banner photo
+   (`66dcfe1`), the gallery (`9d326c8`), dish links (`89d47a9`), the
+   AI food populate (`09e7a21`), rainy-day labels + the AQI and IQAir
+   charts (`f6e7fa4`), transport connections (`2fe3da1`, `4d3dfbd`),
+   the itinerary editor with route map, compare table and the
+   concurrency guard (`9ac41b5`, `4685cbc`), the weekend finder's
+   CSV override + summary table (`c003e8c`), the catalogue's country
+   grouping (`fb24070`) and the trips JSON backup (`c3fe3f6`). Final
+   pass: `flutter analyze` clean, a live-verification test
+   (`mobile/test/parity_live_test.dart` — skips without the
+   git-ignored config, so CI is unaffected) and the TripsPage
+   dead-branch cleanup. **Open: the backup's restore side** — a bulk
+   write to the live database, so its shape is a user decision.
 5. **Release-signing note**: the release APK currently signs with the debug
    key (fine for sideloading a personal app; a real keystore is an open
    nicety, not a blocker).
