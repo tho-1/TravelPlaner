@@ -155,4 +155,58 @@ void main() {
     expect(result.report.oneWayOnly.single.city, 'London');
     expect(result.report.cities, isEmpty);
   });
+
+  test('a CSV override reaches the report with no network', () async {
+    // The escape hatch: the user pastes both boards and the
+    // search runs on the CSV alone. The provider parses the
+    // whole CSV per query (the legacy's behavior), so the
+    // "flights read" counts repeat a flight once per window
+    // it fits -- the matcher still pairs each flight once.
+    final repository = WeekendRepository(CsvBoardProvider(
+      departuresCsv: '''
+flight_no,airline,origin,destination,departure,arrival
+LH1000,Lufthansa,FRA,LHR,2026-10-16 15:05,2026-10-16 16:55
+''',
+      arrivalsCsv: '''
+flight_no,airline,origin,destination,departure,arrival
+LH2000,Lufthansa,LHR,FRA,2026-10-17 17:30,2026-10-17 19:30
+''',
+    ));
+    final result =
+        await repository.search(Weekend(friday), const Windows(), _benefits);
+    expect(result.report.notes, isEmpty);
+    expect(result.report.cityCount, 1);
+    final city = result.report.cities.single;
+    expect(city.city, 'London');
+    expect(city.country, 'GB');
+    expect(city.count, 1);
+    expect(city.options.single.outFlight.flightNo, 'LH1000');
+    expect(city.options.single.backFlight.flightNo, 'LH2000');
+    expect(city.options.single.nights, 1);
+  });
+
+  test('a CSV row whose operator has no benefits is rejected',
+      () async {
+    final repository = WeekendRepository(CsvBoardProvider(
+      departuresCsv: '''
+flight_no,airline,origin,destination,departure,arrival
+LH1000,Condor,FRA,LHR,2026-10-16 15:05,2026-10-16 16:55
+''',
+      arrivalsCsv: '''
+flight_no,airline,origin,destination,departure,arrival
+LH2000,Lufthansa,LHR,FRA,2026-10-17 17:30,2026-10-17 19:30
+''',
+    ));
+    final result = await repository.search(
+        Weekend(friday), const Windows(), _benefits);
+    expect(result.report.cities, isEmpty);
+    // The outbound was dropped for a carrier without
+    // benefits; the return is kept as a one-leg near
+    // miss. The count is 2, not 1: the provider
+    // parses the whole CSV per query (the legacy's
+    // behavior), so the Friday-dated row is seen by
+    // both the Friday and the Saturday query.
+    expect(result.report.outboundRejectedAirlines, {'Condor': 2});
+    expect(result.report.oneWayOnly.single.city, 'London');
+  });
 }

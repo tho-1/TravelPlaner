@@ -70,7 +70,7 @@ typedef WeekendSearch = ({
 });
 
 class WeekendRepository {
-  final FraportBoardProvider provider;
+  final FlightBoardProvider provider;
 
   WeekendRepository(this.provider);
 

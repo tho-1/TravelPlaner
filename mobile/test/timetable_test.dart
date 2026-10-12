@@ -322,4 +322,176 @@ void main() {
       expect(seen!.queryParameters['lang'], 'en');
     });
   });
+
+  group('parseCsvFlights', () {
+    final day = DateTime(2026, 10, 16);
+
+    test('the canonical header parses rows', () {
+      final (flights, problems) = parseCsvFlights('''
+flight_no,airline,origin,destination,departure,arrival
+LH1000,Lufthansa,FRA,BCN,09.10.2026 15:05,09.10.2026 17:05
+''', day);
+      expect(problems, isEmpty);
+      expect(flights.single.flightNo, 'LH1000');
+      expect(flights.single.airline, 'Lufthansa');
+      expect(flights.single.origin, 'FRA');
+      expect(flights.single.destination, 'BCN');
+      expect(flights.single.departure, DateTime(2026, 10, 9, 15, 5));
+      expect(flights.single.arrival, DateTime(2026, 10, 9, 17, 5));
+    });
+
+    test('alias headers work (Flight, Airline, From, To, Dep, Arr)', () {
+      final (flights, problems) = parseCsvFlights('''
+Flight,Airline,From,To,Dep,Arr
+LH1000,Lufthansa,FRA,BCN,15:05,17:05
+''', day);
+      expect(problems, isEmpty);
+      expect(flights.single.flightNo, 'LH1000');
+      // A bare time takes the query's day.
+      expect(flights.single.departure, DateTime(2026, 10, 16, 15, 5));
+      expect(flights.single.arrival, DateTime(2026, 10, 16, 17, 5));
+    });
+
+    test('an ISO date in the time field', () {
+      final (flights, problems) = parseCsvFlights('''
+flight_no,airline,origin,destination,departure,arrival
+LH1000,Lufthansa,FRA,BCN,2026-10-09 15:05,2026-10-09 17:05
+''', day);
+      expect(problems, isEmpty);
+      expect(flights.single.departure, DateTime(2026, 10, 9, 15, 5));
+    });
+
+    test('a trailing +1 means the next day', () {
+      final (flights, problems) = parseCsvFlights('''
+flight_no,airline,origin,destination,departure,arrival
+LH1000,Lufthansa,FRA,BCN,15:05+1,17:05+1
+''', day);
+      expect(problems, isEmpty);
+      expect(flights.single.departure, DateTime(2026, 10, 17, 15, 5));
+      expect(flights.single.arrival, DateTime(2026, 10, 17, 17, 5));
+    });
+
+    test('an arrival before the departure is pushed a day', () {
+      // An overnight leg: the arrival is the next morning.
+      final (flights, problems) = parseCsvFlights('''
+flight_no,airline,origin,destination,departure,arrival
+LH1000,Lufthansa,FRA,BCN,23:30,00:10
+''', day);
+      expect(problems, isEmpty);
+      expect(flights.single.departure, DateTime(2026, 10, 16, 23, 30));
+      expect(flights.single.arrival, DateTime(2026, 10, 17, 0, 10));
+    });
+
+    test('operated_by is the operator, the airline cell the marketing carrier',
+        () {
+      final (flights, problems) = parseCsvFlights('''
+flight_no,airline,origin,destination,departure,arrival,operated_by
+LH1000,United,FRA,BCN,15:05,17:05,Lufthansa
+''', day);
+      expect(problems, isEmpty);
+      // Benefits follow the operator.
+      expect(flights.single.operatorAirline, 'Lufthansa');
+      expect(flights.single.marketingAirline, 'United');
+    });
+
+    test('a missing arrival falls back to the departure', () {
+      final (flights, problems) = parseCsvFlights('''
+flight_no,airline,origin,destination,departure,arrival
+LH1000,Lufthansa,FRA,BCN,15:05,
+''', day);
+      expect(problems, isEmpty);
+      expect(flights.single.arrival, DateTime(2026, 10, 16, 15, 5));
+    });
+
+    test('a row without origin or destination is a problem line', () {
+      final (flights, problems) = parseCsvFlights('''
+flight_no,airline,origin,destination,departure,arrival
+LH1000,Lufthansa,,BCN,15:05,17:05
+''', day);
+      expect(flights, isEmpty);
+      expect(problems.single, contains('line 2'));
+      expect(problems.single, contains('origin or destination missing'));
+    });
+
+    test('an unreadable time is a problem line', () {
+      final (flights, problems) = parseCsvFlights('''
+flight_no,airline,origin,destination,departure,arrival
+LH1000,Lufthansa,FRA,BCN,noon,17:05
+''', day);
+      expect(flights, isEmpty);
+      expect(problems.single, contains('line 2'));
+      expect(problems.single, contains('unreadable time'));
+    });
+
+    test('missing required columns are reported', () {
+      final (flights, problems) = parseCsvFlights('''
+flight_no,airline,origin,destination,departure
+LH1000,Lufthansa,FRA,BCN,15:05
+''', day);
+      expect(flights, isEmpty);
+      expect(problems.single,
+          contains('Missing required column(s): arrival'));
+    });
+
+    test('an empty text has no header row', () {
+      final (flights, problems) = parseCsvFlights('', day);
+      expect(flights, isEmpty);
+      expect(problems.single, 'The file has no header row.');
+    });
+
+    test('a quoted field may contain a comma', () {
+      final (flights, problems) = parseCsvFlights('''
+flight_no,airline,origin,destination,departure,arrival
+LH1000,"Lufthansa, CityLine",FRA,BCN,15:05,17:05
+''', day);
+      expect(problems, isEmpty);
+      expect(flights.single.airline, 'Lufthansa, CityLine');
+    });
+
+    test('one bad row does not discard the good ones', () {
+      final (flights, problems) = parseCsvFlights('''
+flight_no,airline,origin,destination,departure,arrival
+LH1000,Lufthansa,FRA,BCN,15:05,17:05
+LH1001,Lufthansa,FRA,BCN,not-a-time,17:05
+LH1002,Lufthansa,FRA,BCN,16:05,18:05
+''', day);
+      expect(flights.map((flight) => flight.flightNo),
+          ['LH1000', 'LH1002']);
+      expect(problems.single, contains('line 3'));
+    });
+  });
+
+  group('CsvBoardProvider', () {
+    test('an empty side warns that no CSV is loaded', () async {
+      final result =
+          await const CsvBoardProvider().fetch(DateTime(2026, 10, 16), 'departures');
+      expect(result.flights, isEmpty);
+      expect(result.warning, 'No CSV data loaded.');
+      expect(result.source, 'csv');
+    });
+
+    test('skipped rows are counted in the warning', () async {
+      final provider = CsvBoardProvider(departuresCsv: '''
+flight_no,airline,origin,destination,departure,arrival
+LH1000,Lufthansa,FRA,BCN,bad,17:05
+''');
+      final result =
+          await provider.fetch(DateTime(2026, 10, 16), 'departures');
+      expect(result.flights, isEmpty);
+      expect(result.warning, contains('1 row(s) skipped'));
+      expect(result.warning, contains('line 2'));
+    });
+
+    test('the arrivals side is read for arrivals queries', () async {
+      final provider = CsvBoardProvider(arrivalsCsv: '''
+flight_no,airline,origin,destination,departure,arrival
+LH2000,Lufthansa,BCN,FRA,17:05,19:05
+''');
+      final result =
+          await provider.fetch(DateTime(2026, 10, 17), 'arrivals');
+      expect(result.flights.single.flightNo, 'LH2000');
+      expect(result.flights.single.origin, 'BCN');
+      expect(result.flights.single.destination, 'FRA');
+    });
+  });
 }

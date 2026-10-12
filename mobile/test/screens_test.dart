@@ -20,6 +20,9 @@ import 'package:travel_planner/data/benefits_repository.dart';
 import 'package:travel_planner/data/destination_repository.dart';
 import 'package:travel_planner/data/geocode_repository.dart';
 import 'package:travel_planner/data/trip_repository.dart';
+import 'package:travel_planner/data/weekend_repository.dart';
+import 'package:travel_planner/models/timetable.dart';
+import 'package:travel_planner/models/weekend_match.dart';
 import 'package:travel_planner/ui/catalogue_page.dart';
 import 'package:travel_planner/ui/destination_page.dart';
 import 'package:travel_planner/ui/main.dart';
@@ -116,6 +119,46 @@ void main() {
         destinations: repository,
       ),
     );
+  });
+
+  testWidgets('the weekend finder searches and shows the summary table',
+      (tester) async {
+    // The search runs on an injected board (no network);
+    // the airport table is installed so the lookup needs
+    // no asset. The benefits come from the seed list
+    // (the config carries no benefits URL), so the
+    // carrier is spelled the way the seed spells it.
+    AirportLookup.installForTesting({'LHR': ('London', 'GB')});
+    final fake = FakeTurso((_) => okRows(['destination'], []));
+    final repository =
+        DestinationRepository(TursoClient(_config, httpClient: fake.client()));
+    await render(
+      tester,
+      WeekendFinderPage(
+        benefits: BenefitsRepository(_config, httpClient: fake.client()),
+        destinations: repository,
+        board: _FakeBoard(),
+      ),
+    );
+    // The cards stack taller than a phone screen;
+    // scroll to the button before tapping it.
+    await tester.drag(
+        find.byType(ListView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Find weekends'));
+    await tester.pumpAndSettle();
+    // The report lands below the fold; a ListView
+    // builds its children lazily, so scroll it into
+    // view before asserting on it.
+    await tester.drag(
+        find.byType(ListView), const Offset(0, -500));
+    await tester.pumpAndSettle();
+    // The summary table (City, Options, Earliest out,
+    // Nights, Airlines) above the per-city cards.
+    expect(find.byType(DataTable), findsOneWidget);
+    expect(find.text('London (GB)'), findsWidgets);
+    expect(find.text('LH1000 · Lufthansa'), findsWidgets);
+    expect(find.text('LH2000 · Lufthansa'), findsWidgets);
   });
 
   testWidgets('the world map renders', (tester) async {
@@ -311,4 +354,61 @@ void _setSurface(WidgetTester tester, Size size) {
     tester.view.physicalSize = const Size(800, 600);
     tester.view.devicePixelRatio = 1.0;
   });
+}
+
+/// A board that answers the weekend finder's five
+/// queries with one qualifying pair: a Lufthansa
+/// outbound on the Friday and a Lufthansa return on
+/// the Saturday, whichever weekend the page is on.
+class _FakeBoard implements FlightBoardProvider {
+  @override
+  Future<FetchResult> fetch(
+    DateTime day,
+    String direction, {
+    DateTime? since,
+    DateTime? until,
+  }) async {
+    if (direction == 'departures') {
+      if (day.weekday != DateTime.friday) {
+        return _empty();
+      }
+      return FetchResult(
+        flights: [
+          Flight(
+            flightNo: 'LH1000',
+            airline: 'Lufthansa',
+            origin: 'FRA',
+            destination: 'LHR',
+            departure: DateTime(day.year, day.month, day.day, 15, 10),
+            arrival: DateTime(day.year, day.month, day.day, 15, 55),
+          ),
+        ],
+        source: 'fake',
+        fetchedAt: DateTime.now().toIso8601String(),
+      );
+    }
+    if (day.weekday != DateTime.saturday) {
+      return _empty();
+    }
+    return FetchResult(
+      flights: [
+        Flight(
+          flightNo: 'LH2000',
+          airline: 'Lufthansa',
+          origin: 'LHR',
+          destination: 'FRA',
+          departure: DateTime(day.year, day.month, day.day, 17, 30),
+          arrival: DateTime(day.year, day.month, day.day, 19, 30),
+        ),
+      ],
+      source: 'fake',
+      fetchedAt: DateTime.now().toIso8601String(),
+    );
+  }
+
+  FetchResult _empty() => FetchResult(
+        flights: const <Flight>[],
+        source: 'fake',
+        fetchedAt: DateTime.now().toIso8601String(),
+      );
 }

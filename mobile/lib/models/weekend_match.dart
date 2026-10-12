@@ -21,6 +21,14 @@ class Flight {
   final DateTime arrival;
   final String terminal;
 
+  /// The carrier the flight is marketed under, when it
+  /// differs from the one flying it. The board's
+  /// codeshare list is ignored entirely (it appears on
+  /// some records and not others), so only the CSV
+  /// override can populate this: a CSV row with
+  /// `operated_by` keeps the marketing airline here.
+  final String marketingAirline;
+
   const Flight({
     required this.flightNo,
     required this.airline,
@@ -29,6 +37,7 @@ class Flight {
     required this.departure,
     required this.arrival,
     this.terminal = '',
+    this.marketingAirline = '',
   });
 
   /// Benefits follow the operator; the board's `al` already is it.

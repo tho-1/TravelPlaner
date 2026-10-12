@@ -1,12 +1,17 @@
 /// The weekend finder: Fri→Mon possibilities from FRA.
 ///
-/// The Flutter port of `pages/weekend_finder.py`'s live
-/// path (the CSV upload override has no mobile equivalent
-/// -- the app always reads the live board). The rules and
-/// the data flow are the legacy ones: the six time bounds
-/// narrow five board queries, the matcher requires both
-/// legs, and the report explains what it dropped and why
-/// -- an empty answer is never ambiguous.
+/// The Flutter port of `pages/weekend_finder.py`. The
+/// flight source is decided at runtime and shown in the
+/// "Flight data source" card: the live Fraport board is
+/// the primary source, and a pasted CSV (departures and
+/// arrivals) is the escape hatch that overrides it — an
+/// explicit CSV always wins, so the finder stays usable
+/// with no network or when the board changes under us.
+/// The rules and the data flow are the legacy ones: the
+/// six time bounds narrow five board queries, the
+/// matcher requires both legs, and the report explains
+/// what it dropped and why -- an empty answer is never
+/// ambiguous.
 library;
 
 import 'package:flutter/material.dart';
@@ -20,14 +25,28 @@ import '../models/destination.dart';
 import '../models/timetable.dart';
 import '../models/weekend_match.dart';
 
+/// The working example the legacy shows next to the
+/// upload: a Friday out and a Monday back, in the
+/// canonical column spelling.
+const csvTemplate = '''flight_no,airline,origin,destination,departure,arrival
+LH1000,Lufthansa,FRA,BCN,09.10.2026 15:05,09.10.2026 17:05
+LH1002,Lufthansa,BCN,FRA,11.10.2026 16:40,11.10.2026 18:35
+''';
+
 class WeekendFinderPage extends StatefulWidget {
   final BenefitsRepository benefits;
   final DestinationRepository destinations;
+
+  /// The flight board the finder queries. The app passes
+  /// nothing (the live Fraport board); tests inject a fake
+  /// so a search runs without network.
+  final FlightBoardProvider? board;
 
   const WeekendFinderPage({
     super.key,
     required this.benefits,
     required this.destinations,
+    this.board,
   });
 
   @override
@@ -35,7 +54,8 @@ class WeekendFinderPage extends StatefulWidget {
 }
 
 class _WeekendFinderPageState extends State<WeekendFinderPage> {
-  late final WeekendRepository _repository;
+  late final FlightBoardProvider _liveBoard =
+      widget.board ?? FraportBoardProvider(throttleSeconds: 1.5);
   BenefitSource _benefits = (
     flags: <String, bool>{},
     records: <AirlineRecord>[],
@@ -52,17 +72,31 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   /// means any Sunday return counts.
   var _limitSundayReturns = false;
 
+  /// The CSV override: either field non-empty wins over
+  /// the live board (the weekend-finder plan's decision
+  /// 1 — live board for the upcoming weekend, CSV as the
+  /// override and the no-network fallback).
+  final TextEditingController _departuresCsv =
+      TextEditingController();
+  final TextEditingController _arrivalsCsv =
+      TextEditingController();
+
   WeekendSearch? _result;
   List<Destination> _catalogue = const <Destination>[];
   var _searching = false;
   @override
   void initState() {
     super.initState();
-    _repository = WeekendRepository(
-        FraportBoardProvider(throttleSeconds: 1.5));
     _weekend = weekendContaining(DateTime.now());
     _loadBenefits();
     _loadCatalogue();
+  }
+
+  @override
+  void dispose() {
+    _departuresCsv.dispose();
+    _arrivalsCsv.dispose();
+    super.dispose();
   }
 
   Future<void> _loadBenefits() async {
@@ -81,12 +115,26 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     setState(() => _catalogue = destinations);
   }
 
+  /// The provider the search runs on: an explicit CSV
+  /// always wins over the live board.
+  FlightBoardProvider _activeProvider() {
+    if (_departuresCsv.text.trim().isNotEmpty ||
+        _arrivalsCsv.text.trim().isNotEmpty) {
+      return CsvBoardProvider(
+        departuresCsv: _departuresCsv.text,
+        arrivalsCsv: _arrivalsCsv.text,
+      );
+    }
+    return _liveBoard;
+  }
+
   Future<void> _find() async {
     setState(() {
       _searching = true;
       _result = null;
     });
-    final search = await _repository.search(_weekend, _windows, _benefits);
+    final repository = WeekendRepository(_activeProvider());
+    final search = await repository.search(_weekend, _windows, _benefits);
     if (!mounted) return;
     setState(() {
       _result = search;
@@ -100,13 +148,15 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Weekend Finder')),
       body: _searching
-          ? const Center(
+          ? Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(),
+                  const CircularProgressIndicator(),
                   SizedBox(height: 16),
-                  Text('Querying the flight board…'),
+                  Text(_activeProvider() is CsvBoardProvider
+                      ? 'Matching flights…'
+                      : 'Querying the flight board…'),
                 ],
               ),
             )
@@ -116,6 +166,8 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                 _weekendCard(),
                 const SizedBox(height: 12),
                 _windowsCard(),
+                const SizedBox(height: 12),
+                _sourceCard(),
                 const SizedBox(height: 12),
                 _benefitsCard(),
                 const SizedBox(height: 16),
@@ -285,6 +337,126 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     );
   }
 
+  /// The flight source, as the legacy's "Flight data
+  /// source" expander: the live board is the primary
+  /// source, and a pasted CSV is the escape hatch that
+  /// overrides it. The legacy's file upload becomes two
+  /// paste fields here — the same CSV text, the same
+  /// override semantics, and no file-picker plugin
+  /// (the app stays plugin-free; see G4).
+  ///
+  /// The legacy's "data sources that are not available"
+  /// expander has nothing to list: the Dart port has
+  /// exactly one live provider and it is always
+  /// available, so the expander would always be empty.
+  Widget _sourceCard() {
+    final theme = Theme.of(context);
+    final overrideActive =
+        _departuresCsv.text.trim().isNotEmpty ||
+            _arrivalsCsv.text.trim().isNotEmpty;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Flight data source',
+                style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Text(
+              'Only airlines you have marked as having '
+              'benefits count. Source: '
+              '${FraportBoardProvider.name}'
+              '${overrideActive ? '' : ' — paste CSV below to override it.'}',
+              style: theme.textTheme.bodySmall,
+            ),
+            if (overrideActive) ...[
+              const SizedBox(height: 4),
+              Text(
+                'CSV override active — the live board '
+                'is not queried.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.primary),
+              ),
+            ],
+            const SizedBox(height: 8),
+            ExpansionTile(
+              title: Text(
+                overrideActive
+                    ? 'CSV override (active)'
+                    : 'CSV override (optional)',
+                style: theme.textTheme.bodyMedium,
+              ),
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                      16, 0, 16, 12),
+                  child: Column(
+                    crossAxisAlignment:
+                        CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Two files, or leave one empty. '
+                        'Columns: flight_no, airline, '
+                        'origin, destination, departure, '
+                        'arrival — operated_by is used '
+                        'when present, because benefits '
+                        'follow the operating carrier. '
+                        'Times may be 15:05 or '
+                        '09.10.2026 15:05.',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _departuresCsv,
+                        maxLines: 4,
+                        minLines: 2,
+                        decoration: const InputDecoration(
+                          labelText:
+                              'Departures from FRA (CSV)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _arrivalsCsv,
+                        maxLines: 4,
+                        minLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Arrivals into FRA (CSV)',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ExpansionTile(
+                        title: Text('CSV template',
+                            style: theme.textTheme.bodySmall),
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                                16, 0, 16, 12),
+                            child: SelectableText(
+                              csvTemplate,
+                              style: theme.textTheme.bodySmall
+                                  ?.copyWith(
+                                      fontFamily: 'monospace'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _benefitsCard() {
     return Card(
       child: Padding(
@@ -444,13 +616,64 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
       });
     }
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('${report.cityCount} destinations',
             style: theme.textTheme.titleMedium),
         const SizedBox(height: 8),
+        _summaryTable(cities),
+        const SizedBox(height: 12),
+        const Divider(),
+        const SizedBox(height: 12),
         for (final city in cities) _cityCard(city, index.match(city.city, city.country)),
       ],
     );
+  }
+
+  /// The results summary (the legacy's `st.dataframe`):
+  /// one row per city — City, Options, Earliest out,
+  /// Nights, Airlines — above the per-city detail.
+  /// "Earliest out" and "Nights" come from the first
+  /// option, which the matcher ranks (fewest nights,
+  /// then a Sunday return, then earliest departure).
+  Widget _summaryTable(List<CityResult> cities) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: DataTable(
+        columns: const [
+          DataColumn(label: Text('City')),
+          DataColumn(label: Text('Options')),
+          DataColumn(label: Text('Earliest out')),
+          DataColumn(label: Text('Nights')),
+          DataColumn(label: Text('Airlines')),
+        ],
+        rows: [
+          for (final city in cities)
+            DataRow(cells: [
+              DataCell(Text(city.label)),
+              DataCell(Text('${city.count}')),
+              DataCell(Text(
+                  _stamp(city.options.first.outFlight.departure))),
+              DataCell(Text('${city.options.first.nights}')),
+              DataCell(Text(_airlineList(city.options))),
+            ]),
+        ],
+      ),
+    );
+  }
+
+  /// The distinct operating carriers across a city's
+  /// options, both legs, sorted — the summary table's
+  /// "Airlines" column.
+  static String _airlineList(List<TripOption> options) {
+    final airlines = <String>{
+      for (final option in options) ...[
+        option.outFlight.operatorAirline,
+        option.backFlight.operatorAirline,
+      ],
+    }.toList()
+      ..sort();
+    return airlines.join(', ');
   }
 
   Widget _cityCard(CityResult city, String? catalogueName) {
@@ -501,6 +724,10 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                 Text('Out', style: theme.textTheme.labelSmall),
                 Text('${out.flightNo} · ${out.operatorAirline}',
                     style: theme.textTheme.bodyMedium),
+                if (out.marketingAirline.isNotEmpty &&
+                    out.marketingAirline != out.operatorAirline)
+                  Text('marketed as ${out.marketingAirline}',
+                      style: theme.textTheme.bodySmall),
                 Text(
                     '${_stamp(out.departure)} → ${_stamp(out.arrival)}'
                     '${out.terminal.isEmpty ? '' : ' · T${out.terminal}'}',

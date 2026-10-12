@@ -131,9 +131,14 @@ Credentials come from `mobile/assets/turso_config.json`
 unconfigured and explains itself instead of crashing.
 
 Four tabs: **Catalogue** (search, filters, add destination, open a
-destination), **Trips** (read-only listing with delete), **Finder**
-(the weekend finder from FRA - the Fraport board plus the benefits
-database) and **Map** (every destination on OpenStreetMap tiles,
+destination), **Trips** (the itinerary editor: stops, transport
+legs, variants, compare, route map), **Finder** (the weekend
+finder from FRA - the Fraport board plus the benefits database,
+with the legacy's CSV override: paste the departures and arrivals
+boards and the search runs on them instead of the live board,
+and a summary table of City / Options / Earliest out / Nights /
+Airlines above the per-city cards) and **Map** (every destination
+on OpenStreetMap tiles,
 with the legacy's month selector: pick a month and every country
 fills with its best condition that month, tap a country to list
 its cities). The catalogue and the map share one filter panel

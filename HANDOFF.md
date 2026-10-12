@@ -112,12 +112,13 @@ carries `benefits_*` and `deepseek_api_key`.
    API was the deliberate choice: the phone feature must not depend on a
    running PC. Rotate the key by editing `mobile/assets/turso_config.json`
    (`deepseek_api_key`) and rebuilding the app.
-4. **Parity remainder** (the user's end goal: nothing PC-side only): the
-   destination **galleries** (Unsplash is key-gated exactly like the AI
-   populate — the same pattern applies), trip **editing** (the app is
-   read-only there on purpose), and the remaining world-map filters the
-   legacy page has (month / travel condition). Each as repository + UI +
-   tests, mirroring the legacy page's data sources.
+4. **Parity remainder** (the user's end goal: nothing PC-side only):
+   the destination **galleries** (Unsplash is key-gated exactly like the AI
+   populate — the same pattern applies) and the remaining world-map filters
+   the legacy page has (month / travel condition). Trip **editing** and the
+   weekend finder's **CSV override + summary table** landed 2026-10-12
+   (commits `9ac41b5`, `4685cbc`, and the F2+F4 commit). Each as
+   repository + UI + tests, mirroring the legacy page's data sources.
 5. **Release-signing note**: the release APK currently signs with the debug
    key (fine for sideloading a personal app; a real keystore is an open
    nicety, not a blocker).
