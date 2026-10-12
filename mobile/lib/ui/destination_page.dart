@@ -289,11 +289,9 @@ class _DestinationPageState extends State<DestinationPage> {
     final profile = _profile;
     return Scaffold(
       appBar: AppBar(
-        title: Text(dest.name),
-        // The save's progress lives in the app bar:
-        // the page must stay usable where possible and
-        // never freeze without an explanation while
-        // the round-trip to the database runs.
+        // Back-only: the name is the page's big header (or
+        // the banner photo's overlay) — titling both bars
+        // said "Ulaanbaatar" twice in a row.
         actions: [
           if (_busy)
             const Padding(
@@ -796,39 +794,32 @@ class _BestMonths extends StatelessWidget {
           runSpacing: 6,
           children: [
             for (final month in profile.months)
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: _colorFor(month.bucket, theme.colorScheme),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: _borderFor(month.bucket, theme.colorScheme)),
-                ),
-                child: Column(
-                  children: [
-                    Text(month.abbreviation,
-                        style: theme.textTheme.labelLarge
-                            ?.copyWith(fontWeight: FontWeight.bold)),
-                    Text(_labelFor(month.bucket),
-                        style: theme.textTheme.labelSmall),
-                    if (month.showReason)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: SizedBox(
-                          width: 80,
-                          child: Text(
-                            month.reason!,
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              fontStyle: FontStyle.italic,
-                            ),
-                            textAlign: TextAlign.center,
-                            maxLines: 4,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                  ],
+              // Uniform chip (month + condition only); the
+              // long reason moved into the tooltip, whose
+              // variable height used to make every row of
+              // chips a different size.
+              Tooltip(
+                message: month.showReason ? (month.reason ?? '') : '',
+                triggerMode: TooltipTriggerMode.tap,
+                excludeFromSemantics: true,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _colorFor(month.bucket, theme.colorScheme),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: _borderFor(month.bucket, theme.colorScheme)),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(month.abbreviation,
+                          style: theme.textTheme.labelLarge
+                              ?.copyWith(fontWeight: FontWeight.bold)),
+                      Text(_labelFor(month.bucket),
+                          style: theme.textTheme.labelSmall),
+                    ],
+                  ),
                 ),
               ),
           ],
@@ -1372,24 +1363,17 @@ class _FactGrid extends StatelessWidget {
             : '${destination.flightTimeFra!.toStringAsFixed(1)} h',
       ),
       (
-        Icons.hotel_outlined,
-        'Stay',
-        profile.recommendedStay,
-      ),
-      (
         Icons.public_outlined,
         'Population',
-        profile.population == null
-            ? null
-            : _compactNumber(profile.population!.round()),
+        _populationLabel(profile.population),
       ),
-      (
-        Icons.reviews_outlined,
-        'Reviews',
-        profile.reviewsCount?.toString(),
-      ),
+      // The reviews count stays in the header chip (it used
+      // to render twice), and the "Stay" prose is a line
+      // under the grid — a sentence inside a stat card
+      // truncated itself into nonsense.
     ];
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (var row = 0; row < facts.length; row += 3)
           Padding(
@@ -1410,8 +1394,38 @@ class _FactGrid extends StatelessWidget {
               ),
             ),
           ),
+        if (profile.recommendedStay != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Row(
+              children: [
+                Icon(Icons.hotel_outlined,
+                    size: 14, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Recommended stay: ${profile.recommendedStay}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
     );
+  }
+
+  /// The workbook column holds the count in millions
+  /// (Ulaanbaatar stores 2); a cell that holds the absolute
+  /// number instead is compacted. The "2" the old card
+  /// showed was the raw value with its unit missing.
+  static String _populationLabel(double? population) {
+    if (population == null) return '–';
+    if (population >= 1000) return _compactNumber(population.round());
+    final trimmed = population == population.roundToDouble()
+        ? population.toInt().toString()
+        : population.toStringAsFixed(1);
+    return '$trimmed M';
   }
 
   static String _compactNumber(int value) {

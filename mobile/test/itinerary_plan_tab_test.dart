@@ -86,6 +86,11 @@ void main() {
         (stopId, updated) => updates.add((stopId, updated))));
     await tester.pumpAndSettle();
 
+    // The stop editors sit collapsed (one opens at a time):
+    // open Kyoto's by tapping its header line.
+    await tester.tap(find.text('1. Kyoto'));
+    await tester.pumpAndSettle();
+
     // Type 4 into Kyoto's nights (it shows the stored 2).
     final kyotoCard = _cardOf('1. Kyoto');
     final kyotoNights = find.descendant(
@@ -100,42 +105,51 @@ void main() {
         (stopId, updated) => updates.add((stopId, updated))));
     await tester.pumpAndSettle();
 
-    // Osaka (now position 1) must not show Kyoto's
-    // pending 4, and Kyoto (now position 2) must show it.
-    final osakaCard = _cardOf('1. Osaka');
-    expect(_nightsText(tester, osakaCard), '');
+    // Kyoto (now position 2) stayed open and kept its
+    // pending 4: the editor state follows the stop id, not
+    // the row's position.
     final kyotoAfter = _cardOf('2. Kyoto');
     expect(_nightsText(tester, kyotoAfter), '4');
 
-    // Saving Kyoto writes Kyoto's id with the typed value.
-    await tester.ensureVisible(find.descendant(
-        of: kyotoAfter,
-        matching: find.widgetWithText(FilledButton, 'Save stop')));
+    // Osaka's editor is closed (one opens at a time);
+    // opening it shows Osaka's own values, never Kyoto's
+    // pending 4.
+    await tester.ensureVisible(find.text('1. Osaka'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('1. Osaka'));
+    await tester.pumpAndSettle();
+    final osakaCard = _cardOf('1. Osaka');
+    expect(_nightsText(tester, osakaCard), '');
+
+    // Saving Osaka writes Osaka's own values -- its
+    // arrival date and notes, no borrowed nights.
     await tester.tap(find.descendant(
-        of: kyotoAfter,
+        of: osakaCard,
         matching: find.widgetWithText(FilledButton, 'Save stop')));
     await tester.pumpAndSettle();
 
     expect(updates, hasLength(1));
-    expect(updates.single.$1, 's-1');
-    expect(updates.single.$2.ref.name, 'Kyoto');
-    expect(updates.single.$2.nights, 4);
+    expect(updates.single.$1, 's-2');
+    expect(updates.single.$2.arrivalDate, '2026-05-01');
+    expect(updates.single.$2.notes, 'castles');
+    expect(updates.single.$2.nights, isNull);
 
-    // Saving Osaka writes Osaka's own values -- its
-    // arrival date and notes, no borrowed nights.
-    await tester.ensureVisible(find.descendant(
-        of: osakaCard,
-        matching: find.widgetWithText(FilledButton, 'Save stop')));
+    // Re-opening Kyoto finds the 4 the closed editor kept,
+    // and saving writes Kyoto's id with it.
+    await tester.ensureVisible(find.text('2. Kyoto'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2. Kyoto'));
+    await tester.pumpAndSettle();
+    expect(_nightsText(tester, _cardOf('2. Kyoto')), '4');
     await tester.tap(find.descendant(
-        of: osakaCard,
+        of: _cardOf('2. Kyoto'),
         matching: find.widgetWithText(FilledButton, 'Save stop')));
     await tester.pumpAndSettle();
 
     expect(updates, hasLength(2));
-    expect(updates.last.$1, 's-2');
-    expect(updates.last.$2.arrivalDate, '2026-05-01');
-    expect(updates.last.$2.notes, 'castles');
-    expect(updates.last.$2.nights, isNull);
+    expect(updates.last.$1, 's-1');
+    expect(updates.last.$2.ref.name, 'Kyoto');
+    expect(updates.last.$2.nights, 4);
   });
 
   testWidgets('the add panel adds the destination it displays',

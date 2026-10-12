@@ -178,23 +178,36 @@ void main() {
         board: _FakeBoard(),
       ),
     );
-    // The cards stack taller than a phone screen;
-    // scroll to the button before tapping it.
-    await tester.drag(
-        find.byType(ListView), const Offset(0, -300));
-    await tester.pumpAndSettle();
+    // The cards stack taller than a phone screen; the
+    // ListView builds lazily, so drag until the target is
+    // actually built rather than assuming a fixed offset.
+    Future<void> dragUntil(Finder target) async {
+      for (var attempt = 0;
+          attempt < 25 && target.evaluate().isEmpty;
+          attempt++) {
+        await tester.drag(find.byType(ListView), const Offset(0, -300));
+        await tester.pumpAndSettle();
+      }
+    }
+
+    await dragUntil(find.text('Find weekends'));
     await tester.tap(find.text('Find weekends'));
     await tester.pumpAndSettle();
-    // The report lands below the fold; a ListView
-    // builds its children lazily, so scroll it into
-    // view before asserting on it.
-    await tester.drag(
-        find.byType(ListView), const Offset(0, -500));
+    // The report lands below the fold.
+    await dragUntil(find.text('London (United Kingdom)'));
     await tester.pumpAndSettle();
-    // The summary table (City, Options, Earliest out,
-    // Nights, Airlines) above the per-city cards.
-    expect(find.byType(DataTable), findsOneWidget);
-    expect(find.text('London (GB)'), findsWidgets);
+    // The merged results list: one expandable row per
+    // city (city, options, earliest out, nights,
+    // airlines) that opens into the flight detail.
+    // The country renders as its English name — the ISO
+    // code ("GB") meant nothing to read.
+    expect(find.text('London (United Kingdom)'), findsWidgets);
+    expect(find.textContaining('option'), findsWidgets);
+    // Collapsed: the flight lines are not built yet.
+    expect(find.text('LH1000 · Lufthansa'), findsNothing);
+    // Expanding the row reveals the flights in place.
+    await tester.tap(find.text('London (United Kingdom)'));
+    await tester.pumpAndSettle();
     expect(find.text('LH1000 · Lufthansa'), findsWidgets);
     expect(find.text('LH2000 · Lufthansa'), findsWidgets);
   });
@@ -292,7 +305,12 @@ void main() {
     expect(find.textContaining('Frankfurt'), findsWidgets);
     expect(find.textContaining('Rome'), findsWidgets);
     expect(find.textContaining('Florence'), findsWidgets);
-    expect(find.byType(TabBar), findsOneWidget);
+    // The sub-pages are segmented buttons now, not tabs
+    // (the add-stop panel contributes its own).
+    expect(find.byType(SegmentedButton<int>), findsWidgets);
+    expect(find.text('Plan'), findsOneWidget);
+    expect(find.text('Map'), findsOneWidget);
+    expect(find.text('Compare'), findsOneWidget);
   });
 
   testWidgets('the trips page backs up all trips as JSON',
@@ -329,10 +347,9 @@ void main() {
         findsOneWidget);
     expect(find.textContaining('"name": "Italy 2026"'),
         findsOneWidget);
-    // The dialog's Copy sits alongside the trip
-    // and variant duplicate buttons, which share
-    // the label.
-    expect(find.text('Copy'), findsWidgets);
+    // The dialog's Copy is the only Copy on screen: the
+    // trip/variant duplicates moved into the ⋯ action menus.
+    expect(find.text('Copy'), findsOneWidget);
   });
 
   testWidgets('the trips page renders the compare tab', (tester) async {

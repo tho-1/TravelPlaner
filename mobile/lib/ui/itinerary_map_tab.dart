@@ -28,7 +28,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../models/geo.dart' show latitudeToWorldY, worldPixels;
+import '../models/geo.dart' show latitudeToWorldY;
 import '../models/route_geo.dart';
 import '../models/trip.dart';
 import '../models/trip_ops.dart' show totals;
@@ -210,30 +210,26 @@ class _ItineraryMapTabState extends State<ItineraryMapTab> {
             builder: (context, mapConstraints) {
               final width = mapConstraints.maxWidth;
               final zoom = _zoomFor(view, width, _mapHeight);
-              // The tile mosaic's top-left corner in world
-              // pixels -- the same computation
-              // WorldMapView runs, so the route overlay
-              // lands exactly on the tiles.
-              final centre = worldPixels(view.latitude, view.longitude, zoom);
-              final topLeft = Offset(
-                  centre.x - width / 2, centre.y - _mapHeight / 2);
               return WorldMapView(
                 latitude: view.latitude,
                 longitude: view.longitude,
                 zoom: zoom,
                 cities: const [],
                 countryFills: const {},
-                overlay: [
+                // The route rebuilds against the *current*
+                // view, so it stays glued to the tiles while
+                // the user pans and zooms.
+                overlayBuilder: (context, transform) => [
                   CustomPaint(
-                    size: Size(width, _mapHeight),
+                    size: Size(transform.width, transform.height),
                     painter: _RoutePainter(
                       variant: variant,
                       visibleModes: _visibleModes,
                       showGateways: _showGateways,
                       selectedStopId: widget.selectedStopId,
                       centerLongitude: view.longitude,
-                      zoom: zoom,
-                      topLeft: topLeft,
+                      zoom: transform.zoom,
+                      topLeft: transform.topLeft,
                     ),
                   ),
                 ],

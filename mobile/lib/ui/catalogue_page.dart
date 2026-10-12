@@ -289,6 +289,16 @@ class _CataloguePageState extends State<CataloguePage> {
                           size: 15, color: scheme.primary),
                     if (dest.favourite)
                       Icon(Icons.star, size: 15, color: scheme.tertiary),
+                    const Spacer(),
+                    Expanded(
+                      child: Text(
+                        _metaLine(dest),
+                        textAlign: TextAlign.end,
+                        style: theme.textTheme.bodySmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -298,6 +308,33 @@ class _CataloguePageState extends State<CataloguePage> {
       ),
     );
   }
+
+  /// The at-a-glance numbers (safety · cost per day ·
+  /// flight time from FRA), so a scan of the catalogue
+  /// answers "which of these is expensive / far" without
+  /// opening each card. Missing values drop out; an
+  /// all-null row renders nothing.
+  String _metaLine(Destination dest) {
+    final parts = <String>[];
+    final safety = dest.safetyRating;
+    if (safety != null) {
+      parts.add('safe ${_trim(safety)}/10');
+    }
+    final cost = dest.avgCostDay;
+    if (cost != null) {
+      parts.add('${_trim(cost)} €/day');
+    }
+    final flight = dest.flightTimeFra;
+    if (flight != null) {
+      parts.add('${_trim(flight)} h to FRA');
+    }
+    return parts.join(' · ');
+  }
+
+  static String _trim(double value) =>
+      value == value.roundToDouble()
+          ? value.toInt().toString()
+          : value.toStringAsFixed(1);
 
   Color _groupTint(int groupIndex, ColorScheme scheme) =>
       groupIndex.isEven

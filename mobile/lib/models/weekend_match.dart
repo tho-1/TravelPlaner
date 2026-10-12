@@ -44,34 +44,68 @@ class Flight {
   String get operatorAirline => airline.trim();
 }
 
-/// The user's six time bounds, as minutes-of-day for simple comparison.
+/// The out/back day rules. Every day is optional: a null
+/// bound means the day is not an out/back day at all — the
+/// holiday-bridge days (Thursday out, Tuesday back) are off
+/// by default, the legacy four are on with the legacy
+/// defaults. Sunday keeps a separate enabled flag because
+/// its null bound has always meant "any time", not "off".
 class Windows {
-  final int fridayFrom;
-  final int saturdayBefore;
-  final int saturdayReturnAfter;
-  final int mondayReturnBefore;
+  // Outbound days: the departure bound in minutes-of-day.
+  final int? thursdayFrom;
+  final int? fridayFrom;
+  final int? saturdayBefore;
 
-  /// The legacy's "Limit Sunday returns too" bound:
-  /// null means any Sunday return counts (the
-  /// default), a value means the return must land
-  /// by then.
+  // Return days: the landing bound in minutes-of-day.
+  final int? saturdayReturnAfter;
+  final bool sundayEnabled;
   final int? sundayReturnUntil;
 
+  /// null means any Sunday return counts (the default).
+  final int? mondayReturnBefore;
+  final int? tuesdayReturnBefore;
+
   const Windows({
+    this.thursdayFrom,
     this.fridayFrom = 14 * 60,
     this.saturdayBefore = 12 * 60,
     this.saturdayReturnAfter = 12 * 60,
-    this.mondayReturnBefore = 9 * 60,
+    this.sundayEnabled = true,
     this.sundayReturnUntil,
+    this.mondayReturnBefore = 9 * 60,
+    this.tuesdayReturnBefore,
   });
 
+  bool get hasOutDay =>
+      thursdayFrom != null ||
+      fridayFrom != null ||
+      saturdayBefore != null;
+
+  bool get hasBackDay =>
+      saturdayReturnAfter != null ||
+      sundayEnabled ||
+      mondayReturnBefore != null ||
+      tuesdayReturnBefore != null;
+
   String describe() {
-    final sunday = sundayReturnUntil == null
-        ? 'any time'
-        : 'before ${_hm(sundayReturnUntil!)}';
-    return 'out: Fri from ${_hm(fridayFrom)} or Sat before ${_hm(saturdayBefore)} '
-        '· back: Sat after ${_hm(saturdayReturnAfter)}, Sun $sunday, or Mon '
-        'before ${_hm(mondayReturnBefore)}';
+    final outParts = [
+      if (thursdayFrom != null) 'Thu from ${_hm(thursdayFrom!)}',
+      if (fridayFrom != null) 'Fri from ${_hm(fridayFrom!)}',
+      if (saturdayBefore != null) 'Sat before ${_hm(saturdayBefore!)}',
+    ];
+    final backParts = [
+      if (saturdayReturnAfter != null)
+        'Sat after ${_hm(saturdayReturnAfter!)}',
+      if (sundayEnabled)
+        (sundayReturnUntil == null
+            ? 'Sun any time'
+            : 'Sun before ${_hm(sundayReturnUntil!)}'),
+      if (mondayReturnBefore != null)
+        'Mon before ${_hm(mondayReturnBefore!)}',
+      if (tuesdayReturnBefore != null)
+        'Tue before ${_hm(tuesdayReturnBefore!)}',
+    ];
+    return 'out: ${outParts.join(', ')} · back: ${backParts.join(', ')}';
   }
 
   static String _hm(int minutes) =>
@@ -79,15 +113,19 @@ class Windows {
       '${(minutes % 60).toString().padLeft(2, '0')}';
 }
 
-/// The Friday and its Sat/Sun/Mon that a search is about.
+/// The Thursday and its Sat/Sun/Mon/Tue that a search is
+/// about. Thursday and Tuesday are the holiday-bridge days
+/// the custom out/back pickers can add.
 class Weekend {
   final DateTime friday;
 
   const Weekend(this.friday);
 
+  DateTime get thursday => friday.subtract(const Duration(days: 1));
   DateTime get saturday => friday.add(const Duration(days: 1));
   DateTime get sunday => friday.add(const Duration(days: 2));
   DateTime get monday => friday.add(const Duration(days: 3));
+  DateTime get tuesday => friday.add(const Duration(days: 4));
 
   String describe() =>
       '${_date(friday)} to ${_date(monday)}';
@@ -126,6 +164,7 @@ class CityResult {
   const CityResult({
     required this.city,
     required this.country,
+    this.countryDisplay,
     this.options = const [],
     this.outOnly = const [],
     this.backOnly = const [],
@@ -133,7 +172,18 @@ class CityResult {
     this.unmappedAirports = const {},
   });
 
-  String get label => country.isEmpty ? city : '$city ($country)';
+  /// The English country name for the ISO code, when the
+  /// caller can resolve it. The label prefers it: "(RO)"
+  /// meant nothing to readers who do not know the codes.
+  final String? countryDisplay;
+
+  String get label {
+    if (country.isEmpty) return city;
+    final name = (countryDisplay == null || countryDisplay!.isEmpty)
+        ? country
+        : countryDisplay!;
+    return '$city ($name)';
+  }
   int get count => options.length;
 
   /// Earliest departure first, then fewest nights, then name.
@@ -218,11 +268,19 @@ DateTime _addDays(DateTime day, int days) =>
 bool isOutboundCandidate(Flight flight, Weekend weekend, Windows windows) {
   final dep = flight.departure;
   if (!_isDirectFromHome(flight)) return false;
+  if (_sameDay(dep, weekend.thursday)) {
+    // The holiday bridge: leave on Thursday, same rule as
+    // Friday.
+    final from = windows.thursdayFrom;
+    return from != null && _minutesOfDay(dep) >= from;
+  }
   if (_sameDay(dep, weekend.friday)) {
-    return _minutesOfDay(dep) >= windows.fridayFrom;
+    final from = windows.fridayFrom;
+    return from != null && _minutesOfDay(dep) >= from;
   }
   if (_sameDay(dep, weekend.saturday)) {
-    return _minutesOfDay(dep) < windows.saturdayBefore;
+    final before = windows.saturdayBefore;
+    return before != null && _minutesOfDay(dep) < before;
   }
   return false;
 }
@@ -231,16 +289,24 @@ bool isReturnCandidate(Flight flight, Weekend weekend, Windows windows) {
   final arr = flight.arrival;
   if (!_isDirectToHome(flight)) return false;
   if (_sameDay(arr, weekend.saturday)) {
-    return _minutesOfDay(arr) >= windows.saturdayReturnAfter;
+    final after = windows.saturdayReturnAfter;
+    return after != null && _minutesOfDay(arr) >= after;
   }
   if (_sameDay(arr, weekend.sunday)) {
     // The legacy's "Limit Sunday returns too": off
     // (null) means any Sunday return counts.
+    if (!windows.sundayEnabled) return false;
     final until = windows.sundayReturnUntil;
     return until == null || _minutesOfDay(arr) <= until;
   }
   if (_sameDay(arr, weekend.monday)) {
-    return _minutesOfDay(arr) < windows.mondayReturnBefore;
+    final before = windows.mondayReturnBefore;
+    return before != null && _minutesOfDay(arr) < before;
+  }
+  if (_sameDay(arr, weekend.tuesday)) {
+    // The other holiday bridge: fly home Tuesday.
+    final before = windows.tuesdayReturnBefore;
+    return before != null && _minutesOfDay(arr) < before;
   }
   return false;
 }
@@ -286,7 +352,8 @@ String _cityKeyOf(String airport, (String, String)? location) =>
 
 /// Build the full result set. `benefitCheck` and `cityLookup` are injected
 /// so this module stays free of Turso and of the airport asset, exactly
-/// like the Python matcher.
+/// like the Python matcher. `countryNameFor` optionally resolves an ISO
+/// country code to its English name for the labels.
 MatchReport findWeekends({
   required Iterable<Flight> outbound,
   required Iterable<Flight> returns,
@@ -294,6 +361,7 @@ MatchReport findWeekends({
   required Windows windows,
   required bool Function(String airline) benefitCheck,
   required (String, String)? Function(String airport) cityLookup,
+  String Function(String countryCode)? countryNameFor,
   int maxOptionsPerCity = 6,
 }) {
   final outList = outbound.toList();
@@ -343,7 +411,12 @@ MatchReport findWeekends({
     final key = _cityKeyOf(airport, location);
     final created = cities.putIfAbsent(key, () {
       final (city, country) = location ?? ('?$airport', '');
-      return _MutableCity(city: city, country: country);
+      return _MutableCity(
+        city: city,
+        country: country,
+        countryDisplay:
+            countryNameFor == null ? null : countryNameFor(country),
+      );
     });
     if (addAirport) created.airports.add(airport);
     return created;
@@ -427,17 +500,26 @@ MatchReport findWeekends({
 class _MutableCity {
   final String city;
   final String country;
+
+  /// The resolved English name for [country], when the
+  /// caller supplied a resolver.
+  final String? countryDisplay;
   final Set<String> airports = {};
   final Set<String> unmappedAirports = {};
   List<TripOption> options = [];
   List<Flight> outOnly = [];
   List<Flight> backOnly = [];
 
-  _MutableCity({required this.city, required this.country});
+  _MutableCity({
+    required this.city,
+    required this.country,
+    this.countryDisplay,
+  });
 
   CityResult view() => CityResult(
         city: city,
         country: country,
+        countryDisplay: countryDisplay,
         options: List.of(options),
         outOnly: List.of(outOnly),
         backOnly: List.of(backOnly),

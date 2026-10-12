@@ -108,9 +108,16 @@ void main() {
     expect(find.text('Highlights'), findsOneWidget);
 
     await scrollTo(tester, find.text('Best months'));
-    // The best-months chips show the rating and the reason.
+    // The best-months chips show the month and the rating;
+    // the long reason lives in the chip's tooltip (uniform
+    // chip heights in the row).
     expect(find.text('Ideal'), findsWidgets);
-    expect(find.text('very hot and humid'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate((widget) =>
+          widget is Tooltip &&
+          (widget.message ?? '').contains('very hot and humid')),
+      findsOneWidget,
+    );
 
     await scrollTo(tester, find.text('Climate'));
     // The climate KPIs.

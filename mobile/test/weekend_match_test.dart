@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:travel_planner/models/timetable.dart' show fetchWindow;
 import 'package:travel_planner/models/weekend_match.dart';
 
 /// Friday 2026-10-16 (a real Friday in the fixtures' week).
@@ -51,6 +52,118 @@ Flight back({
 }
 
 void main() {
+  group('holiday bridge days', () {
+    final thursday = DateTime(2026, 10, 15);
+    final tuesday = DateTime(2026, 10, 20);
+
+    test('Thursday out is off by default and off the matcher', () {
+      const windows = Windows();
+      expect(windows.thursdayFrom, isNull);
+      expect(
+        isOutboundCandidate(
+            out(departure: thursday.add(const Duration(hours: 15))),
+            weekend,
+            windows),
+        isFalse,
+      );
+    });
+
+    test('switching Thursday on accepts a Thursday departure', () {
+      const windows = Windows(thursdayFrom: 14 * 60);
+      expect(
+        isOutboundCandidate(
+            out(departure: thursday.add(const Duration(hours: 13, minutes: 59))),
+            weekend,
+            windows),
+        isFalse,
+      );
+      expect(
+        isOutboundCandidate(
+            out(departure: thursday.add(const Duration(hours: 14))),
+            weekend,
+            windows),
+        isTrue,
+      );
+    });
+
+    test('Tuesday back is off by default and on when set', () {
+      const off = Windows();
+      expect(
+        isReturnCandidate(
+            back(departure: tuesday.add(const Duration(hours: 6))),
+            weekend,
+            off),
+        isFalse,
+      );
+
+      const on = Windows(tuesdayReturnBefore: 9 * 60);
+      // back() lands two hours after departure: 06:30 lands
+      // 08:30 (before 09:00), 08:00 lands 10:00 (after).
+      expect(
+        isReturnCandidate(
+            back(departure: tuesday.add(const Duration(hours: 6, minutes: 30))),
+            weekend,
+            on),
+        isTrue,
+      );
+      expect(
+        isReturnCandidate(
+            back(departure: tuesday.add(const Duration(hours: 8))),
+            weekend,
+            on),
+        isFalse,
+      );
+    });
+
+    test('a day switched off fetches no board window', () {
+      const windows = Windows(
+        thursdayFrom: 14 * 60,
+        tuesdayReturnBefore: 9 * 60,
+      );
+      final (since, until) =
+          fetchWindow(weekend, windows, thursday, 'departures');
+      expect(since, thursday.add(const Duration(hours: 14)));
+      expect(until, weekend.friday);
+
+      final (tueSince, tueUntil) =
+          fetchWindow(weekend, windows, tuesday, 'arrivals');
+      expect(tueSince, tuesday);
+      expect(tueUntil, tuesday.add(const Duration(hours: 9)));
+
+      // Saturday-out disabled: no window at all.
+      const satOff = Windows(saturdayBefore: null);
+      expect(
+        fetchWindow(weekend, satOff, saturday, 'departures'),
+        (null, null),
+      );
+    });
+
+    test('Sunday can be switched off entirely', () {
+      const windows = Windows(sundayEnabled: false);
+      expect(
+        isReturnCandidate(
+            back(departure: sunday.add(const Duration(hours: 18))),
+            weekend,
+            windows),
+        isFalse,
+      );
+      expect(
+        fetchWindow(weekend, windows, sunday, 'arrivals'),
+        (null, null),
+      );
+    });
+
+    test('a disabled day is not described as an option', () {
+      const windows = Windows(thursdayFrom: null, tuesdayReturnBefore: null);
+      expect(windows.describe(), startsWith('out:'));
+      expect(windows.describe(), isNot(contains('Thu')));
+      expect(windows.describe(), isNot(contains('Tue')));
+      // The enabled legacy days are still spelled out.
+      expect(windows.describe(), contains('Fri from 14:00'));
+      expect(windows.describe(), contains('Mon before 09:00'));
+    });
+  });
+
   group('weekendContaining', () {
     test('a Monday plans the coming weekend', () {
       final result = weekendContaining(DateTime(2026, 10, 12)); // Monday

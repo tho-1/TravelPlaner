@@ -99,8 +99,19 @@ void main() {
 
   group('projection', () {
     test('the tile URLs follow the slippy-map scheme', () {
-      expect(tileUrl(0, 0, 0), 'https://tile.openstreetmap.org/0/0/0.png');
-      expect(tileUrl(6, 33, 22), 'https://tile.openstreetmap.org/6/33/22.png');
+      // The Esri grey canvas labels places in English; the
+      // path order is zoom/y/x (Esri's own scheme, not the
+      // OSM z/x/y).
+      expect(
+        tileUrl(0, 0, 0),
+        'https://server.arcgisonline.com/ArcGIS/rest/services/'
+        'Canvas/World_Light_Gray_Base/MapServer/tile/0/0/0',
+      );
+      expect(
+        tileUrl(6, 33, 22),
+        'https://server.arcgisonline.com/ArcGIS/rest/services/'
+        'Canvas/World_Light_Gray_Base/MapServer/tile/6/22/33',
+      );
     });
 
     test('the world at zoom 2 is a 4x4 mosaic', () {
@@ -225,13 +236,13 @@ void main() {
     // The legacy default hides the visited destination.
     expect(find.textContaining('3 of 4 destinations match the filters'),
         findsOneWidget);
-    // The KPI cards render; the destination conditions are
-    // one Ideal (Lima), one Ok (Rome) and one Bad (Kyoto)
-    // over the visible rows.
-    expect(find.text('Mapped countries'), findsOneWidget);
-    expect(find.text('Ideal destinations'), findsOneWidget);
-    expect(find.text('Ok destinations'), findsOneWidget);
-    expect(find.text('Bad / off-season'), findsOneWidget);
+    // The KPI chips overlay the map's corner; the
+    // destination conditions are one Ideal (Lima), one Ok
+    // (Rome) and one Bad (Kyoto) over the visible rows.
+    expect(find.text('mapped'), findsOneWidget);
+    expect(find.text('ideal'), findsOneWidget);
+    expect(find.text('ok'), findsOneWidget);
+    expect(find.text('bad / off-season'), findsOneWidget);
     expect(find.text('1'), findsNWidgets(3));
 
     // The filter sheet opens and applies live.

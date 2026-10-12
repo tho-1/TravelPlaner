@@ -15,6 +15,8 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart'
+    show FilteringTextInputFormatter;
 
 import '../data/benefits_repository.dart';
 import '../data/catalogue_match.dart';
@@ -24,6 +26,7 @@ import '../models/airline_benefits.dart';
 import '../models/destination.dart';
 import '../models/timetable.dart';
 import '../models/weekend_match.dart';
+import 'destination_page.dart';
 
 /// The working example the legacy shows next to the
 /// upload: a Friday out and a Monday back, in the
@@ -68,10 +71,6 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   Windows _windows = const Windows();
   var _catalogueFirst = true;
 
-  /// The legacy's "Limit Sunday returns too": off
-  /// means any Sunday return counts.
-  var _limitSundayReturns = false;
-
   /// The CSV override: either field non-empty wins over
   /// the live board (the weekend-finder plan's decision
   /// 1 — live board for the upcoming weekend, CSV as the
@@ -81,9 +80,20 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   final TextEditingController _arrivalsCsv =
       TextEditingController();
 
+  /// The flight filters: benefit-only matching (on = the
+  /// legacy behaviour) and the longest leg the user accepts.
+  var _benefitsOnly = true;
+  final TextEditingController _maxLegHours =
+      TextEditingController(text: '6');
+
   WeekendSearch? _result;
   List<Destination> _catalogue = const <Destination>[];
   var _searching = false;
+
+  /// Which result rows are expanded (keyed city|country),
+  /// and the expand-all flag behind the header button.
+  final _expandedCities = <String>{};
+  var _allExpanded = false;
   @override
   void initState() {
     super.initState();
@@ -96,6 +106,7 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   void dispose() {
     _departuresCsv.dispose();
     _arrivalsCsv.dispose();
+    _maxLegHours.dispose();
     super.dispose();
   }
 
@@ -134,8 +145,18 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
       _result = null;
     });
     final repository = WeekendRepository(_activeProvider());
+    final hours = double.tryParse(_maxLegHours.text.trim());
     try {
-      final search = await repository.search(_weekend, _windows, _benefits);
+      final search = await repository.search(
+        _weekend,
+        _windows,
+        _benefits,
+        options: WeekendSearchOptions(
+          benefitsOnly: _benefitsOnly,
+          maxLegDuration:
+              hours == null ? null : Duration(minutes: (hours * 60).round()),
+        ),
+      );
       if (!mounted) return;
       setState(() {
         _result = search;
@@ -272,47 +293,130 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
             const SizedBox(height: 4),
             Text(_windows.describe(),
                 style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            Text('Out on', style: Theme.of(context).textTheme.labelLarge),
+            const SizedBox(height: 4),
             Wrap(
-              spacing: 8,
+              spacing: 6,
+              runSpacing: 4,
               children: [
-                _boundChip('Out Fri from', _windows.fridayFrom, (value) {
-                  setState(() => _windows = _copyWindows(fridayFrom: value));
-                }),
-                _boundChip('Out Sat before', _windows.saturdayBefore, (value) {
-                  setState(() => _windows = _copyWindows(saturdayBefore: value));
-                }),
-                _boundChip('Back Sat after', _windows.saturdayReturnAfter,
-                    (value) {
-                  setState(() =>
-                      _windows = _copyWindows(saturdayReturnAfter: value));
-                }),
-                _boundChip('Back Mon before', _windows.mondayReturnBefore,
-                    (value) {
-                  setState(() =>
-                      _windows = _copyWindows(mondayReturnBefore: value));
-                }),
+                _dayRule(
+                  day: 'Thu',
+                  enabled: _windows.thursdayFrom != null,
+                  boundLabel: _windows.thursdayFrom == null
+                      ? ''
+                      : 'from ${_hm(_windows.thursdayFrom!)}',
+                  onToggle: (on) => setState(() => _windows = _windowsWith(
+                      thursdayFrom: on ? 14 * 60 : null,
+                      clearThursday: !on)),
+                  onEditTime: _windows.thursdayFrom == null
+                      ? null
+                      : () => _pickBound(
+                          'Thursday departure from', _windows.thursdayFrom!,
+                          (value) => setState(() => _windows =
+                              _windowsWith(thursdayFrom: value))),
+                ),
+                _dayRule(
+                  day: 'Fri',
+                  enabled: _windows.fridayFrom != null,
+                  boundLabel: _windows.fridayFrom == null
+                      ? ''
+                      : 'from ${_hm(_windows.fridayFrom!)}',
+                  onToggle: (on) => setState(() => _windows = _windowsWith(
+                      fridayFrom: on ? 14 * 60 : null)),
+                  onEditTime: _windows.fridayFrom == null
+                      ? null
+                      : () => _pickBound('Friday departure from',
+                          _windows.fridayFrom!,
+                          (value) => setState(() =>
+                              _windows = _windowsWith(fridayFrom: value))),
+                ),
+                _dayRule(
+                  day: 'Sat',
+                  enabled: _windows.saturdayBefore != null,
+                  boundLabel: _windows.saturdayBefore == null
+                      ? ''
+                      : 'before ${_hm(_windows.saturdayBefore!)}',
+                  onToggle: (on) => setState(() => _windows = _windowsWith(
+                      saturdayBefore: on ? 12 * 60 : null)),
+                  onEditTime: _windows.saturdayBefore == null
+                      ? null
+                      : () => _pickBound(
+                          'Saturday departure before', _windows.saturdayBefore!,
+                          (value) => setState(() => _windows =
+                              _windowsWith(saturdayBefore: value))),
+                ),
               ],
             ),
+            const SizedBox(height: 10),
+            Text('Back on', style: Theme.of(context).textTheme.labelLarge),
             const SizedBox(height: 4),
-            SwitchListTile(
-              title: const Text('Limit Sunday returns too'),
-              subtitle: Text(_limitSundayReturns
-                  ? 'Sunday returns must land by 20:00.'
-                  : 'Any Sunday return counts.'),
-              value: _limitSundayReturns,
-              onChanged: (value) => setState(() {
-                _limitSundayReturns = value;
-                // Off must not keep the old bound: null
-                // means "keep current" in _copyWindows,
-                // which pinned the 20:00 limit while the
-                // switch claimed "any Sunday return
-                // counts". End of day (24:00) is every
-                // possible Sunday return.
-                _windows = _copyWindows(
-                    sundayReturnUntil: value ? 20 * 60 : 24 * 60);
-              }),
-              contentPadding: EdgeInsets.zero,
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                _dayRule(
+                  day: 'Sat',
+                  enabled: _windows.saturdayReturnAfter != null,
+                  boundLabel: _windows.saturdayReturnAfter == null
+                      ? ''
+                      : 'after ${_hm(_windows.saturdayReturnAfter!)}',
+                  onToggle: (on) => setState(() => _windows = _windowsWith(
+                      saturdayReturnAfter: on ? 12 * 60 : null)),
+                  onEditTime: _windows.saturdayReturnAfter == null
+                      ? null
+                      : () => _pickBound('Saturday return after',
+                          _windows.saturdayReturnAfter!,
+                          (value) => setState(() => _windows =
+                              _windowsWith(saturdayReturnAfter: value))),
+                ),
+                _dayRule(
+                  day: 'Sun',
+                  enabled: _windows.sundayEnabled,
+                  boundLabel: 'any time',
+                  onToggle: (on) => setState(
+                      () => _windows = _windowsWith(sundayEnabled: on)),
+                  onEditTime: null,
+                ),
+                _dayRule(
+                  day: 'Mon',
+                  enabled: _windows.mondayReturnBefore != null,
+                  boundLabel: _windows.mondayReturnBefore == null
+                      ? ''
+                      : 'before ${_hm(_windows.mondayReturnBefore!)}',
+                  onToggle: (on) => setState(() => _windows = _windowsWith(
+                      mondayReturnBefore: on ? 9 * 60 : null)),
+                  onEditTime: _windows.mondayReturnBefore == null
+                      ? null
+                      : () => _pickBound('Monday return before',
+                          _windows.mondayReturnBefore!,
+                          (value) => setState(() => _windows =
+                              _windowsWith(mondayReturnBefore: value))),
+                ),
+                _dayRule(
+                  day: 'Tue',
+                  enabled: _windows.tuesdayReturnBefore != null,
+                  boundLabel: _windows.tuesdayReturnBefore == null
+                      ? ''
+                      : 'before ${_hm(_windows.tuesdayReturnBefore!)}',
+                  onToggle: (on) => setState(() => _windows = _windowsWith(
+                      tuesdayReturnBefore: on ? 9 * 60 : null,
+                      clearTuesday: !on)),
+                  onEditTime: _windows.tuesdayReturnBefore == null
+                      ? null
+                      : () => _pickBound(
+                          'Tuesday return before', _windows.tuesdayReturnBefore!,
+                          (value) => setState(() => _windows =
+                              _windowsWith(tuesdayReturnBefore: value))),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Thursday out and Tuesday back are the '
+              'holiday-bridge days — switch them on when a '
+              'public holiday extends the weekend.',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ],
         ),
@@ -320,39 +424,83 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     );
   }
 
-  Windows _copyWindows({
+  /// One out/back day: the toggle chip (on/off) plus, when
+  /// enabled, the time bound it opens a picker for. Sunday
+  /// has no bound ("any time").
+  Widget _dayRule({
+    required String day,
+    required bool enabled,
+    required String boundLabel,
+    required ValueChanged<bool> onToggle,
+    VoidCallback? onEditTime,
+  }) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        FilterChip(
+          label: Text(day),
+          selected: enabled,
+          onSelected: onToggle,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+        ),
+        if (enabled && onEditTime != null) ...[
+          const SizedBox(width: 4),
+          ActionChip(
+            label: Text(boundLabel,
+                style: Theme.of(context).textTheme.labelSmall),
+            onPressed: onEditTime,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            visualDensity: VisualDensity.compact,
+          ),
+        ] else if (enabled) ...[
+          const SizedBox(width: 4),
+          Text(boundLabel, style: Theme.of(context).textTheme.labelSmall),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _pickBound(
+      String field, int currentMinutes, ValueChanged<int> onChanged) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(
+          hour: currentMinutes ~/ 60, minute: currentMinutes % 60),
+      helpText: field,
+    );
+    if (picked == null) return;
+    onChanged(picked.hour * 60 + picked.minute);
+  }
+
+  /// A new Windows with the given bounds changed; the
+  /// clear flags exist because the default-keep pattern
+  /// cannot express "turn Thursday off".
+  Windows _windowsWith({
+    int? thursdayFrom,
+    bool clearThursday = false,
     int? fridayFrom,
     int? saturdayBefore,
     int? saturdayReturnAfter,
+    bool? sundayEnabled,
     int? mondayReturnBefore,
-    int? sundayReturnUntil,
+    int? tuesdayReturnBefore,
+    bool clearTuesday = false,
   }) =>
       Windows(
+        thursdayFrom:
+            clearThursday ? null : (thursdayFrom ?? _windows.thursdayFrom),
         fridayFrom: fridayFrom ?? _windows.fridayFrom,
         saturdayBefore: saturdayBefore ?? _windows.saturdayBefore,
         saturdayReturnAfter:
             saturdayReturnAfter ?? _windows.saturdayReturnAfter,
-        mondayReturnBefore: mondayReturnBefore ?? _windows.mondayReturnBefore,
-        sundayReturnUntil:
-            sundayReturnUntil ?? _windows.sundayReturnUntil,
+        sundayEnabled: sundayEnabled ?? _windows.sundayEnabled,
+        mondayReturnBefore:
+            mondayReturnBefore ?? _windows.mondayReturnBefore,
+        tuesdayReturnBefore: clearTuesday
+            ? null
+            : (tuesdayReturnBefore ?? _windows.tuesdayReturnBefore),
       );
-
-  Widget _boundChip(String label, int value, ValueChanged<int> onChanged) {
-    final hhmm = TimeOfDay(hour: value ~/ 60, minute: value % 60);
-    return ActionChip(
-      avatar: const Icon(Icons.schedule_outlined, size: 18),
-      label: Text('$label ${_hm(value)}'),
-      onPressed: () async {
-        final picked = await showTimePicker(
-          context: context,
-          initialTime: hhmm,
-          helpText: label,
-        );
-        if (picked == null) return;
-        onChanged(picked.hour * 60 + picked.minute);
-      },
-    );
-  }
 
   /// The flight source, as the legacy's "Flight data
   /// source" expander: the live board is the primary
@@ -381,11 +529,55 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                 style: theme.textTheme.titleSmall),
             const SizedBox(height: 4),
             Text(
-              'Only airlines you have marked as having '
-              'benefits count. Source: '
-              '${FraportBoardProvider.name}'
-              '${overrideActive ? '' : ' — paste CSV below to override it.'}',
+              _benefitsOnly
+                  ? 'Only airlines you have marked as having '
+                      'benefits count. Source: Fraport'
+                      '${overrideActive ? '' : ' — paste CSV below to override it.'}'
+                  : 'Every airline on the board counts; the '
+                      'benefit airlines are still named per option. '
+                      'Source: Fraport'
+                      '${overrideActive ? '' : ' — paste CSV below to override it.'}',
               style: theme.textTheme.bodySmall,
+            ),
+            SwitchListTile(
+              title: const Text('Only airlines with benefits'),
+              subtitle: const Text(
+                  'Off: all airlines count, not only the ones '
+                  'marked in the benefits database.'),
+              value: _benefitsOnly,
+              onChanged: (value) =>
+                  setState(() => _benefitsOnly = value),
+              contentPadding: EdgeInsets.zero,
+            ),
+            Row(
+              children: [
+                SizedBox(
+                  width: 140,
+                  child: TextField(
+                    controller: _maxLegHours,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(
+                          RegExp(r'^\d{0,2}(\.\d{0,1})?$')),
+                    ],
+                    decoration: const InputDecoration(
+                      labelText: 'Max flight time',
+                      suffixText: 'h / leg',
+                      helperText: '6 = the default cap',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Flights longer than this produce no '
+                    'options, on either leg.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              ],
             ),
             if (overrideActive) ...[
               const SizedBox(height: 4),
@@ -635,53 +827,137 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('${report.cityCount} destinations',
-            style: theme.textTheme.titleMedium),
-        const SizedBox(height: 8),
-        _summaryTable(cities),
-        const SizedBox(height: 12),
-        const Divider(),
-        const SizedBox(height: 12),
-        for (final city in cities) _cityCard(city, index.match(city.city, city.country)),
+        Row(
+          children: [
+            Expanded(
+              child: Text('${report.cityCount} destinations',
+                  style: theme.textTheme.titleMedium),
+            ),
+            if (cities.isNotEmpty)
+              TextButton(
+                onPressed: () => setState(() {
+                  if (_allExpanded) {
+                    _expandedCities.clear();
+                  } else {
+                    _expandedCities.addAll(
+                        cities.map((city) => '${city.city}|${city.country}'));
+                  }
+                  _allExpanded = !_allExpanded;
+                }),
+                child: Text(_allExpanded ? 'Collapse all' : 'Expand all'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Tap a destination to see its flights.',
+          style: theme.textTheme.bodySmall,
+        ),
+        const SizedBox(height: 6),
+        for (final city in cities)
+          _cityRow(city, index.match(city.city, city.country)),
       ],
     );
   }
 
-  /// The results summary (the legacy's `st.dataframe`):
-  /// one row per city — City, Options, Earliest out,
-  /// Nights, Airlines — above the per-city detail.
-  /// "Earliest out" and "Nights" come from the first
-  /// option, which the matcher ranks (fewest nights,
-  /// then a Sunday return, then earliest departure).
-  Widget _summaryTable(List<CityResult> cities) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: DataTable(
-        columns: const [
-          DataColumn(label: Text('City')),
-          DataColumn(label: Text('Options')),
-          DataColumn(label: Text('Earliest out')),
-          DataColumn(label: Text('Nights')),
-          DataColumn(label: Text('Airlines')),
-        ],
-        rows: [
-          for (final city in cities)
-            DataRow(cells: [
-              DataCell(Text(city.label)),
-              DataCell(Text('${city.count}')),
-              DataCell(Text(
-                  _stamp(city.options.first.outFlight.departure))),
-              DataCell(Text('${city.options.first.nights}')),
-              DataCell(Text(_airlineList(city.options))),
-            ]),
+  /// One result: the summary line (city, options, earliest
+  /// out, nights, airlines) that expands in place into the
+  /// flight detail. The summary used to be a table *above*
+  /// the detail cards, so finding a city's flights meant
+  /// scanning the list twice.
+  Widget _cityRow(CityResult city, String? catalogueName) {
+    final theme = Theme.of(context);
+    final key = '${city.city}|${city.country}';
+    final expanded = _expandedCities.contains(key);
+    final first = city.options.first;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => setState(() {
+              if (expanded) {
+                _expandedCities.remove(key);
+              } else {
+                _expandedCities.add(key);
+              }
+            }),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+              child: Row(
+                children: [
+                  Icon(expanded ? Icons.expand_less : Icons.expand_more,
+                      size: 20, color: theme.colorScheme.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(city.label,
+                            style: theme.textTheme.titleSmall,
+                            overflow: TextOverflow.ellipsis),
+                        Text(
+                          '${city.count} option${city.count == 1 ? '' : 's'} · '
+                          'earliest out ${_stamp(first.outFlight.departure)} · '
+                          '${first.nights} night${first.nights == 1 ? '' : 's'}',
+                          style: theme.textTheme.bodySmall,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          _airlineList(city.options),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (catalogueName != null)
+                    IconButton(
+                      icon: const Icon(Icons.open_in_new, size: 18),
+                      tooltip: 'Open $catalogueName',
+                      onPressed: () => _openDestination(catalogueName),
+                    ),
+                ],
+              ),
+            ),
+          ),
+          if (expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(),
+                  if (catalogueName != null)
+                    Text('in your catalogue as $catalogueName',
+                        style: theme.textTheme.bodySmall),
+                  Text(
+                    '${city.airports.toList()..sort()}',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  if (city.unmappedAirports.isNotEmpty)
+                    Text(
+                      '${city.unmappedAirports.toList()..sort()} could not be '
+                      'mapped to a city — the label is the raw airport code.',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.colorScheme.error),
+                    ),
+                  const SizedBox(height: 8),
+                  for (final option in city.options) _optionTile(option),
+                ],
+              ),
+            ),
         ],
       ),
     );
   }
 
   /// The distinct operating carriers across a city's
-  /// options, both legs, sorted — the summary table's
-  /// "Airlines" column.
+  /// options, both legs, sorted — the summary line's
+  /// "Airlines" part.
   static String _airlineList(List<TripOption> options) {
     final airlines = <String>{
       for (final option in options) ...[
@@ -693,36 +969,25 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     return airlines.join(', ');
   }
 
-  Widget _cityCard(CityResult city, String? catalogueName) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(city.label, style: theme.textTheme.titleSmall),
-            if (catalogueName != null)
-              Text('in your catalogue as $catalogueName',
-                  style: theme.textTheme.bodySmall),
-            Text(
-              '${city.airports.toList()..sort()} · ${city.count} '
-              'option${city.count == 1 ? '' : 's'}',
-              style: theme.textTheme.bodySmall,
-            ),
-            if (city.unmappedAirports.isNotEmpty)
-              Text(
-                '${city.unmappedAirports.toList()..sort()} could not be '
-                'mapped to a city — the label is the raw airport code.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error),
-              ),
-            const SizedBox(height: 8),
-            for (final option in city.options) _optionTile(option),
-          ],
-        ),
+  /// Opens a result city's destination page. The results
+  /// live in this widget's state and the page is pushed as
+  /// a route, so popping back returns to the intact list —
+  /// the search never has to run again.
+  void _openDestination(String catalogueName) {
+    Destination? match;
+    for (final destination in _catalogue) {
+      if (destination.name == catalogueName) {
+        match = destination;
+        break;
+      }
+    }
+    if (match == null) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => DestinationPage(
+        repository: widget.destinations,
+        destination: match!,
       ),
-    );
+    ));
   }
 
   Widget _optionTile(TripOption option) {

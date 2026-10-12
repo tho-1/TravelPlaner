@@ -361,23 +361,48 @@ class FraportBoardProvider implements FlightBoardProvider {
     Weekend weekend, Windows windows, DateTime day, String kind) {
   DateTime at(DateTime d, int hour, int minute) =>
       DateTime(d.year, d.month, d.day, hour, minute);
-  final fridayFrom = Duration(minutes: windows.fridayFrom);
-  final satBefore = Duration(minutes: windows.saturdayBefore);
-  final satAfter = Duration(minutes: windows.saturdayReturnAfter);
-  final monBefore = Duration(minutes: windows.mondayReturnBefore);
+  // A day that is switched off fetches nothing: its bound
+  // is null and the board query is skipped entirely.
+  final thursdayFrom = windows.thursdayFrom == null
+      ? null
+      : Duration(minutes: windows.thursdayFrom!);
+  final fridayFrom = windows.fridayFrom == null
+      ? null
+      : Duration(minutes: windows.fridayFrom!);
+  final satBefore = windows.saturdayBefore == null
+      ? null
+      : Duration(minutes: windows.saturdayBefore!);
+  final satAfter = windows.saturdayReturnAfter == null
+      ? null
+      : Duration(minutes: windows.saturdayReturnAfter!);
+  final monBefore = windows.mondayReturnBefore == null
+      ? null
+      : Duration(minutes: windows.mondayReturnBefore!);
+  final tueBefore = windows.tuesdayReturnBefore == null
+      ? null
+      : Duration(minutes: windows.tuesdayReturnBefore!);
 
   if (kind == 'departures') {
+    if (_same(day, weekend.thursday)) {
+      // Outbound Thursday (the holiday bridge): same rule
+      // as Friday.
+      if (thursdayFrom == null) return (null, null);
+      return (at(day, 0, 0).add(thursdayFrom), at(weekend.friday, 0, 0));
+    }
     if (_same(day, weekend.friday)) {
       // Outbound Friday: departs at or after the Friday bound.
+      if (fridayFrom == null) return (null, null);
       return (at(day, 0, 0).add(fridayFrom), at(weekend.saturday, 0, 0));
     }
     if (_same(day, weekend.saturday)) {
       // Outbound Saturday: departs before the Saturday bound.
+      if (satBefore == null) return (null, null);
       return (at(day, 0, 0), at(day, 0, 0).add(satBefore));
     }
   } else {
     if (_same(day, weekend.saturday)) {
       // Return Saturday: lands at or after the Saturday bound.
+      if (satAfter == null) return (null, null);
       return (at(day, 0, 0).add(satAfter), at(weekend.sunday, 0, 0));
     }
     if (_same(day, weekend.sunday)) {
@@ -386,6 +411,7 @@ class FraportBoardProvider implements FlightBoardProvider {
       // 24:00 is Monday 00:00, so the walk covers
       // exactly what the matcher keeps -- and the
       // "flights read" count stays honest.
+      if (!windows.sundayEnabled) return (null, null);
       return (
         at(day, 0, 0),
         at(day, 0, 0).add(
@@ -394,7 +420,14 @@ class FraportBoardProvider implements FlightBoardProvider {
     }
     if (_same(day, weekend.monday)) {
       // Return Monday: lands before the Monday bound.
+      if (monBefore == null) return (null, null);
       return (at(day, 0, 0), at(day, 0, 0).add(monBefore));
+    }
+    if (_same(day, weekend.tuesday)) {
+      // Return Tuesday (the holiday bridge): lands before
+      // the Tuesday bound.
+      if (tueBefore == null) return (null, null);
+      return (at(day, 0, 0), at(day, 0, 0).add(tueBefore));
     }
   }
   return (null, null);

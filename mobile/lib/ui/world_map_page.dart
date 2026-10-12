@@ -17,17 +17,25 @@
 ///   slippy-map tiles;
 /// * a country the filters hid is a *translucent* fill, the
 ///   legacy's "filtered" look;
+/// * the **country borders** and a **hover highlight with a
+///   name tooltip** (desktop) so the political map reads and
+///   a tap lands where you aimed;
+/// * **wheel zoom, pinch zoom and drag panning**, tile sets
+///   re-fetched per zoom level (2–8), region presets via a
+///   controller;
 /// * the **filters** are the legacy ones: continent,
 ///   weather-at-least-ok-in (a month), minimum safety,
 ///   minimum review score, only-unvisited, requires-research
 ///   — and a filter only ever removes a destination whose
 ///   field is populated.
 ///
-/// Tiles © OpenStreetMap contributors.
+/// Basemap: Esri World Light Gray Canvas (English labels).
 library;
 
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart'
+    show PointerScrollEvent, PointerSignalEvent;
 import 'package:flutter/material.dart';
 
 import '../data/city_coordinates.dart';
@@ -67,6 +75,7 @@ class DestinationMiniMap extends StatelessWidget {
           latitude: coordinate.lat,
           longitude: coordinate.lon,
           zoom: 6,
+          interactive: false,
           cities: [
             MapCity(
               latitude: coordinate.lat,
@@ -93,12 +102,82 @@ class DestinationMiniMap extends StatelessWidget {
   }
 }
 
-/// The tile URL for one slippy-map tile.
+/// The tile URL for one slippy-map tile. The Esri light-grey
+/// canvas labels places in English wherever an English name
+/// exists — the standard OSM tiles render local names, which
+/// reads as Chinese across China and Mongolian across
+/// Mongolia. The quiet grey also lets the choropleth carry
+/// the colour instead of competing with the basemap.
 String tileUrl(int zoom, int x, int y) =>
-    'https://tile.openstreetmap.org/$zoom/$x/$y.png';
+    'https://server.arcgisonline.com/ArcGIS/rest/services/'
+    'Canvas/World_Light_Gray_Base/MapServer/tile/$zoom/$y/$x';
 
-/// The tile-backed map with country fills, pins and a tap
-/// that selects a country.
+/// The view state the caller can move — the region presets
+/// fly the map to a place through this.
+class WorldMapController extends ChangeNotifier {
+  double latitude;
+  double longitude;
+  int zoom;
+
+  WorldMapController({
+    required this.latitude,
+    required this.longitude,
+    this.zoom = 2,
+  });
+
+  void moveTo(double latitude, double longitude, [int? zoom]) {
+    this.latitude = latitude;
+    this.longitude = longitude;
+    if (zoom != null) this.zoom = zoom;
+    notifyListeners();
+  }
+}
+
+/// Where the map is looking right now, expressed so the
+/// view-aware overlays (the trip route painter) can land
+/// exactly on the tiles while the user pans and zooms.
+class MapViewTransform {
+  final int zoom;
+  final Offset topLeft;
+  final double width;
+  final double height;
+
+  const MapViewTransform({
+    required this.zoom,
+    required this.topLeft,
+    required this.width,
+    required this.height,
+  });
+
+  /// A lat/lon point in view coordinates.
+  Offset project(double latitude, double longitude) {
+    final point = worldPixels(latitude, longitude, zoom);
+    return Offset(point.x - topLeft.dx, point.y - topLeft.dy);
+  }
+
+  /// The lon/lat under a position in view coordinates —
+  /// the country hit test and the anchor-zoom both run
+  /// through this.
+  (double, double) unproject(Offset local) {
+    final worldSize = math.pow(2, zoom) * 256.0;
+    final worldX = topLeft.dx + local.dx;
+    final worldY = topLeft.dy + local.dy;
+    final lon = worldX / worldSize * 360.0 - 180.0;
+    final n = math.pi * (1.0 - 2.0 * worldY / worldSize);
+    final lat = math.atan(_sinh(n)) * 180.0 / math.pi;
+    return (lon, lat);
+  }
+}
+
+/// Builds the map's overlay widgets against the *current*
+/// view, so overlays stay glued to the tiles while the view
+/// moves.
+typedef WorldMapOverlayBuilder = List<Widget> Function(
+    BuildContext context, MapViewTransform transform);
+
+/// The tile-backed map with country fills and borders, city
+/// dots, wheel/pinch zoom, drag panning, a hover highlight
+/// (desktop) and a tap that selects a country.
 class WorldMapView extends StatefulWidget {
   final double latitude;
   final double longitude;
@@ -110,20 +189,38 @@ class WorldMapView extends StatefulWidget {
   /// the selected month and the active filters.
   final Map<String, Color> countryFills;
 
-  /// Widgets painted on top of the tiles, under the city
-  /// markers -- the itinerary route map draws its legs,
-  /// stops and gateways here.
-  final List<Widget> overlay;
+  /// Country outlines under the pins: without them the
+  /// choropleth is unreadable — nothing tells you which
+  /// country you are hovering or tapping.
+  final bool showBorders;
 
-  /// The legacy "Show city text labels on map" toggle.
-  /// Phone map default is on — there is no hover on a
-  /// touch screen, so the name under the pin is the only
-  /// identification.
+  /// Pan and wheel/pinch zoom. The destination mini-map
+  /// stays static.
+  final bool interactive;
+
+  /// The country ringed on the map — the page's tap
+  /// selection. Hover reuses the same highlight.
+  final String? highlightCountry;
+
+  /// The legacy "Show city text labels on map" toggle,
+  /// gated by zoom: labels only render from zoom 4 up,
+  /// where they stop overlapping.
   final bool showCityLabels;
+
+  /// Builds the map's overlay widgets against the current
+  /// view — the trip route painter.
+  final WorldMapOverlayBuilder? overlayBuilder;
 
   /// Fired when a tap lands on a country (the choropleth's
   /// click, ported).
   final void Function(String country)? onCountryTap;
+
+  /// The presets fly the map through this.
+  final WorldMapController? controller;
+
+  /// Zoom changes are reported so the page can gate the
+  /// labels on the level.
+  final void Function(int zoom)? onZoomChanged;
 
   const WorldMapView({
     super.key,
@@ -132,10 +229,15 @@ class WorldMapView extends StatefulWidget {
     required this.zoom,
     required this.cities,
     required this.countryFills,
-    this.overlay = const [],
     this.height = 320,
+    this.showBorders = true,
+    this.interactive = true,
+    this.highlightCountry,
     this.showCityLabels = true,
     this.onCountryTap,
+    this.controller,
+    this.onZoomChanged,
+    this.overlayBuilder,
   });
 
   @override
@@ -170,10 +272,91 @@ class _WorldMapViewState extends State<WorldMapView> {
   CountryGeometry? _geometry;
   final _tilesFailed = ValueNotifier<bool>(false);
 
+  /// The live view: the widget fields are only the *initial*
+  /// values; everything the user pans or zooms afterwards
+  /// lives here.
+  late double _latitude = widget.latitude;
+  late double _longitude = widget.longitude;
+  late int _zoom = widget.zoom;
+
+  /// The view width, remembered from the last layout so the
+  /// gesture handlers can build a transform without a
+  /// BuildContext.
+  double _viewWidth = 0;
+
+  /// Hover state (desktop): the country under the cursor and
+  /// where its tooltip sits.
+  String? _hoveredCountry;
+  Offset? _hoverPosition;
+
+  // Drag / pinch bookkeeping.
+  Offset? _scaleFocalStart;
+  double? _scaleStartLatitude;
+  double? _scaleStartLongitude;
+  double? _lastPinchScale;
+  double _pinchAccum = 1;
+
+  /// A world view and a city street want different zooms;
+  /// these bounds keep both reachable and the tile count
+  /// sane.
+  static const _minZoom = 2;
+  static const _maxZoom = 8;
+
+  WorldMapController? _attachedController;
+
   @override
   void initState() {
     super.initState();
     _loadGeometry();
+    _attachController();
+  }
+
+  void _attachController() {
+    _attachedController?.removeListener(_onControllerMove);
+    _attachedController = widget.controller;
+    _attachedController?.addListener(_onControllerMove);
+  }
+
+  void _onControllerMove() {
+    final controller = _attachedController;
+    if (controller == null || !mounted) return;
+    setState(() {
+      _latitude = controller.latitude;
+      _longitude = controller.longitude;
+      if (_zoom != controller.zoom) {
+        _zoom = controller.zoom;
+        widget.onZoomChanged?.call(_zoom);
+      }
+      _hoveredCountry = null;
+    });
+  }
+
+  @override
+  void didUpdateWidget(WorldMapView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) _attachController();
+    // Caller-driven static views (the destination mini-map)
+    // re-adopt a changed centre. The interactive page owns
+    // its centre through the controller instead — adopting
+    // widget fields there would fight the user's pan.
+    if (widget.controller == null &&
+        (oldWidget.latitude != widget.latitude ||
+            oldWidget.longitude != widget.longitude ||
+            oldWidget.zoom != widget.zoom)) {
+      _latitude = widget.latitude;
+      _longitude = widget.longitude;
+      if (_zoom != widget.zoom) {
+        _zoom = widget.zoom;
+        widget.onZoomChanged?.call(_zoom);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _attachedController?.removeListener(_onControllerMove);
+    _tilesFailed.dispose();
+    super.dispose();
   }
 
   Future<void> _loadGeometry() async {
@@ -182,10 +365,17 @@ class _WorldMapViewState extends State<WorldMapView> {
     setState(() => _geometry = geometry);
   }
 
-  @override
-  void dispose() {
-    _tilesFailed.dispose();
-    super.dispose();
+  MapViewTransform _transformFor(double viewPixels) {
+    final centre = worldPixels(_latitude, _longitude, _zoom);
+    return MapViewTransform(
+      zoom: _zoom,
+      topLeft: Offset(
+        centre.x - viewPixels / 2,
+        centre.y - widget.height / 2,
+      ),
+      width: viewPixels,
+      height: widget.height,
+    );
   }
 
   @override
@@ -200,31 +390,26 @@ class _WorldMapViewState extends State<WorldMapView> {
         // the one tapped.
         LayoutBuilder(
           builder: (context, constraints) {
-            final viewPixels = constraints.maxWidth;
-            final centre = worldPixels(
-                widget.latitude, widget.longitude, widget.zoom);
-            final topLeft = Offset(
-              centre.x - viewPixels / 2,
-              centre.y - widget.height / 2,
-            );
-
-            final firstTileX = (topLeft.dx / 256).floor();
-            final lastTileX = ((topLeft.dx + viewPixels) / 256).floor();
-            final firstTileY = (topLeft.dy / 256).floor();
-            final lastTileY = ((topLeft.dy + widget.height) / 256).floor();
-
+            _viewWidth = constraints.maxWidth;
+            final transform = _transformFor(_viewWidth);
+            final worldSize = math.pow(2, _zoom).toInt();
             final tiles = <Widget>[];
-            final worldSize = math.pow(2, widget.zoom).toInt();
+            final firstTileX = (transform.topLeft.dx / 256).floor();
+            final lastTileX =
+                ((transform.topLeft.dx + _viewWidth) / 256).floor();
+            final firstTileY = (transform.topLeft.dy / 256).floor();
+            final lastTileY =
+                ((transform.topLeft.dy + widget.height) / 256).floor();
             for (var y = firstTileY; y <= lastTileY; y++) {
               for (var x = firstTileX; x <= lastTileX; x++) {
                 final wrappedX = ((x % worldSize) + worldSize) % worldSize;
                 tiles.add(Positioned(
-                  left: x * 256.0 - topLeft.dx,
-                  top: y * 256.0 - topLeft.dy,
+                  left: x * 256.0 - transform.topLeft.dx,
+                  top: y * 256.0 - transform.topLeft.dy,
                   width: 256,
                   height: 256,
                   child: Image.network(
-                    tileUrl(widget.zoom, wrappedX, y),
+                    tileUrl(_zoom, wrappedX, y),
                     fit: BoxFit.cover,
                     // The caption follows the tiles instead of
                     // sticking: one failed tile used to pin the
@@ -235,7 +420,7 @@ class _WorldMapViewState extends State<WorldMapView> {
                     errorBuilder: (context, error, stack) {
                       _postTilesFailed(true);
                       return Container(
-                        color: const Color(0xFFE8EDF2),
+                        color: const Color(0xFFE8ECEF),
                         child: const Center(
                           child: Icon(Icons.map_outlined,
                               color: Colors.grey, size: 28),
@@ -254,36 +439,72 @@ class _WorldMapViewState extends State<WorldMapView> {
               }
             }
 
-            final markers = <Widget>[
-              for (final city in widget.cities)
-                _cityMarker(city, topLeft, viewPixels),
-            ];
+            String? highlight;
+            if (_hoveredCountry != null) {
+              highlight = normalizeCountryName(_hoveredCountry!);
+            } else if (widget.highlightCountry != null &&
+                _geometry != null) {
+              final shape = _geometry!.lookup(widget.highlightCountry);
+              if (shape != null) highlight = normalizeCountryName(shape.name);
+            }
 
             return ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: GestureDetector(
-                // A tap on the map hits a country (the choropleth
-                // click): the hit test runs on the geometry, before
-                // any marker would claim the tap.
-                onTapUp: (details) =>
-                    _selectCountryAt(details.localPosition, topLeft),
-                child: Container(
-                  height: widget.height,
-                  color: const Color(0xFFE8EDF2),
-                  child: Stack(children: [
-                    CustomPaint(
-                      size: Size(viewPixels, widget.height),
-                      painter: _CountryFillPainter(
-                        geometry: _geometry,
-                        fills: widget.countryFills,
-                        zoom: widget.zoom,
-                        topLeft: topLeft,
-                      ),
+              child: MouseRegion(
+                // Hover is a pointer thing: on the phone the
+                // region never fires and the tap carries the
+                // selection instead.
+                onHover: (widget.interactive)
+                    ? (event) => _onHover(event.localPosition, transform)
+                    : null,
+                onExit: (_) => _clearHover(),
+                child: GestureDetector(
+                  // A tap on the map hits a country (the choropleth
+                  // click): the hit test runs on the geometry, before
+                  // any marker would claim the tap.
+                  onTapUp: (details) =>
+                      _selectCountryAt(details.localPosition, transform),
+                  onScaleStart:
+                      widget.interactive ? _onScaleStart : null,
+                  onScaleUpdate:
+                      widget.interactive ? _onScaleUpdate : null,
+                  onScaleEnd: widget.interactive ? _onScaleEnd : null,
+                  child: Listener(
+                    onPointerSignal: widget.interactive
+                        ? _onPointerSignal
+                        : null,
+                    child: Container(
+                      height: widget.height,
+                      color: const Color(0xFFE8ECEF),
+                      child: Stack(children: [
+                        ...tiles,
+                        // The choropleth paints ABOVE the tiles:
+                        // opaque tile images used to cover it
+                        // completely, and the month colours were
+                        // invisible.
+                        CustomPaint(
+                          size: Size(_viewWidth, widget.height),
+                          painter: _ChoroplethPainter(
+                            geometry: _geometry,
+                            fills: widget.countryFills,
+                            zoom: _zoom,
+                            topLeft: transform.topLeft,
+                            showBorders: widget.showBorders,
+                            highlight: highlight,
+                          ),
+                        ),
+                        if (widget.overlayBuilder != null)
+                          ...widget.overlayBuilder!(context, transform),
+                        ...[
+                          for (final city in widget.cities)
+                            _cityMarker(city, transform),
+                        ],
+                        if (_hoveredCountry != null &&
+                            _hoverPosition != null)
+                          _hoverTooltip(),
+                      ]),
                     ),
-                    ...tiles,
-                    ...widget.overlay,
-                    ...markers,
-                  ]),
+                  ),
                 ),
               ),
             );
@@ -312,6 +533,189 @@ class _WorldMapViewState extends State<WorldMapView> {
     );
   }
 
+  // ── interactions ─────────────────────────────────────────
+
+  /// Wheel zoom, anchored at the cursor: the world point
+  /// under the pointer becomes the centre, so the map does
+  /// not lurch away from where the user is looking.
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    _zoomBy(event.scrollDelta.dy > 0 ? -1 : 1,
+        anchor: event.localPosition);
+  }
+
+  void _zoomBy(int steps, {Offset? anchor}) {
+    final newZoom = (_zoom + steps).clamp(_minZoom, _maxZoom);
+    if (newZoom == _zoom) return;
+    (double, double)? anchorPoint;
+    if (anchor != null) {
+      anchorPoint = _transformFor(_viewWidth).unproject(anchor);
+    }
+    setState(() {
+      _zoom = newZoom;
+      if (anchorPoint != null) {
+        _longitude = anchorPoint.$1;
+        _latitude = anchorPoint.$2;
+      }
+      _clampCentre();
+      _hoveredCountry = null;
+    });
+    widget.onZoomChanged?.call(_zoom);
+  }
+
+  void _clampCentre() {
+    _latitude = _latitude.clamp(-80.0, 80.0);
+    _longitude = ((_longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
+  }
+
+  void _onScaleStart(ScaleStartDetails details) {
+    _scaleFocalStart = details.localFocalPoint;
+    _scaleStartLatitude = _latitude;
+    _scaleStartLongitude = _longitude;
+    _lastPinchScale = 1;
+    _pinchAccum = 1;
+  }
+
+  void _onScaleUpdate(ScaleUpdateDetails details) {
+    final focalStart = _scaleFocalStart;
+    if (focalStart == null) return;
+    if ((details.scale - 1).abs() < 0.01) {
+      // One pointer (or the mouse): a drag pans. The centre
+      // moves by the focal point's pixel delta at the current
+      // zoom.
+      final worldSize = math.pow(2, _zoom) * 256.0;
+      final startCentre =
+          worldPixels(_scaleStartLatitude!, _scaleStartLongitude!, _zoom);
+      final delta = details.localFocalPoint - focalStart;
+      setState(() {
+        _longitude = worldXToLongitude(
+            (startCentre.x - delta.dx) / worldSize);
+        _latitude = worldYToLatitude(
+            (startCentre.y - delta.dy) / worldSize);
+        _clampCentre();
+      });
+      return;
+    }
+    // A pinch: accumulate the scale and step one zoom level
+    // per factor ~1.35, anchored at the pinch midpoint.
+    final last = _lastPinchScale ?? details.scale;
+    _pinchAccum *= details.scale / last;
+    _lastPinchScale = details.scale;
+    var steps = 0;
+    while (_pinchAccum >= 1.35 && _zoom + steps < _maxZoom) {
+      steps++;
+      _pinchAccum /= 1.35;
+    }
+    while (_pinchAccum <= 1 / 1.35 && _zoom + steps > _minZoom) {
+      steps--;
+      _pinchAccum *= 1.35;
+    }
+    if (steps != 0) {
+      _zoomBy(steps, anchor: details.localFocalPoint);
+      // The anchor-zoom recentred the map; the drag baseline
+      // follows so the next pan does not jump.
+      _scaleStartLatitude = _latitude;
+      _scaleStartLongitude = _longitude;
+      _scaleFocalStart = details.localFocalPoint;
+      _lastPinchScale = 1;
+      _pinchAccum = 1;
+    }
+  }
+
+  void _onScaleEnd(ScaleEndDetails details) {
+    _scaleFocalStart = null;
+    _lastPinchScale = null;
+  }
+
+  void _onHover(Offset local, MapViewTransform transform) {
+    final geometry = _geometry;
+    if (geometry == null) return;
+    final (lon, lat) = transform.unproject(local);
+    final shape = geometry.hitTest(lon, lat);
+    // Only rebuild when something visible changes: moving
+    // within one country repositions the tooltip, crossing a
+    // border swaps the highlight.
+    if (shape?.name != _hoveredCountry || _hoverPosition == null) {
+      setState(() {
+        _hoveredCountry = shape?.name;
+        _hoverPosition = local;
+      });
+    } else {
+      _hoverPosition = local;
+      // The tooltip follows the cursor without a rebuild;
+      // the next paint of anything else picks it up.
+      setState(() {});
+    }
+  }
+
+  void _clearHover() {
+    if (_hoveredCountry == null && _hoverPosition == null) return;
+    setState(() {
+      _hoveredCountry = null;
+      _hoverPosition = null;
+    });
+  }
+
+  Widget _hoverTooltip() {
+    final name = _hoveredCountry!;
+    Color? fill;
+    final normalised = normalizeCountryName(name);
+    for (final entry in widget.countryFills.entries) {
+      if (normalizeCountryName(entry.key) == normalised) {
+        fill = entry.value;
+        break;
+      }
+    }
+    return Positioned(
+      left: (_hoverPosition!.dx + 14).clamp(0.0, math.max(_viewWidth - 170, 0.0)),
+      top: (_hoverPosition!.dy - 34).clamp(0.0, math.max(widget.height - 30, 0.0)),
+      child: IgnorePointer(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.93),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFB0BEC5)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (fill != null) ...[
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: fill,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFF607D8B), width: 0.8),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                name,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF263238),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _selectCountryAt(Offset position, MapViewTransform transform) {
+    if (widget.onCountryTap == null) return;
+    final geometry = _geometry;
+    if (geometry == null) return;
+    final (lon, lat) = transform.unproject(position);
+    final shape = geometry.hitTest(lon, lat);
+    if (shape != null) widget.onCountryTap!(shape.name);
+  }
+
   /// The tile caption is written from post-frame
   /// callbacks (both the error and the success
   /// paths): navigating away in the same frame must
@@ -323,44 +727,26 @@ class _WorldMapViewState extends State<WorldMapView> {
     });
   }
 
-  void _selectCountryAt(Offset position, Offset topLeft) {
-    if (widget.onCountryTap == null) return;
-    final geometry = _geometry;
-    if (geometry == null) return;
-    final worldX = topLeft.dx + position.dx;
-    final worldY = topLeft.dy + position.dy;
-    final worldSize = math.pow(2, widget.zoom) * 256.0;
-    final lon = worldX / worldSize * 360.0 - 180.0;
-    final n = math.pi * (1.0 - 2.0 * worldY / worldSize);
-    final lat = math.atan(_sinh(n)) * 180.0 / math.pi;
-    for (final shape in geometry.shapes) {
-      if (pointInCountry(lon, lat, shape.rings)) {
-        widget.onCountryTap!(shape.name);
-        return;
-      }
-    }
-  }
-
-  /// The dataset's spelling for the tapped country, in
-  /// the catalogue's spelling: the shapes carry the
-  /// long English names ("United States of America"),
-  /// the data is keyed by the catalogue's Country
-  /// column ("United States") -- the same mismatch the
-  /// alias table paints over, in reverse.
-  Widget _cityMarker(MapCity city, Offset topLeft, double viewPixels) {
-    final point = worldPixels(city.latitude, city.longitude, widget.zoom);
-    final left = point.x - topLeft.dx;
-    final top = point.y - topLeft.dy;
-    final visible = left >= -24 &&
-        left <= viewPixels + 24 &&
-        top >= -28 &&
-        top <= widget.height + 24;
+  /// The city pin: a small dot with a white ring (the big
+  /// Material pins turned Europe into a pile of blobs), the
+  /// name beside it — and only from zoom 4 up, where labels
+  /// stop overlapping. The invisible 28px square keeps the
+  /// tap target reachable.
+  Widget _cityMarker(MapCity city, MapViewTransform transform) {
+    final point = transform.project(city.latitude, city.longitude);
+    final visible = point.dx >= -24 &&
+        point.dx <= transform.width + 24 &&
+        point.dy >= -28 &&
+        point.dy <= transform.height + 24;
     final color = city.filteredOut
         ? Color(city.condition.colorValue).withValues(alpha: 0.35)
         : Color(city.condition.colorValue);
+    final showLabel = widget.showCityLabels && _zoom >= 4;
     return Positioned(
-      left: left - 11,
-      top: top - 22,
+      left: point.dx - 14,
+      top: point.dy - 14,
+      width: 28,
+      height: 28,
       child: IgnorePointer(
         ignoring: !visible,
         child: GestureDetector(
@@ -374,20 +760,35 @@ class _WorldMapViewState extends State<WorldMapView> {
                   ));
                 }
               : null,
-          child: Column(
+          child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              Icon(Icons.location_on, color: color, size: 26),
-              if (widget.showCityLabels)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              Align(
+                child: Container(
+                  width: 9,
+                  height: 9,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(4),
+                    color: color,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.4),
                   ),
-                  child: Text(
-                    city.name,
-                    style: const TextStyle(fontSize: 9, color: Colors.black87),
+                ),
+              ),
+              if (showLabel)
+                Positioned(
+                  left: 13,
+                  top: 7,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                    color: Colors.white.withValues(alpha: 0.78),
+                    child: Text(
+                      city.name,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF263238),
+                      ),
+                    ),
                   ),
                 ),
             ],
@@ -398,20 +799,27 @@ class _WorldMapViewState extends State<WorldMapView> {
   }
 }
 
-/// Fills every country in view with its condition colour, on
-/// top of the tiles (the legacy choropleth's fill, drawn
-/// under a real map's detail).
-class _CountryFillPainter extends CustomPainter {
+/// The choropleth: fills, country borders and the hover /
+/// selection highlight, painted ABOVE the tiles (they used
+/// to sit under the opaque tile images and were invisible).
+class _ChoroplethPainter extends CustomPainter {
   final CountryGeometry? geometry;
   final Map<String, Color> fills;
   final int zoom;
   final Offset topLeft;
+  final bool showBorders;
 
-  const _CountryFillPainter({
+  /// The normalised dataset name of the country to ring
+  /// (hover on desktop, tap selection on the phone).
+  final String? highlight;
+
+  const _ChoroplethPainter({
     required this.geometry,
     required this.fills,
     required this.zoom,
     required this.topLeft,
+    required this.showBorders,
+    required this.highlight,
   });
 
   @override
@@ -419,45 +827,124 @@ class _CountryFillPainter extends CustomPainter {
     final shapes = geometry;
     if (shapes == null) return;
     final worldSize = math.pow(2, zoom) * 256.0;
+    // The visible lon/lat window: shapes outside it skip
+    // their path build entirely, which keeps panning smooth
+    // at high zoom (the geometry holds ~180 countries).
+    final viewLonMin = topLeft.dx / worldSize * 360.0 - 180.0 - 2.0;
+    final viewLonMax =
+        (topLeft.dx + size.width) / worldSize * 360.0 - 180.0 + 2.0;
+    final viewLatMax = worldYToLatitude(topLeft.dy / worldSize) + 2.0;
+    final viewLatMin =
+        worldYToLatitude((topLeft.dy + size.height) / worldSize) - 2.0;
+
+    final borderPaint = Paint()
+      ..color = const Color(0xFF78909C).withValues(alpha: 0.55)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.8;
+    final highlightFill = Paint()
+      ..color = Colors.orange.withValues(alpha: 0.18);
+    final highlightStroke = Paint()
+      ..color = const Color(0xFFE65100)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4;
+
     for (final entry in fills.entries) {
       final shape = shapes.lookup(entry.key);
       if (shape == null) continue;
-      final path = Path();
-      var drew = false;
-      for (final ring in shape.rings) {
-        if (ring.length < 3) continue;
-        for (var i = 0; i < ring.length; i++) {
-          final x = (ring[i][0] + 180.0) / 360.0 * worldSize - topLeft.dx;
-          final sine = math.sin(ring[i][1] * math.pi / 180.0)
-              .clamp(-0.9999, 0.9999);
-          final y = (0.5 -
-                  0.25 *
-                      math.log((1.0 + sine) / (1.0 - sine)) /
-                      math.pi) *
-              worldSize -
-              topLeft.dy;
-          if (i == 0) {
-            path.moveTo(x, y);
-          } else {
-            path.lineTo(x, y);
-          }
-          drew = true;
-        }
-        path.close();
+      if (!_inView(shape, viewLonMin, viewLatMin, viewLonMax, viewLatMax)) {
+        continue;
       }
-      if (!drew) continue;
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = entry.value
-          ..style = PaintingStyle.fill,
-      );
+      final path = _pathFor(shape, worldSize);
+      if (path == null) continue;
+      canvas.drawPath(path, Paint()..color = entry.value);
+      canvas.drawPath(path, borderPaint);
+      if (highlight != null &&
+          normalizeCountryName(shape.name) == highlight) {
+        canvas.drawPath(path, highlightFill);
+        canvas.drawPath(path, highlightStroke);
+      }
+    }
+
+    // Borders for countries without a fill: the political
+    // map stays legible even where the catalogue has no
+    // destination (and the hover needs the outline to make
+    // sense of).
+    if (showBorders) {
+      final filled = {
+        for (final key in fills.keys)
+          normalizeCountryName(shapes.lookup(key)?.name ?? key),
+      };
+      for (final shape in shapes.shapes) {
+        if (!_inView(shape, viewLonMin, viewLatMin, viewLonMax, viewLatMax)) {
+          continue;
+        }
+        if (filled.contains(normalizeCountryName(shape.name))) continue;
+        if (highlight != null &&
+            normalizeCountryName(shape.name) == highlight) {
+          final path = _pathFor(shape, worldSize);
+          if (path == null) continue;
+          canvas.drawPath(path, borderPaint);
+          canvas.drawPath(path, highlightStroke);
+          continue;
+        }
+        final path = _pathFor(shape, worldSize);
+        if (path == null) continue;
+        canvas.drawPath(path, borderPaint);
+      }
     }
   }
 
+  bool _inView(CountryShape shape, double lonMin, double latMin,
+      double lonMax, double latMax) {
+    final (minLon, minLat, maxLon, maxLat) = shape.bounds;
+    // The bounds may sit past ±180° (unwrapped antimeridian
+    // rings); test the point and its shifts the same way the
+    // hit test does.
+    for (final shift in const [0.0, -360.0, 360.0]) {
+      if (maxLon + shift >= lonMin &&
+          minLon + shift <= lonMax &&
+          maxLat >= latMin &&
+          minLat <= latMax) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  Path? _pathFor(CountryShape shape, double worldSize) {
+    final path = Path();
+    var drew = false;
+    for (final ring in shape.rings) {
+      if (ring.length < 3) continue;
+      for (var i = 0; i < ring.length; i++) {
+        final x = (ring[i][0] + 180.0) / 360.0 * worldSize - topLeft.dx;
+        final sine = math.sin(ring[i][1] * math.pi / 180.0)
+            .clamp(-0.9999, 0.9999);
+        final y = (0.5 -
+                0.25 *
+                    math.log((1.0 + sine) / (1.0 - sine)) /
+                    math.pi) *
+            worldSize -
+            topLeft.dy;
+        if (i == 0) {
+          path.moveTo(x, y);
+        } else {
+          path.lineTo(x, y);
+        }
+        drew = true;
+      }
+      path.close();
+    }
+    return drew ? path : null;
+  }
+
   @override
-  bool shouldRepaint(_CountryFillPainter old) =>
-      old.fills != fills || old.zoom != zoom || old.topLeft != topLeft;
+  bool shouldRepaint(_ChoroplethPainter old) =>
+      old.fills != fills ||
+      old.zoom != zoom ||
+      old.topLeft != topLeft ||
+      old.showBorders != showBorders ||
+      old.highlight != highlight;
 }
 
 /// The map tab: month selector, the map, the country
@@ -499,13 +986,43 @@ class _WorldMapPageState extends State<WorldMapPage> {
   /// The shared filter set (legacy defaults: only-unvisited
   /// on).
   CatalogueFilters _filters = CatalogueFilters.initial();
-  var _showCityLabels = true;
+
+  /// Labels start off on the desktop (the hover tooltip
+  /// identifies countries) and on for the phone (no hover
+  /// there); either way they only render from zoom 4 up,
+  /// where they stop overlapping.
+  var _showCityLabels = false;
+  var _labelsInitialised = false;
+  var _zoom = _mapPresets.first.zoom;
+
+  /// The presets fly the map through this; the fly-to
+  /// search rides the same controller.
+  final _mapController = WorldMapController(
+    latitude: _mapPresets.first.lat,
+    longitude: _mapPresets.first.lon,
+    zoom: _mapPresets.first.zoom,
+  );
 
   @override
   void initState() {
     super.initState();
     _destinations = widget.repository.loadDestinations();
     _index = _loadIndex();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_labelsInitialised) {
+      _labelsInitialised = true;
+      _showCityLabels = MediaQuery.sizeOf(context).width < 600;
+    }
+  }
+
+  @override
+  void dispose() {
+    _mapController.dispose();
+    super.dispose();
   }
 
   Future<(CoordinateIndex, CountryGeometry)> _loadIndex() async {
@@ -567,6 +1084,9 @@ class _WorldMapPageState extends State<WorldMapPage> {
                 setState(() => _selectedCountry = country),
             filters: _filters,
             showCityLabels: _showCityLabels,
+            mapController: _mapController,
+            zoom: _zoom,
+            onZoomChanged: (zoom) => setState(() => _zoom = zoom),
             onDataChanged: _reload,
           );
         },
@@ -601,6 +1121,9 @@ class _MapBody extends StatelessWidget {
   final void Function(String?) onCountrySelected;
   final CatalogueFilters filters;
   final bool showCityLabels;
+  final WorldMapController mapController;
+  final int zoom;
+  final void Function(int zoom) onZoomChanged;
 
   /// Fired after a destination was edited from the
   /// drill-down: the map recomputes fills and the
@@ -620,6 +1143,9 @@ class _MapBody extends StatelessWidget {
     required this.onCountrySelected,
     required this.filters,
     required this.showCityLabels,
+    required this.mapController,
+    required this.zoom,
+    required this.onZoomChanged,
     required this.onDataChanged,
   });
 
@@ -723,6 +1249,11 @@ class _MapBody extends StatelessWidget {
           }
         }
 
+        // The map takes most of the viewport: it is the
+        // page's subject, not a strip between two stat rows.
+        final mapHeight =
+            (MediaQuery.sizeOf(context).height * 0.58).clamp(420.0, 760.0);
+
         return ListView(
           padding: const EdgeInsets.all(12),
           children: [
@@ -773,55 +1304,119 @@ class _MapBody extends StatelessWidget {
                 ),
               ),
             const SizedBox(height: 4),
-            _KpiRow(
-              mappedCountries: mapped,
-              ideal: idealCount,
-              ok: okCount,
-              bad: badCount,
-            ),
-            const SizedBox(height: 10),
-            WorldMapView(
-              latitude: _mapPresets[preset].lat,
-              longitude: _mapPresets[preset].lon,
-              zoom: _mapPresets[preset].zoom,
+            // Fly-to: type a city or country and the map
+            // jumps there — panning the world to find
+            // Bucharest was the slow path.
+            _FlyToField(
               cities: cities,
-              countryFills: fills,
-              showCityLabels: showCityLabels,
-              onCountryTap: (tapped) {
-                // The shapes carry the dataset's long names
-                // ("United States of America"); the data is
-                // keyed by the catalogue's Country column
-                // ("United States") -- the same mismatch the
-                // alias table paints over, resolved in
-                // reverse. A country the catalogue has no
-                // rows for (Antarctica) is ignored: the
-                // legacy has no map tap at all, and
-                // selecting it would only break the
-                // drill-down below.
-                final country =
-                    countryAliases.containsValue(tapped)
-                        ? countryAliases.entries
-                            .firstWhere(
-                                (entry) => entry.value == tapped)
-                            .key
-                        : tapped;
-                if (byCountry.containsKey(country)) {
+              countries: countryNames,
+              onPickCity: (city) {
+                mapController.moveTo(city.latitude, city.longitude, 6);
+                final country = city.country;
+                if (country != null && byCountry.containsKey(country)) {
                   onCountrySelected(country);
                 }
               },
+              onPickCountry: (country) {
+                final centre = countryCentre(country, coordinates, cities);
+                if (centre != null) {
+                  mapController.moveTo(centre.$1, centre.$2, 4);
+                }
+                onCountrySelected(country);
+              },
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
+            // The map is the page: the stats overlay its
+            // top-left corner and the legend its bottom-left,
+            // where four stacked rows used to eat ~140px of
+            // map height.
+            Stack(
               children: [
-                for (final condition in Condition.values)
-                  _LegendDot(
-                      color: Color(condition.colorValue),
-                      label: condition.label),
+                WorldMapView(
+                  latitude: _mapPresets[preset].lat,
+                  longitude: _mapPresets[preset].lon,
+                  zoom: _mapPresets[preset].zoom,
+                  cities: cities,
+                  countryFills: fills,
+                  height: mapHeight,
+                  // Labels only once the zoom makes room for
+                  // them (and only if the toggle allows).
+                  showCityLabels: showCityLabels && zoom >= 4,
+                  controller: mapController,
+                  onZoomChanged: onZoomChanged,
+                  highlightCountry: selectedCountry,
+                  onCountryTap: (tapped) {
+                    // The shapes carry the dataset's long names
+                    // ("United States of America"); the data is
+                    // keyed by the catalogue's Country column
+                    // ("United States") -- the same mismatch the
+                    // alias table paints over, resolved in
+                    // reverse. A country the catalogue has no
+                    // rows for (Antarctica) is ignored: the
+                    // legacy has no map tap at all, and
+                    // selecting it would only break the
+                    // drill-down below.
+                    final country =
+                        countryAliases.containsValue(tapped)
+                            ? countryAliases.entries
+                                .firstWhere(
+                                    (entry) => entry.value == tapped)
+                                .key
+                            : tapped;
+                    if (byCountry.containsKey(country)) {
+                      onCountrySelected(country);
+                    }
+                  },
+                ),
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: _StatStrip(
+                    mappedCountries: mapped,
+                    ideal: idealCount,
+                    ok: okCount,
+                    bad: badCount,
+                  ),
+                ),
+                Positioned(
+                  bottom: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFB0BEC5)),
+                    ),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 2,
+                      children: [
+                        for (final condition in Condition.values)
+                          _LegendDot(
+                              color: Color(condition.colorValue),
+                              label: condition.label),
+                      ],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 5, vertical: 2),
+                    color: Colors.white.withValues(alpha: 0.7),
+                    child: const Text(
+                      '© Esri',
+                      style: TextStyle(fontSize: 9, color: Colors.black54),
+                    ),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: [
@@ -829,7 +1424,14 @@ class _MapBody extends StatelessWidget {
                   ChoiceChip(
                     label: Text(_mapPresets[i].label),
                     selected: preset == i,
-                    onSelected: (_) => onPresetChanged(i),
+                    onSelected: (_) {
+                      onPresetChanged(i);
+                      mapController.moveTo(
+                        _mapPresets[i].lat,
+                        _mapPresets[i].lon,
+                        _mapPresets[i].zoom,
+                      );
+                    },
                   ),
               ],
             ),
@@ -903,15 +1505,117 @@ class _MapBody extends StatelessWidget {
   }
 }
 
-/// The legacy KPI cards: mapped countries and the Ideal /
-/// Ok / Bad destination counts for the selected month.
-class _KpiRow extends StatelessWidget {
+/// The centre of a country, averaged over the coordinates
+/// of the destinations it holds — the fly-to target. Null
+/// when the country has no plotted city.
+(double, double)? countryCentre(
+  String country,
+  CoordinateIndex? coordinates,
+  List<MapCity> cities,
+) {
+  var latSum = 0.0;
+  var lonSum = 0.0;
+  var count = 0;
+  for (final city in cities) {
+    if (city.country != country) continue;
+    latSum += city.latitude;
+    lonSum += city.longitude;
+    count++;
+  }
+  if (count == 0) return null;
+  return (latSum / count, lonSum / count);
+}
+
+/// The fly-to search: an autocomplete over the plotted
+/// cities and the countries that hold them.
+class _FlyToField extends StatelessWidget {
+  final List<MapCity> cities;
+  final List<String> countries;
+  final void Function(MapCity city) onPickCity;
+  final void Function(String country) onPickCountry;
+
+  const _FlyToField({
+    required this.cities,
+    required this.countries,
+    required this.onPickCity,
+    required this.onPickCountry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final options = <String>{
+      for (final city in cities) city.name,
+      ...countries,
+    }.toList()
+      ..sort();
+    return LayoutBuilder(
+      builder: (context, constraints) => Autocomplete<String>(
+        optionsBuilder: (value) {
+          final query = value.text.trim().toLowerCase();
+          if (query.isEmpty) return const Iterable<String>.empty();
+          return options.where(
+              (option) => option.toLowerCase().contains(query)).take(12);
+        },
+        onSelected: (value) {
+          for (final city in cities) {
+            if (city.name == value) {
+              onPickCity(city);
+              return;
+            }
+          }
+          if (countries.contains(value)) onPickCountry(value);
+        },
+        fieldViewBuilder: (context, controller, focusNode, onSubmit) =>
+            TextField(
+          controller: controller,
+          focusNode: focusNode,
+          decoration: const InputDecoration(
+            labelText: 'Fly to',
+            hintText: 'Bucharest, Romania…',
+            prefixIcon: Icon(Icons.search),
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        optionsViewBuilder: (context, onSelected, matches) => Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                  maxHeight: 260, maxWidth: constraints.maxWidth),
+              child: ListView(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                children: [
+                  for (final match in matches)
+                    ListTile(
+                      dense: true,
+                      title: Text(match),
+                      onTap: () => onSelected(match),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The month's stats, overlaid on the map's top-left
+/// corner: icon beside the number, four chips in a wrap.
+/// The old vertical KPI cards stacked above the map and
+/// ate its height.
+class _StatStrip extends StatelessWidget {
   final int mappedCountries;
   final int ideal;
   final int ok;
   final int bad;
 
-  const _KpiRow({
+  const _StatStrip({
     required this.mappedCountries,
     required this.ideal,
     required this.ok,
@@ -920,70 +1624,69 @@ class _KpiRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Wrap(
+      spacing: 6,
+      runSpacing: 4,
       children: [
-        Expanded(
-            child: _KpiCard(
-                value: '$mappedCountries',
-                label: 'Mapped countries',
-                icon: Icons.public)),
-        const SizedBox(width: 8),
-        Expanded(
-            child: _KpiCard(
-                value: '$ideal',
-                label: 'Ideal destinations',
-                icon: Icons.star,
-                color: const Color(0xFF2ECC71))),
-        const SizedBox(width: 8),
-        Expanded(
-            child: _KpiCard(
-                value: '$ok',
-                label: 'Ok destinations',
-                icon: Icons.balance,
-                color: const Color(0xFFF1C40F))),
-        const SizedBox(width: 8),
-        Expanded(
-            child: _KpiCard(
-                value: '$bad',
-                label: 'Bad / off-season',
-                icon: Icons.warning_amber,
-                color: const Color(0xFFE74C3C))),
+        _StatChip(
+            value: '$mappedCountries',
+            label: 'mapped',
+            icon: Icons.public,
+            color: const Color(0xFF0E7C86)),
+        _StatChip(
+            value: '$ideal',
+            label: 'ideal',
+            icon: Icons.star,
+            color: const Color(0xFF2ECC71)),
+        _StatChip(
+            value: '$ok',
+            label: 'ok',
+            icon: Icons.balance,
+            color: const Color(0xFFB7950B)),
+        _StatChip(
+            value: '$bad',
+            label: 'bad / off-season',
+            icon: Icons.warning_amber,
+            color: const Color(0xFFE74C3C)),
       ],
     );
   }
 }
 
-class _KpiCard extends StatelessWidget {
+class _StatChip extends StatelessWidget {
   final String value;
   final String label;
   final IconData icon;
-  final Color? color;
+  final Color color;
 
-  const _KpiCard({
+  const _StatChip({
     required this.value,
     required this.label,
     required this.icon,
-    this.color,
+    required this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-        child: Column(
-          children: [
-            Icon(icon, color: color ?? theme.colorScheme.primary, size: 18),
-            const SizedBox(height: 4),
-            Text(value, style: theme.textTheme.titleLarge),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall,
-            ),
-          ],
-        ),
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFB0BEC5)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 5),
+          Text(value,
+              style:
+                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+          const SizedBox(width: 3),
+          Text(label,
+              style: const TextStyle(fontSize: 11, color: Colors.black87)),
+        ],
       ),
     );
   }

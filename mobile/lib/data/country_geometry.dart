@@ -20,15 +20,55 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
 
-import '../models/geo.dart' show unwrapRing;
+import '../models/geo.dart' show pointInCountry, unwrapRing;
 
-/// One country's shape: the name and the outer rings as flat
-/// [longitude, latitude] pairs.
+/// One country's shape: the name, the outer rings as flat
+/// [longitude, latitude] pairs, and the rings' bounding box
+/// (post-unwrap, so it may extend past ±180° for
+/// antimeridian countries) — the cheap pre-filter both the
+/// hover hit test and the painters run before touching
+/// points.
 class CountryShape {
   final String name;
   final List<List<List<double>>> rings;
 
-  const CountryShape({required this.name, required this.rings});
+  /// (minLon, minLat, maxLon, maxLat) over the unwrapped
+  /// rings.
+  final (double, double, double, double) bounds;
+
+  // Not const: the bounds derive from the rings at
+  // construction, and a const initializer cannot call a
+  // function.
+  CountryShape({required this.name, required this.rings})
+      : bounds = CountryShape._boundsOf(rings);
+
+  static (double, double, double, double) _boundsOf(
+      List<List<List<double>>> rings) {
+    var minLon = 999.0, minLat = 999.0, maxLon = -999.0, maxLat = -999.0;
+    for (final ring in rings) {
+      for (final point in ring) {
+        if (point[0] < minLon) minLon = point[0];
+        if (point[1] < minLat) minLat = point[1];
+        if (point[0] > maxLon) maxLon = point[0];
+        if (point[1] > maxLat) maxLat = point[1];
+      }
+    }
+    return (minLon, minLat, maxLon, maxLat);
+  }
+
+  /// Whether the shape's bounds (tested against the point
+  /// and its ±360° shifts for the antimeridian) can hold it.
+  bool boundsMayContain(double lon, double lat) {
+    for (final candidate in [lon, lon - 360.0, lon + 360.0]) {
+      if (candidate >= bounds.$1 &&
+          candidate <= bounds.$3 &&
+          lat >= bounds.$2 &&
+          lat <= bounds.$4) {
+        return true;
+      }
+    }
+    return false;
+  }
 
   int get pointCount {
     var total = 0;
@@ -168,6 +208,17 @@ class CountryGeometry {
 
   /// Every shape, for the tap hit test.
   Iterable<CountryShape> get shapes => _shapes.values;
+
+  /// The country under a lon/lat point, or `null`. The
+  /// bounding box runs first, so a hover move only pays the
+  /// ray-cast for the one or two shapes it can be in.
+  CountryShape? hitTest(double longitude, double latitude) {
+    for (final shape in _shapes.values) {
+      if (!shape.boundsMayContain(longitude, latitude)) continue;
+      if (pointInCountry(longitude, latitude, shape.rings)) return shape;
+    }
+    return null;
+  }
 
   /// Test/debug seam.
   int get shapeCount => _shapes.length;

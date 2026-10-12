@@ -697,56 +697,80 @@ class _ItineraryViewState extends State<_ItineraryView> {
                   ),
                 ],
               ),
-              // The action buttons wrap onto their
-              // own line: three buttons plus the
-              // delete icon never fit a phone-width
-              // row (the test font measures every
-              // glyph a full em wide).
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
+              // The action menus live with the row they
+              // act on: two identical New/Copy/Rename
+              // button rows used to leave it unclear
+              // which triplet drove the trip and which
+              // the variant.
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  OutlinedButton(
-                    onPressed: onNewTrip,
-                    child: const Text('New'),
-                  ),
-                  OutlinedButton(
-                    onPressed: () => onDuplicateTrip(trip.id),
-                    child: const Text('Copy'),
-                  ),
-                  OutlinedButton(
-                    onPressed: () => _promptForName(
-                      context,
-                      title: 'Rename trip',
-                      initial: trip.name,
-                      onSubmit: onRenameTrip,
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: trip.id,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Trip',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: [
+                        for (final option in trips)
+                          DropdownMenuItem(
+                            value: option.id,
+                            child: Text(_tripLabel(option, trips)),
+                          ),
+                      ],
+                      onChanged: (value) {
+                        if (value != null) onSelectTrip(value);
+                      },
                     ),
-                    child: const Text('Rename'),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Trip actions',
+                    icon: const Icon(Icons.more_vert),
+                    onSelected: (action) {
+                      switch (action) {
+                        case 'new':
+                          onNewTrip();
+                        case 'copy':
+                          onDuplicateTrip(trip.id);
+                        case 'rename':
+                          _promptForName(
+                            context,
+                            title: 'Rename trip',
+                            initial: trip.name,
+                            onSubmit: onRenameTrip,
+                          );
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: 'new',
+                        child: Row(children: [
+                          Icon(Icons.add, size: 18),
+                          SizedBox(width: 10),
+                          Text('New trip'),
+                        ]),
+                      ),
+                      PopupMenuItem(
+                        value: 'copy',
+                        child: Row(children: [
+                          Icon(Icons.copy, size: 18),
+                          SizedBox(width: 10),
+                          Text('Copy trip'),
+                        ]),
+                      ),
+                      PopupMenuItem(
+                        value: 'rename',
+                        child: Row(children: [
+                          Icon(Icons.edit, size: 18),
+                          SizedBox(width: 10),
+                          Text('Rename trip'),
+                        ]),
+                      ),
+                    ],
                   ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              // Labels carry a short id suffix when
-              // names collide, so a duplicate trip
-              // name can never make the dropdown
-              // switch to the wrong trip.
-               DropdownButtonFormField<String>(
-                 initialValue: trip.id,
-                 isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Trip',
-                  border: OutlineInputBorder(),
-                ),
-                items: [
-                  for (final option in trips)
-                    DropdownMenuItem(
-                      value: option.id,
-                      child: Text(_tripLabel(option, trips)),
-                    ),
-                ],
-                onChanged: (value) {
-                  if (value != null) onSelectTrip(value);
-                },
               ),
               const SizedBox(height: 8),
               Row(
@@ -777,6 +801,51 @@ class _ItineraryViewState extends State<_ItineraryView> {
                     ),
                   ),
                   const SizedBox(width: 8),
+                  PopupMenuButton<String>(
+                    tooltip: 'Variant actions',
+                    icon: const Icon(Icons.more_vert),
+                    onSelected: (action) {
+                      switch (action) {
+                        case 'new':
+                          onNewVariant();
+                        case 'copy':
+                          onDuplicateVariant();
+                        case 'rename':
+                          _promptForName(
+                            context,
+                            title: 'Rename variant',
+                            initial: active?.name ?? '',
+                            onSubmit: onRenameVariant,
+                          );
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(
+                        value: 'new',
+                        child: Row(children: [
+                          Icon(Icons.add, size: 18),
+                          SizedBox(width: 10),
+                          Text('New variant'),
+                        ]),
+                      ),
+                      PopupMenuItem(
+                        value: 'copy',
+                        child: Row(children: [
+                          Icon(Icons.copy, size: 18),
+                          SizedBox(width: 10),
+                          Text('Copy variant'),
+                        ]),
+                      ),
+                      PopupMenuItem(
+                        value: 'rename',
+                        child: Row(children: [
+                          Icon(Icons.edit, size: 18),
+                          SizedBox(width: 10),
+                          Text('Rename variant'),
+                        ]),
+                      ),
+                    ],
+                  ),
                   IconButton(
                     icon: const Icon(Icons.delete_outline),
                     tooltip: 'Delete variant',
@@ -800,30 +869,6 @@ class _ItineraryViewState extends State<_ItineraryView> {
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  OutlinedButton(
-                    onPressed: onNewVariant,
-                    child: const Text('New'),
-                  ),
-                  OutlinedButton(
-                    onPressed: onDuplicateVariant,
-                    child: const Text('Copy'),
-                  ),
-                  OutlinedButton(
-                    onPressed: () => _promptForName(
-                      context,
-                      title: 'Rename variant',
-                      initial: active?.name ?? '',
-                      onSubmit: onRenameVariant,
-                    ),
-                    child: const Text('Rename'),
-                  ),
-                ],
-              ),
 ],
           ),
         ),
@@ -832,11 +877,46 @@ class _ItineraryViewState extends State<_ItineraryView> {
           child: Expanded(
             child: Column(
               children: [
-                const TabBar(tabs: [
-                  Tab(text: 'Plan'),
-                  Tab(text: 'Map'),
-                  Tab(text: 'Compare'),
-                ]),
+                // Segmented buttons, not an underlined text
+                // bar: the sub-pages read as controls you can
+                // push. The Builder supplies a context *below*
+                // the DefaultTabController — reading it from
+                // the state's own context would resolve above
+                // the controller.
+                Builder(
+                  builder: (tabContext) {
+                    final controller = DefaultTabController.of(tabContext);
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                      child: ListenableBuilder(
+                        listenable: controller,
+                        builder: (context, _) => SegmentedButton<int>(
+                          showSelectedIcon: false,
+                          segments: const [
+                            ButtonSegment(
+                              value: 0,
+                              label: Text('Plan'),
+                              icon: Icon(Icons.edit_note),
+                            ),
+                            ButtonSegment(
+                              value: 1,
+                              label: Text('Map'),
+                              icon: Icon(Icons.map_outlined),
+                            ),
+                            ButtonSegment(
+                              value: 2,
+                              label: Text('Compare'),
+                              icon: Icon(Icons.compare_arrows),
+                            ),
+                          ],
+                          selected: {controller.index},
+                          onSelectionChanged: (selection) =>
+                              controller.animateTo(selection.first),
+                        ),
+                      ),
+                    );
+                  },
+                ),
                 Expanded(
                   child: TabBarView(
                     children: [

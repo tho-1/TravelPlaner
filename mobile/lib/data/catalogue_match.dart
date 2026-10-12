@@ -33,10 +33,17 @@ class CountryNames {
 
   static Future<void> ensureLoaded() async {
     if (_loaded) return;
-    final text = await rootBundle.loadString('assets/country_names.json');
-    final decoded = jsonDecode(text) as Map<String, dynamic>;
-    for (final entry in decoded.entries) {
-      _names[entry.key.toUpperCase()] = '${entry.value}';
+    try {
+      final text = await rootBundle.loadString('assets/country_names.json');
+      final decoded = jsonDecode(text) as Map<String, dynamic>;
+      for (final entry in decoded.entries) {
+        _names[entry.key.toUpperCase()] = '${entry.value}';
+      }
+    } catch (_) {
+      // A missing asset (or no binding, in a plain unit test)
+      // leaves the table empty: labels then fall back to the
+      // ISO code, which is what they showed before the names
+      // existed. Never a crash — the finder's contract.
     }
     _loaded = true;
   }

@@ -129,7 +129,7 @@ class ItineraryPlanTab extends StatelessWidget {
 
 // ── stops column ─────────────────────────────────────────────
 
-class _StopsColumn extends StatelessWidget {
+class _StopsColumn extends StatefulWidget {
   final Variant variant;
   final GeocodeRepository geocoder;
   final List<Destination> catalogue;
@@ -155,7 +155,18 @@ class _StopsColumn extends StatelessWidget {
   });
 
   @override
+  State<_StopsColumn> createState() => _StopsColumnState();
+}
+
+class _StopsColumnState extends State<_StopsColumn> {
+  /// The one stop whose editor is open — the accordion.
+  /// Every editor used to sit permanently expanded, which
+  /// turned the column into a wall of fields.
+  String? _expandedStopId;
+
+  @override
   Widget build(BuildContext context) {
+    final variant = widget.variant;
     final stops = variant.stops;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -178,17 +189,22 @@ class _StopsColumn extends StatelessWidget {
             index: i,
             stop: stops[i],
             total: stops.length,
-            selected: selectedStopId == stops[i].id,
-            onRemove: onRemoveStop,
-            onMove: onMoveStop,
-            onUpdate: onUpdateStop,
-            onToggleHighlight: onToggleHighlight,
+            selected: widget.selectedStopId == stops[i].id,
+            expanded: _expandedStopId == stops[i].id,
+            onToggleExpand: () => setState(() {
+              _expandedStopId =
+                  _expandedStopId == stops[i].id ? null : stops[i].id;
+            }),
+            onRemove: widget.onRemoveStop,
+            onMove: widget.onMoveStop,
+            onUpdate: widget.onUpdateStop,
+            onToggleHighlight: widget.onToggleHighlight,
           ),
           if (i < stops.length - 1)
             _LegRow(
               variant: variant,
               legIndex: i,
-              onSetMode: onSetLegMode,
+              onSetMode: widget.onSetLegMode,
             ),
         ],
         const SizedBox(height: 8),
@@ -198,23 +214,28 @@ class _StopsColumn extends StatelessWidget {
           // to the variant they were typed for.
           key: ValueKey(variant.id),
           variant: variant,
-          geocoder: geocoder,
-          catalogue: catalogue,
-          onAddStop: onAddStop,
+          geocoder: widget.geocoder,
+          catalogue: widget.catalogue,
+          onAddStop: widget.onAddStop,
         ),
       ],
     );
   }
 }
 
-/// One stop: the header with the reorder,
-/// highlight and remove actions, and the
-/// date/time editor.
+/// One stop: the collapsed line (name, dates, role) with the
+/// reorder, highlight and remove actions — tapping it opens
+/// the date/time editor, one stop at a time.
 class _StopCard extends StatelessWidget {
   final int index;
   final Stop stop;
   final int total;
   final bool selected;
+
+  /// Whether this stop's editor is open (one at a time,
+  /// owned by the column).
+  final bool expanded;
+  final VoidCallback onToggleExpand;
   final void Function(String stopId) onRemove;
   final void Function(String stopId, int direction) onMove;
   final void Function(String stopId, Stop updated) onUpdate;
@@ -226,11 +247,35 @@ class _StopCard extends StatelessWidget {
     required this.stop,
     required this.total,
     required this.selected,
+    required this.expanded,
+    required this.onToggleExpand,
     required this.onRemove,
     required this.onMove,
     required this.onUpdate,
     required this.onToggleHighlight,
   });
+
+  bool get _isOriginRole => stop.role == 'origin';
+
+  /// The collapsed line's facts: arrival → departure and
+  /// the nights, or "no dates set".
+  String get _summary {
+    String? at(String? date, String? time) {
+      if (date == null || date.isEmpty) return null;
+      if (time == null || time.isEmpty) return date;
+      return '$date $time';
+    }
+
+    final parts = <String>[];
+    if (!_isOriginRole) {
+      final arrival = at(stop.arrivalDate, stop.arrivalTime);
+      if (arrival != null) parts.add(arrival);
+      if (stop.nights != null) parts.add('${stop.nights} nights');
+    }
+    final departure = at(stop.departureDate, stop.departureTime);
+    if (departure != null) parts.add(departure);
+    return parts.isEmpty ? 'no dates set' : parts.join(' · ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -242,31 +287,55 @@ class _StopCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // The header line is the tap target that opens
+            // the editor; the icon buttons keep their own
+            // hit areas in front of it.
+            InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: onToggleExpand,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${index + 1}. ${stop.ref.name}'
+                          '${stop.ref.country != null && stop.ref.country!.isNotEmpty ? ' · ${stop.ref.country}' : ''}',
+                          style: theme.textTheme.titleMedium,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(_summary,
+                            style: theme.textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                  // The role is part of the stop's
+                  // meaning (origin = trip start,
+                  // return = way back home), so it is
+                  // shown, not just stored.
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                          color: theme.colorScheme.outline),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(role,
+                        style: theme.textTheme.labelSmall),
+                  ),
+                  AnimatedRotation(
+                    turns: expanded ? 0.5 : 0,
+                    duration: const Duration(milliseconds: 150),
+                    child: const Icon(Icons.expand_more),
+                  ),
+                ],
+              ),
+            ),
             Row(
               children: [
-                Expanded(
-                  child: Text(
-                    '${index + 1}. ${stop.ref.name}'
-                    '${stop.ref.country != null && stop.ref.country!.isNotEmpty ? ' · ${stop.ref.country}' : ''}',
-                    style: theme.textTheme.titleMedium,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                // The role is part of the stop's
-                // meaning (origin = trip start,
-                // return = way back home), so it is
-                // shown, not just stored.
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                        color: theme.colorScheme.outline),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(role,
-                      style: theme.textTheme.labelSmall),
-                ),
                 IconButton(
                   icon: const Icon(Icons.arrow_upward),
                   tooltip: 'Move up',
@@ -301,19 +370,31 @@ class _StopCard extends StatelessWidget {
                 ),
               ],
             ),
-            _StopEditor(stop: stop, onUpdate: onUpdate),
-            if (selected)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text('_highlighted on the Map tab_',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(
-                          fontStyle: FontStyle.italic,
-                          color: Theme.of(context).colorScheme.primary,
-                        )),
+            // Offstage rather than removed: pending edits
+            // survive closing the accordion, and the Save
+            // button stays meaningful per stop.
+            Offstage(
+              offstage: !expanded,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _StopEditor(stop: stop, onUpdate: onUpdate),
+                  if (selected)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text('Highlighted on the Map tab',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodySmall
+                              ?.copyWith(
+                                fontStyle: FontStyle.italic,
+                                color:
+                                    Theme.of(context).colorScheme.primary,
+                              )),
+                    ),
+                ],
               ),
+            ),
           ],
         ),
       ),
@@ -1098,10 +1179,14 @@ class _SideColumn extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           [
-            if (t.flights > 0) '✈ ${t.flights}',
-            if (t.trains > 0) '🚆 ${t.trains}',
-            if (t.other > 0) '🚌 ${t.other}',
+            if (t.flights > 0)
+              '${t.flights} flight${t.flights == 1 ? '' : 's'}',
+            if (t.trains > 0)
+              '${t.trains} train${t.trains == 1 ? '' : 's'}',
+            if (t.other > 0)
+              '${t.other} other leg${t.other == 1 ? '' : 's'}',
           ].join(' · '),
+          style: Theme.of(context).textTheme.bodySmall,
         ),
         if (variant.comment.isNotEmpty) ...[
           const SizedBox(height: 12),

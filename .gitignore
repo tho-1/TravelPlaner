@@ -84,3 +84,7 @@ chat.json
 chat*.json
 chat_dump.txt
 codereview.md
+
+# Session transcripts exported by other agent tooling
+session-ses_*.md
+.kilo/

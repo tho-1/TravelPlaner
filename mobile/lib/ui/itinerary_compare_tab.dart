@@ -68,9 +68,31 @@ class ItineraryCompareTab extends StatelessWidget {
               rows: [
                 for (final variant in variants)
                   DataRow(
+                    // One indicator language: the active row
+                    // is tinted and checked; every row is
+                    // tappable to activate itself.
+                    color: WidgetStateProperty.resolveWith((_) =>
+                        variant.id == trip.activeVariantId
+                            ? Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest
+                            : Theme.of(context).colorScheme.surface),
+                    onSelectChanged: (_) {
+                      if (variant.id != trip.activeVariantId) {
+                        onActivate(variant.id);
+                      }
+                    },
                     cells: _cells(context, variant),
                   ),
               ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              'Tap a row to make it the active variant · '
+              'the table scrolls sideways.',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
           if (variants.length > 1 && active != null) ...[
@@ -90,13 +112,16 @@ class ItineraryCompareTab extends StatelessWidget {
     final t = totals(variant);
     final active = variant.id == trip.activeVariantId;
     return [
-      DataCell(Icon(
-        active ? Icons.check_circle : Icons.circle_outlined,
-        size: 18,
-        color: active
-            ? Theme.of(context).colorScheme.primary
-            : null,
-      )),
+      // A single indicator: the check on the active row.
+      // The old pair (check plus radio on the others) read
+      // as two different controls.
+      DataCell(active
+          ? Icon(
+              Icons.check_circle,
+              size: 18,
+              color: Theme.of(context).colorScheme.primary,
+            )
+          : const SizedBox.shrink()),
       DataCell(Text(variant.name)),
       DataCell(Text(variant.rating?.toString() ?? '—')),
       DataCell(Text(

@@ -151,19 +151,35 @@ Credentials come from `mobile/assets/turso_config.json`
 `.streamlit/secrets.toml`). Without the file the app runs
 unconfigured and explains itself instead of crashing.
 
-Four tabs: **Catalogue** (search, filters, add destination, open a
-destination, country-grouped sections with per-country counts),
-**Trips** (the itinerary editor: stops, transport legs, variants,
-compare, route map, a JSON backup of all trips), **Finder** (the weekend
-finder from FRA - the Fraport board plus the benefits database,
-with the legacy's CSV override: paste the departures and arrivals
-boards and the search runs on them instead of the live board,
-and a summary table of City / Options / Earliest out / Nights /
-Airlines above the per-city cards) and **Map** (every destination
-on OpenStreetMap tiles,
+Four tabs, each with its own colour icon (drawn in
+`mobile/lib/ui/nav_icons.dart`) and the app in **light mode** -
+the map tiles and charts are imagery built for light surfaces:
+**Catalogue** (search, filters, add destination, open a
+destination, country-grouped sections with per-country counts,
+and a per-card line with safety · cost/day · flight hours so the
+list answers "expensive or far?" without opening each city),
+**Trips** (the itinerary editor: the trip and variant switchers
+with their actions in per-row ⋯ menus, stops as a timeline -
+each row collapsed to one line that opens *its* date/time
+editor, one stop at a time - transport legs between them and a
+side panel with the route summary, rating, best months and
+comment; the Plan / Map / Compare sub-pages are segmented
+buttons, and the compare table activates a variant on tap),
+**Finder** (the weekend finder from FRA - the Fraport board plus
+the benefits database, the CSV override, an
+"only airlines with benefits" switch and a max-flight-time cap
+(default 6 h per leg), and out/back day switches where Thursday
+out and Tuesday back are the holiday-bridge days for a long
+weekend, each day's time bound editable; one expandable result
+row per city - summary first, flights on tap - so a city is
+listed once instead of in two tables) and **Map** (every
+destination on English-labelled tiles,
 with the legacy's month selector: pick a month and every country
-fills with its best condition that month, tap a country to list
-its cities). The catalogue and the map share one filter panel
+fills with its best condition that month, country borders and a
+hover name tooltip so the political map reads, wheel/pinch zoom
+and drag panning, a fly-to search, the month's stats and the
+legend overlaid on the map itself, and a tap on a country to
+list its cities). The catalogue and the map share one filter panel
 (`mobile/lib/models/catalogue_filters.dart`), ported rule for rule
 from `filters.py` - including the invariant that a filter only ever
 removes a row whose field is populated. A destination's detail page

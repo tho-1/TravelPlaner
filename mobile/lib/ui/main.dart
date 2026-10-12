@@ -16,6 +16,7 @@ import '../data/trip_repository.dart';
 import '../turso/config.dart';
 import '../turso/pipeline_client.dart';
 import 'catalogue_page.dart';
+import 'nav_icons.dart';
 import 'theme.dart';
 import 'trips_page.dart';
 import 'weekend_finder_page.dart';
@@ -41,7 +42,11 @@ class TravelPlannerApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),
-      themeMode: ThemeMode.system,
+      // Light is the app's mode: the map tiles and the
+      // charts are imagery designed for light surfaces,
+      // and a dark shell around white tiles looked broken
+      // (the user's call, 2026-10-12).
+      themeMode: ThemeMode.light,
       home: config.isConfigured
           ? HomeShell(config: config)
           : const UnconfiguredScreen(),
@@ -115,23 +120,23 @@ class _HomeShellState extends State<HomeShell> {
 
   static const _destinations = [
     NavigationDestination(
-      icon: Icon(Icons.public_outlined),
-      selectedIcon: Icon(Icons.public),
+      icon: NavIcon(NavTabIcon.globe, selected: false),
+      selectedIcon: NavIcon(NavTabIcon.globe, selected: true),
       label: 'Catalogue',
     ),
     NavigationDestination(
-      icon: Icon(Icons.luggage_outlined),
-      selectedIcon: Icon(Icons.luggage),
+      icon: NavIcon(NavTabIcon.suitcase, selected: false),
+      selectedIcon: NavIcon(NavTabIcon.suitcase, selected: true),
       label: 'Trips',
     ),
     NavigationDestination(
-      icon: Icon(Icons.travel_explore_outlined),
-      selectedIcon: Icon(Icons.travel_explore),
+      icon: NavIcon(NavTabIcon.compass, selected: false),
+      selectedIcon: NavIcon(NavTabIcon.compass, selected: true),
       label: 'Finder',
     ),
     NavigationDestination(
-      icon: Icon(Icons.map_outlined),
-      selectedIcon: Icon(Icons.map),
+      icon: NavIcon(NavTabIcon.map, selected: false),
+      selectedIcon: NavIcon(NavTabIcon.map, selected: true),
       label: 'Map',
     ),
   ];
@@ -141,23 +146,23 @@ class _HomeShellState extends State<HomeShell> {
   /// four tabs.
   static const _railDestinations = [
     NavigationRailDestination(
-      icon: Icon(Icons.public_outlined),
-      selectedIcon: Icon(Icons.public),
+      icon: NavIcon(NavTabIcon.globe, selected: false),
+      selectedIcon: NavIcon(NavTabIcon.globe, selected: true),
       label: Text('Catalogue'),
     ),
     NavigationRailDestination(
-      icon: Icon(Icons.luggage_outlined),
-      selectedIcon: Icon(Icons.luggage),
+      icon: NavIcon(NavTabIcon.suitcase, selected: false),
+      selectedIcon: NavIcon(NavTabIcon.suitcase, selected: true),
       label: Text('Trips'),
     ),
     NavigationRailDestination(
-      icon: Icon(Icons.travel_explore_outlined),
-      selectedIcon: Icon(Icons.travel_explore),
+      icon: NavIcon(NavTabIcon.compass, selected: false),
+      selectedIcon: NavIcon(NavTabIcon.compass, selected: true),
       label: Text('Finder'),
     ),
     NavigationRailDestination(
-      icon: Icon(Icons.map_outlined),
-      selectedIcon: Icon(Icons.map),
+      icon: NavIcon(NavTabIcon.map, selected: false),
+      selectedIcon: NavIcon(NavTabIcon.map, selected: true),
       label: Text('Map'),
     ),
   ];
