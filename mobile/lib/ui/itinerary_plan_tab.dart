@@ -56,6 +56,11 @@ class ItineraryPlanTab extends StatelessWidget {
   final void Function(Variant updated) onUpdateVariant;
   final VoidCallback onExport;
 
+  /// The stop the eye button picked, shown
+  /// with a halo on the Map tab.
+  final String? selectedStopId;
+  final void Function(String stopId) onToggleHighlight;
+
   const ItineraryPlanTab({
     super.key,
     required this.trip,
@@ -69,6 +74,8 @@ class ItineraryPlanTab extends StatelessWidget {
     required this.onAddStop,
     required this.onUpdateVariant,
     required this.onExport,
+    required this.selectedStopId,
+    required this.onToggleHighlight,
   });
 
   @override
@@ -87,6 +94,8 @@ class ItineraryPlanTab extends StatelessWidget {
           onAddStop: onAddStop,
           geocoder: geocoder,
           catalogue: catalogue,
+          selectedStopId: selectedStopId,
+          onToggleHighlight: onToggleHighlight,
         );
         final side = _SideColumn(
           trip: trip,
@@ -129,6 +138,8 @@ class _StopsColumn extends StatelessWidget {
   final void Function(String stopId, Stop updated) onUpdateStop;
   final void Function(int legIndex, String mode) onSetLegMode;
   final void Function(StopRef ref, String role, int? nights) onAddStop;
+  final String? selectedStopId;
+  final void Function(String stopId) onToggleHighlight;
 
   const _StopsColumn({
     required this.variant,
@@ -139,6 +150,8 @@ class _StopsColumn extends StatelessWidget {
     required this.onUpdateStop,
     required this.onSetLegMode,
     required this.onAddStop,
+    required this.selectedStopId,
+    required this.onToggleHighlight,
   });
 
   @override
@@ -158,9 +171,11 @@ class _StopsColumn extends StatelessWidget {
             index: i,
             stop: stops[i],
             total: stops.length,
+            selected: selectedStopId == stops[i].id,
             onRemove: onRemoveStop,
             onMove: onMoveStop,
             onUpdate: onUpdateStop,
+            onToggleHighlight: onToggleHighlight,
           ),
           if (i < stops.length - 1)
             _LegRow(
@@ -181,23 +196,28 @@ class _StopsColumn extends StatelessWidget {
   }
 }
 
-/// One stop: the header with the reorder and
-/// remove actions, and the date/time editor.
+/// One stop: the header with the reorder,
+/// highlight and remove actions, and the
+/// date/time editor.
 class _StopCard extends StatelessWidget {
   final int index;
   final Stop stop;
   final int total;
+  final bool selected;
   final void Function(String stopId) onRemove;
   final void Function(String stopId, int direction) onMove;
   final void Function(String stopId, Stop updated) onUpdate;
+  final void Function(String stopId) onToggleHighlight;
 
   const _StopCard({
     required this.index,
     required this.stop,
     required this.total,
+    required this.selected,
     required this.onRemove,
     required this.onMove,
     required this.onUpdate,
+    required this.onToggleHighlight,
   });
 
   @override
@@ -250,6 +270,19 @@ class _StopCard extends StatelessWidget {
                       : () => onMove(stop.id, 1),
                 ),
                 IconButton(
+                  icon: Icon(
+                    selected
+                        ? Icons.visibility
+                        : Icons.visibility_outlined,
+                    color: selected
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
+                  tooltip: 'Highlight on map',
+                  onPressed: () =>
+                      onToggleHighlight(stop.id),
+                ),
+                IconButton(
                   icon: const Icon(Icons.delete_outline),
                   tooltip: 'Remove stop',
                   onPressed: () => _confirmRemove(context),
@@ -257,6 +290,18 @@ class _StopCard extends StatelessWidget {
               ],
             ),
             _StopEditor(stop: stop, onUpdate: onUpdate),
+            if (selected)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('_highlighted on the Map tab_',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(
+                          fontStyle: FontStyle.italic,
+                          color: Theme.of(context).colorScheme.primary,
+                        )),
+              ),
           ],
         ),
       ),

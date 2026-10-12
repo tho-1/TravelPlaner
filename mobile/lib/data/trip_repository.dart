@@ -25,6 +25,16 @@ import '../turso/pipeline_client.dart';
 // the destination writers; the Dart mirror does the same.
 import 'destination_repository.dart' show utcNow;
 
+/// The outcome of one trip save.
+///
+/// `conflict` is the Turso-world
+/// `TripsFileChanged`: another session saved the
+/// trip after this copy was loaded, so the write
+/// was refused instead of silently discarding the
+/// other edit (AGENTS.md rule 3 -- a failed
+/// write is never reported as success).
+enum TripSaveStatus { saved, failed, conflict }
+
 class TripRepository {
   final TursoClient client;
 
@@ -69,6 +79,7 @@ class TripRepository {
         name: row['name'] as String? ?? 'Untitled trip',
         created: row['created'] as String?,
         activeVariantId: row['active_variant_id'] as String?,
+        updatedAt: row['updated_at'] as String?,
         variants: variants,
       ));
     }
@@ -93,9 +104,25 @@ class TripRepository {
   /// (`storage_turso.save_trip`). Stops without an id get
   /// one, in the `stop-<10 hex>` shape `itinerary.models`
   /// generates -- the stops table's primary key needs it.
-  Future<bool> saveTrip(Trip trip) async {
+  ///
+  /// The optimistic-concurrency guard (E10): the trip's
+  /// `updated_at` is compared with the live row first,
+  /// exactly like the legacy compares the trips.json
+  /// signature at save time
+  /// (`storage._assert_not_stale`). A trip another session
+  /// saved since this copy was loaded is never overwritten
+  /// silently -- the caller offers "Reload latest data"
+  /// instead.
+  Future<TripSaveStatus> saveTrip(Trip trip) async {
     final tripId = trip.id;
-    if (tripId.isEmpty) return false;
+    if (tripId.isEmpty) return TripSaveStatus.failed;
+    final (current, checkProblems) = await client.query(
+        'SELECT updated_at FROM trips WHERE id = ${_sqlValue(tripId)}');
+    if (checkProblems.isNotEmpty) return TripSaveStatus.failed;
+    if (current.isNotEmpty &&
+        current.first['updated_at'] != trip.updatedAt) {
+      return TripSaveStatus.conflict;
+    }
     final now = utcNow();
     final statements = <String>[
       'INSERT INTO trips (id, name, created, active_variant_id, '
@@ -163,7 +190,7 @@ class TripRepository {
       }
     }
     final (_, problems) = await client.runPipeline(statements);
-    return problems.isEmpty;
+    return problems.isNotEmpty ? TripSaveStatus.failed : TripSaveStatus.saved;
   }
 
   /// Delete a trip and its variants, stops and legs

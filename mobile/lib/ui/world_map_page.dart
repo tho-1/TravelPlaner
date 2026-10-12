@@ -110,6 +110,11 @@ class WorldMapView extends StatefulWidget {
   /// the selected month and the active filters.
   final Map<String, Color> countryFills;
 
+  /// Widgets painted on top of the tiles, under the city
+  /// markers -- the itinerary route map draws its legs,
+  /// stops and gateways here.
+  final List<Widget> overlay;
+
   /// The legacy "Show city text labels on map" toggle.
   /// Phone map default is on — there is no hover on a
   /// touch screen, so the name under the pin is the only
@@ -127,6 +132,7 @@ class WorldMapView extends StatefulWidget {
     required this.zoom,
     required this.cities,
     required this.countryFills,
+    this.overlay = const [],
     this.height = 320,
     this.showCityLabels = true,
     this.onCountryTap,
@@ -252,6 +258,7 @@ class _WorldMapViewState extends State<WorldMapView> {
                   ),
                 ),
                 ...tiles,
+                ...widget.overlay,
                 ...markers,
               ]),
             ),

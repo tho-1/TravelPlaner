@@ -30,6 +30,7 @@ import '../models/destination.dart';
 import '../models/trip.dart';
 import '../models/trip_ops.dart';
 import 'itinerary_compare_tab.dart';
+import 'itinerary_map_tab.dart';
 import 'itinerary_plan_tab.dart';
 
 class TripsPage extends StatefulWidget {
@@ -120,8 +121,13 @@ class _TripsPageState extends State<TripsPage> {
     }
     final trip = trips.where((trip) => trip.id == tripId).firstOrNull;
     if (trip == null) return;
-    final ok = await widget.repository.saveTrip(transform(trip));
-    if (!ok) {
+    final status =
+        await widget.repository.saveTrip(transform(trip));
+    if (status == TripSaveStatus.conflict) {
+      _showConflict();
+      return;
+    }
+    if (status != TripSaveStatus.saved) {
       _showError('Nothing written — the save failed. '
           'Check the token and the connection.');
       return;
@@ -186,6 +192,30 @@ class _TripsPageState extends State<TripsPage> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// The legacy's `TripsFileChanged` message with
+  /// its "Reload latest data" action: another device
+  /// saved the trip after this copy was loaded, so
+  /// the edit was not written and the other change
+  /// stays intact.
+  void _showConflict() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text(
+            'The trip was saved on another device '
+            'after this copy was loaded. Saving now '
+            'would silently discard that change.',
+          ),
+          action: SnackBarAction(
+            label: 'Reload latest data',
+            onPressed: _refresh,
+          ),
+        ),
+      );
+  }
+
   // ── trip operations ─────────────────────────────────────────
 
   Future<void> _newTrip(String name) async {
@@ -196,8 +226,8 @@ class _TripsPageState extends State<TripsPage> {
       return;
     }
     final trip = createTrip(name.trim().isEmpty ? 'New trip' : name.trim());
-    final ok = await widget.repository.saveTrip(trip);
-    if (!ok) {
+    final status = await widget.repository.saveTrip(trip);
+    if (status != TripSaveStatus.saved) {
       _showError('Nothing written — the save failed. '
           'Check the token and the connection.');
       return;
@@ -216,8 +246,8 @@ class _TripsPageState extends State<TripsPage> {
     final src = trips.where((trip) => trip.id == tripId).firstOrNull;
     if (src == null) return;
     final clone = duplicateTrip(src);
-    final ok = await widget.repository.saveTrip(clone);
-    if (!ok) {
+    final status = await widget.repository.saveTrip(clone);
+    if (status != TripSaveStatus.saved) {
       _showError('Nothing written — the save failed. '
           'Check the token and the connection.');
       return;
@@ -498,7 +528,7 @@ Future<void> _promptForName(
 /// The switchers, toolbars and tabs for one open
 /// trip. Keyed by the trip id: a different trip
 /// is a fresh widget tree.
-class _ItineraryView extends StatelessWidget {
+class _ItineraryView extends StatefulWidget {
   final Trip trip;
   final List<Trip> trips;
   final List<Destination> catalogue;
@@ -550,7 +580,40 @@ class _ItineraryView extends StatelessWidget {
   });
 
   @override
+  State<_ItineraryView> createState() => _ItineraryViewState();
+}
+
+class _ItineraryViewState extends State<_ItineraryView> {
+  /// The stop the Plan tab's eye button picked,
+  /// haloed on the Map tab. The legacy keeps it
+  /// in session state; here it lives with the
+  /// trip's widget tree, so switching trips
+  /// clears it.
+  String? _selectedStopId;
+
+  @override
   Widget build(BuildContext context) {
+    final trip = widget.trip;
+    final trips = widget.trips;
+    final catalogue = widget.catalogue;
+    final geocoder = widget.geocoder;
+    final onSelectTrip = widget.onSelectTrip;
+    final onNewTrip = widget.onNewTrip;
+    final onDuplicateTrip = widget.onDuplicateTrip;
+    final onRenameTrip = widget.onRenameTrip;
+    final onDeleteTrip = widget.onDeleteTrip;
+    final onNewVariant = widget.onNewVariant;
+    final onDuplicateVariant = widget.onDuplicateVariant;
+    final onRenameVariant = widget.onRenameVariant;
+    final onDeleteVariant = widget.onDeleteVariant;
+    final onAddStop = widget.onAddStop;
+    final onRemoveStop = widget.onRemoveStop;
+    final onMoveStop = widget.onMoveStop;
+    final onUpdateStop = widget.onUpdateStop;
+    final onSetLegMode = widget.onSetLegMode;
+    final onUpdateVariant = widget.onUpdateVariant;
+    final onActivateVariant = widget.onActivateVariant;
+    final onExport = widget.onExport;
     final theme = Theme.of(context);
     final variants = trip.variants;
     final active = trip.activeVariant;
@@ -696,16 +759,17 @@ class _ItineraryView extends StatelessWidget {
                   ),
                 ],
               ),
-            ],
+],
           ),
         ),
         DefaultTabController(
-          length: 2,
+          length: 3,
           child: Expanded(
             child: Column(
               children: [
                 const TabBar(tabs: [
                   Tab(text: 'Plan'),
+                  Tab(text: 'Map'),
                   Tab(text: 'Compare'),
                 ]),
                 Expanded(
@@ -730,7 +794,20 @@ class _ItineraryView extends StatelessWidget {
                           onAddStop: onAddStop,
                           onUpdateVariant: onUpdateVariant,
                           onExport: onExport,
+                          selectedStopId: _selectedStopId,
+                          onToggleHighlight: (stopId) => setState(() {
+                            // The eye toggles: picking the
+                            // highlighted stop again
+                            // clears it.
+                            _selectedStopId =
+                                _selectedStopId == stopId ? null : stopId;
+                          }),
                         ),
+                      ItineraryMapTab(
+                        key: ValueKey(active?.id ?? 'no-variant'),
+                        variant: active,
+                        selectedStopId: _selectedStopId,
+                      ),
                       ItineraryCompareTab(
                         trip: trip,
                         onActivate: onActivateVariant,

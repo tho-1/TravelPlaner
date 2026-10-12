@@ -109,11 +109,12 @@ void main() {  test('loadTrips reads the four tables in one request and groups t
         ),
       ],
     );
-    final ok = await _repo(fake).saveTrip(trip);
-    expect(ok, isTrue);
-    expect(fake.requests, hasLength(1), reason: 'one atomic pipeline request');
+    final status = await _repo(fake).saveTrip(trip);
+    expect(status, TripSaveStatus.saved);
+    // Pre-check SELECT + pipeline = 2 requests
+    expect(fake.requests, hasLength(2), reason: 'pre-check + pipeline');
 
-    final statements = fake.requests.single;
+    final statements = fake.requests.last;
     expect(statements, hasLength(7));
     expect(statements[0], contains('INSERT INTO trips'));
     expect(statements[0], contains("'Thorsten''s Japan trip'"));
@@ -135,16 +136,16 @@ void main() {  test('loadTrips reads the four tables in one request and groups t
   test('saveTrip refuses a trip without an id', () async {
     final fake = FakeTurso((_) => okEmpty());
     const trip = Trip(id: '', name: 'No id');
-    final ok = await _repo(fake).saveTrip(trip);
-    expect(ok, isFalse);
+    final status = await _repo(fake).saveTrip(trip);
+    expect(status, TripSaveStatus.failed);
     expect(fake.requests, isEmpty);
   });
 
-  test('saveTrip returns false when the pipeline fails', () async {
+  test('saveTrip returns failed when the pipeline fails', () async {
     final fake = FakeTurso((_) => pipelineError('read-only'));
     const trip = Trip(id: 't-1', name: 'Japan');
-    final ok = await _repo(fake).saveTrip(trip);
-    expect(ok, isFalse);
+    final status = await _repo(fake).saveTrip(trip);
+    expect(status, TripSaveStatus.failed);
   });
 
   test('deleteTrip removes legs, stops, variants, then the trip', () async {

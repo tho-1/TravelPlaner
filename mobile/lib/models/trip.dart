@@ -180,6 +180,13 @@ class Trip {
   final String name;
   final String? created;
   final String? activeVariantId;
+
+  /// The `updated_at` the `trips` table stamped
+  /// on the row this copy was loaded from -- the
+  /// optimistic-concurrency signature (E10). Not
+  /// part of the export shape: it is storage
+  /// metadata, like the legacy's file signature.
+  final String? updatedAt;
   final List<Variant> variants;
 
   const Trip({
@@ -187,6 +194,7 @@ class Trip {
     required this.name,
     this.created,
     this.activeVariantId,
+    this.updatedAt,
     this.variants = const [],
   });
 
