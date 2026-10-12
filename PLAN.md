@@ -1135,6 +1135,65 @@ divergence).
 
 ---
 
+## 0n. Session 2026-10-12 (2) — which UI is which
+
+**The report.** "I don't see the world
+map on the new interface" — twice: once
+against the legacy screenshot (the open
+tabs, resolved: not ported yet, planned),
+once with a screenshot of a light-themed
+top-nav UI on port 8508 showing only
+Catalogue / Trips / Weekend finder.
+
+**The finding.** The port-8508 UI is
+neither the legacy Streamlit app nor the
+Flutter app: it is the **Phase-3 web
+prototype** (`web/` + `api.py`,
+`python -m uvicorn api:app --port 8508`),
+started by hand. It never had a map —
+by decision (`NATIVE_HTML_PLAN.md` §11:
+"the web/ and api.py frontends from
+Phases 2-3 stay as they are"), and
+`web/app.js` (18 KB) contains no map
+code and does not even call `/api/tabs`.
+The world map lives in the Flutter app
+(Map tab, commits `c02008b` + `074ca78`,
+2026-10-11) — but the installed
+`travel_planner.exe` was built 03:34
+that day, *before* both commits, and the
+release APK 10:30, before the choropleth.
+Nothing was missing; the wrong binary was
+running.
+
+**The fix.** After the review-fix agent
+committed `33082f3` (the build gate —
+never build over uncommitted edits), the
+release exe was rebuilt
+(`flutter build windows --release`, ~2
+min) and launched: four tabs, Map among
+them. README gains a "Running it (the
+native app — the target)" section with
+the exact launch commands and a
+three-UIs table (Flutter = target, web
+prototype = frozen without map, Streamlit
+= legacy), so "started the wrong app"
+cannot recur silently.
+
+**Also queued from this session, not
+started:** the legacy sidebar's "Open
+destinations" tabs are confirmed **not
+ported** to the Flutter app (favourites
+exist as a field and a quick filter; the
+closeable tab list does not). Plan agreed:
+back it with the existing Turso
+`open_tabs` table, mirror
+`storage_turso.load/save_open_tabs`
+(full-replace write), tabs as push-route
+shortcuts in the desktop rail / phone
+drawer. Awaiting the go-ahead.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

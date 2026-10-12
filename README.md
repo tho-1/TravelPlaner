@@ -27,6 +27,27 @@ python -m streamlit run app.py --server.port 8507
 The Cloud deployment uses `Destinations-cloud.xlsx` and shows a banner telling
 you which mode you are in. See `environment.py`.
 
+## Running it (the native app — the target)
+
+```powershell
+cd mobile
+# Dev: builds and opens the window in one step
+& "C:\src\flutter\bin\flutter.bat" run -d windows
+
+# Or build the release exe once and start it:
+& "C:\src\flutter\bin\flutter.bat" build windows --release
+& .\build\windows\x64\runner\Release\travel_planner.exe
+```
+
+Three UIs live in this repository — do not judge the feature set by
+the wrong one:
+
+| UI | Started with | State |
+|---|---|---|
+| Flutter app (`mobile/`) | the commands above | **the target** — desktop + Android; the world map lives here (Map tab) |
+| Web prototype (`web/` + `api.py`) | `python -m uvicorn api:app --port 8508` | frozen Phase-3 artifact: Catalogue, Trips, Weekend finder only — deliberately no map, "stays as it is" (`NATIVE_HTML_PLAN.md` §11) |
+| Streamlit (`app.py`) | `python -m streamlit run app.py --server.port 8507` | legacy/archived (the reference implementation) |
+
 ## Where your data lives
 
 **Source of truth: `Destinations-local.xlsx` on the PC** (decided 2026-10-03).
