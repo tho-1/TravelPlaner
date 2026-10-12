@@ -115,10 +115,16 @@ carries `benefits_*` and `deepseek_api_key`.
 4. **Parity remainder** (the user's end goal: nothing PC-side only):
    the destination **galleries** (Unsplash is key-gated exactly like the AI
    populate — the same pattern applies) and the remaining world-map filters
-   the legacy page has (month / travel condition). Trip **editing** and the
-   weekend finder's **CSV override + summary table** landed 2026-10-12
-   (commits `9ac41b5`, `4685cbc`, and the F2+F4 commit). Each as
-   repository + UI + tests, mirroring the legacy page's data sources.
+   the legacy page has (month / travel condition). Trip **editing**, the
+   weekend finder's **CSV override + summary table**, the catalogue's
+   **country grouping** and the trips **JSON backup** (the legacy
+   sidebar's workbook download in its Turso-world shape: the whole
+   store, selectable + clipboard, no file plugin) landed 2026-10-12
+   (commits `9ac41b5`, `4685cbc`, `c003e8c`, `fb24070`, and the
+   backup commit). The backup's **restore** side is open: it is a
+   bulk write to the live database, so its shape is a user decision.
+   Each as repository + UI + tests, mirroring the legacy page's
+   data sources.
 5. **Release-signing note**: the release APK currently signs with the debug
    key (fine for sideloading a personal app; a real keystore is an open
    nicety, not a blocker).

@@ -674,6 +674,19 @@ List<String> tripWideSuggestion(
 String exportTrip(Trip trip) =>
     const JsonEncoder.withIndent('  ').convert(trip.toJson());
 
+/// The whole trips store as pretty JSON -- the
+/// `trips.json` snapshot the legacy sidebar
+/// downloads as a backup (`storage.normalize_all`:
+/// `{"schema_version": 1, "trips": [...]}`).
+/// The restore side is the open A2 question: it
+/// is a bulk write to the live database, so its
+/// shape stays a user decision.
+String exportTrips(List<Trip> trips) =>
+    const JsonEncoder.withIndent('  ').convert({
+      'schema_version': 1,
+      'trips': [for (final trip in trips) trip.toJson()],
+    });
+
 /// The totals of one variant.
 class TripTotals {
   final int stops;

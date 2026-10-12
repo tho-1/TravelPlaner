@@ -295,6 +295,46 @@ void main() {
     expect(find.byType(TabBar), findsOneWidget);
   });
 
+  testWidgets('the trips page backs up all trips as JSON',
+      (tester) async {
+    final fake = FakeTurso((statements) {
+      // The trips load pipeline: four SELECTs in
+      // one request, answered with four results.
+      if (statements.length == 4 &&
+          statements.first.startsWith('SELECT * FROM trips')) {
+        return okMulti([
+          (['id', 'name', 'created', 'active_variant_id'], [
+            ['t1', 'Italy 2026', '2026-01-01T10:00:00', 'v1'],
+          ]),
+          (['id', 'trip_id', 'name', 'notes', 'rating', 'months',
+            'comment'], [
+            ['v1', 't1', 'Two cities', '', 4, '[]', ''],
+          ]),
+          (['id', 'variant_id', 'kind', 'name', 'country', 'lat',
+            'lon', 'role', 'arrival_date', 'departure_date',
+            'arrival_time', 'departure_time', 'nights', 'notes'], []),
+          (['variant_id', 'position', 'mode', 'note'], []),
+        ]);
+      }
+      return okEmpty(4);
+    });
+    await render(tester, tripsPage(fake));
+    // The backup action -- the legacy sidebar's
+    // workbook download in its Turso-world
+    // shape -- shows the whole store as JSON.
+    await tester.tap(find.byIcon(Icons.download));
+    await tester.pumpAndSettle();
+    expect(find.text('Backup all trips'), findsOneWidget);
+    expect(find.textContaining('"schema_version": 1'),
+        findsOneWidget);
+    expect(find.textContaining('"name": "Italy 2026"'),
+        findsOneWidget);
+    // The dialog's Copy sits alongside the trip
+    // and variant duplicate buttons, which share
+    // the label.
+    expect(find.text('Copy'), findsWidgets);
+  });
+
   testWidgets('the trips page renders the compare tab', (tester) async {
     final fake = FakeTurso((statements) {
       // The trips load pipeline: four SELECTs in one

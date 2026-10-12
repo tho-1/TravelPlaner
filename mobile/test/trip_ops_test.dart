@@ -11,6 +11,8 @@
 /// asserts.
 library;
 
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travel_planner/models/destination.dart';
 import 'package:travel_planner/models/trip.dart';
@@ -593,6 +595,29 @@ void main() {
       expect(decoded, contains('"name": "China Trip 2027"'));
       expect(decoded, contains('"variants"'));
       expect(decoded, contains('"active_variant_id"'));
+    });
+
+    test('the all-trips backup is the store shape', () {
+      // The trips.json snapshot: schema version
+      // plus every trip, the shape
+      // storage.normalize_all produces.
+      final json = exportTrips([
+        makeTrip('China Trip 2027'),
+        makeTrip('Second trip'),
+      ]);
+      expect(json, contains('"schema_version": 1'));
+      expect(json, contains('"name": "China Trip 2027"'));
+      expect(json, contains('"name": "Second trip"'));
+      final decoded = jsonDecode(json) as Map<String, dynamic>;
+      expect(decoded['schema_version'], 1);
+      expect((decoded['trips'] as List).length, 2);
+    });
+
+    test('the backup of no trips is an empty store', () {
+      final json = exportTrips(const []);
+      final decoded = jsonDecode(json) as Map<String, dynamic>;
+      expect(decoded['schema_version'], 1);
+      expect(decoded['trips'], <dynamic>[]);
     });
   });
 

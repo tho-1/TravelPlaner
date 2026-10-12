@@ -376,6 +376,40 @@ class _TripsPageState extends State<TripsPage> {
 
   // ── export ──────────────────────────────────────────────────
 
+  /// The legacy sidebar's workbook download, in
+  /// its Turso-world shape: the whole trips
+  /// store as one JSON snapshot. Same
+  /// mechanism as the per-trip export --
+  /// selectable text plus the clipboard, no
+  /// file plugin (the user's decision, G4).
+  void _backup() {
+    final json = exportTrips(_trips);
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Backup all trips'),
+        content: SizedBox(
+          width: 640,
+          height: 420,
+          child: SingleChildScrollView(
+            child: SelectableText(json),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Clipboard.setData(ClipboardData(text: json)),
+            child: const Text('Copy'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// The legacy's download button: the trip as
   /// pretty JSON. Flutter desktop has no
   /// download-to-disk affordance without a file
@@ -417,6 +451,11 @@ class _TripsPageState extends State<TripsPage> {
       appBar: AppBar(
         title: const Text('Trips'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.download),
+            tooltip: 'Backup all trips (JSON)',
+            onPressed: _backup,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Reload',
