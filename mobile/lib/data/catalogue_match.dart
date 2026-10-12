@@ -148,3 +148,42 @@ class CatalogueIndex {
     return null;
   }
 }
+
+/// One country's section of the catalogue: the country
+/// name (`null` when the destination has none) and its
+/// destinations, in the legacy's order.
+typedef CountryGroup = ({String? country, List<Destination> destinations});
+
+/// The legacy overview's grouping, ported rule for rule
+/// (`pages/overview.py`): destinations sorted by country
+/// (case-insensitive), then by name (case-insensitive),
+/// then grouped — each country one tinted section whose
+/// header carries its count. A destination without a
+/// country forms its own headerless group, exactly like
+/// the legacy's `groupby(country, sort=False,
+/// dropna=False)` with the blank header.
+///
+/// The sort key is the lowercased country, but the
+/// group key is the original spelling: "Italy" and
+/// "italy" sort next to each other yet stay two
+/// sections, which is what the legacy does.
+List<CountryGroup> groupByCountry(List<Destination> destinations) {
+  final sorted = [...destinations]
+    ..sort((a, b) {
+      final countryA = (a.country ?? '').toLowerCase();
+      final countryB = (b.country ?? '').toLowerCase();
+      if (countryA != countryB) return countryA.compareTo(countryB);
+      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+    });
+  final groups = <CountryGroup>[];
+  for (final destination in sorted) {
+    final country = (destination.country ?? '').trim();
+    final key = country.isEmpty ? null : country;
+    if (groups.isEmpty || groups.last.country != key) {
+      groups.add((country: key, destinations: [destination]));
+    } else {
+      groups.last.destinations.add(destination);
+    }
+  }
+  return groups;
+}

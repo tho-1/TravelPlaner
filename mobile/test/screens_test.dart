@@ -95,6 +95,44 @@ void main() {
         ));
   });
 
+  testWidgets('the catalogue renders its country groups on a wide window',
+      (tester) async {
+    // The legacy overview's structure: country
+    // sections with counts, the destinations in
+    // a multi-column grid. Rendered wide so the
+    // grid path (not just the phone's single
+    // column) is exercised.
+    _setSurface(tester, const Size(1200, 900));
+    final fake = FakeTurso((_) => okRows(
+          ['destination', 'country', 'data'],
+          [
+            for (final row in [
+              ['Alexandria', 'Egypt', jsonEncode([['Why to Go There', 'x']])],
+              ['Rome', 'Italy', jsonEncode(const [])],
+              ['Milan', 'Italy', jsonEncode(const [])],
+            ])
+              row,
+          ],
+        ));
+    await tester.pumpWidget(MaterialApp(
+      theme: _themeFor(),
+      home: CataloguePage(
+        repository: DestinationRepository(
+          TursoClient(_config, httpClient: fake.client()),
+        ),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    // Each country's header carries its count.
+    expect(find.text('Egypt'), findsOneWidget);
+    expect(find.text('(1)'), findsOneWidget);
+    expect(find.text('Italy'), findsOneWidget);
+    expect(find.text('(2)'), findsOneWidget);
+    expect(find.text('Rome'), findsOneWidget);
+    expect(find.text('Milan'), findsOneWidget);
+  });
+
   testWidgets('the destination detail renders', (tester) async {
     await render(
       tester,

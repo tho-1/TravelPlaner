@@ -63,4 +63,63 @@ void main() {
     expect(cleanCityName('London'), 'London');
     expect(cleanCityName(''), '');
   });
+
+  group('groupByCountry', () {
+    test('groups by country, sorted by country then name', () {
+      final groups = groupByCountry([
+        _destination('Kyoto', country: 'Japan'),
+        _destination('Rome', country: 'Italy'),
+        _destination('Milan', country: 'Italy'),
+        _destination('Alexandria', country: 'Egypt'),
+      ]);
+      // Egypt, Italy, Japan -- the legacy's
+      // case-insensitive country sort.
+      expect([for (final g in groups) g.country],
+          ['Egypt', 'Italy', 'Japan']);
+      // Within Italy: Milan before Rome (the
+      // case-insensitive name sort).
+      expect([for (final d in groups[1].destinations) d.name],
+          ['Milan', 'Rome']);
+      expect(groups[1].destinations.length, 2);
+      expect(groups[0].destinations.length, 1);
+    });
+
+    test('a destination without a country forms a headerless group', () {
+      final groups = groupByCountry([
+        _destination('Somewhere', country: null),
+        _destination('Rome', country: 'Italy'),
+      ]);
+      // The blank country sorts first and renders
+      // without a header, like the legacy's
+      // groupby(dropna=False) with the blank header.
+      expect(groups.length, 2);
+      expect(groups[0].country, isNull);
+      expect(groups[0].destinations.single.name, 'Somewhere');
+      expect(groups[1].country, 'Italy');
+    });
+
+    test('the sort key is lowercased, the group key is not', () {
+      // "Italy" and "italy" sort next to each other
+      // but stay two sections -- the legacy's exact
+      // behavior (sort by the lowered column, group
+      // by the original).
+      final groups = groupByCountry([
+        _destination('Rome', country: 'Italy'),
+        _destination('Turin', country: 'italy'),
+      ]);
+      expect(groups.length, 2);
+      expect(groups[0].country, 'Italy');
+      expect(groups[1].country, 'italy');
+    });
+
+    test('the name sort is case-insensitive', () {
+      final groups = groupByCountry([
+        _destination('zurich', country: 'Switzerland'),
+        _destination('Basel', country: 'Switzerland'),
+        _destination('Geneva', country: 'Switzerland'),
+      ]);
+      expect([for (final d in groups.single.destinations) d.name],
+          ['Basel', 'Geneva', 'zurich']);
+    });
+  });
 }

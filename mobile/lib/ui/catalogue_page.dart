@@ -10,6 +10,7 @@ import '../data/ai_config.dart';
 import '../data/deepseek_client.dart';
 import '../data/destination_repository.dart';
 import '../data/ai_populator.dart';
+import '../data/catalogue_match.dart';
 import '../models/catalogue_filters.dart';
 import '../models/destination.dart';
 import '../models/destination_profile.dart';
@@ -171,6 +172,127 @@ class _CataloguePageState extends State<CataloguePage> {
     }
   }
 
+  /// Open one destination's detail page.
+  void _openDestination(Destination dest) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => DestinationPage(
+          repository: widget.repository,
+          destination: dest,
+          onChanged: _reload,
+        ),
+      ),
+    );
+  }
+
+  /// The legacy's group header: the country name with
+  /// its count, on the group's tint with a soft left
+  /// accent. The legacy's hex tints (#f3f7fc / #f5f5f5,
+  /// accents #cfe0f4 / #cfcfcf) are light-theme
+  /// colors; the port keeps the rule -- an alternating
+  /// tint and a soft accent -- with theme-aware
+  /// surfaces so dark mode works too.
+  Widget _groupHeader(String country, int count, int groupIndex) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      decoration: BoxDecoration(
+        color: _groupTint(groupIndex, scheme),
+        borderRadius: BorderRadius.circular(10),
+        border: Border(
+            left:
+                BorderSide(color: _groupAccent(groupIndex, scheme), width: 5)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              country,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+          Text(
+            '($count)',
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One destination on its group's tint -- the legacy
+  /// tints every button with the group's alternating
+  /// background so the sections scan easily.
+  Widget _destinationCard(Destination dest, int groupIndex) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+      decoration: BoxDecoration(
+        color: _groupTint(groupIndex, scheme),
+        borderRadius: BorderRadius.circular(8),
+        border: Border(
+            left:
+                BorderSide(color: _groupAccent(groupIndex, scheme), width: 3)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => _openDestination(dest),
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  dest.name,
+                  style: theme.textTheme.titleSmall,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (dest.continent != null && dest.continent!.isNotEmpty)
+                  Text(
+                    dest.continent!,
+                    style: theme.textTheme.bodySmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    if (dest.visited)
+                      Icon(Icons.check_circle,
+                          size: 15, color: scheme.primary),
+                    if (dest.favourite)
+                      Icon(Icons.star, size: 15, color: scheme.tertiary),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _groupTint(int groupIndex, ColorScheme scheme) =>
+      groupIndex.isEven
+          ? scheme.surfaceContainerLowest
+          : scheme.surfaceContainerLow;
+
+  Color _groupAccent(int groupIndex, ColorScheme scheme) =>
+      groupIndex.isEven
+          ? scheme.primary.withValues(alpha: 0.3)
+          : scheme.outlineVariant;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -303,11 +425,22 @@ class _CataloguePageState extends State<CataloguePage> {
                       ),
                     ]);
                   }
-                  return ListView.builder(
-                    itemCount: filtered.length + 1,
-                    itemBuilder: (context, index) {
-                      if (index == 0) {
-                        return Padding(
+                  // The legacy overview's structure:
+                  // country sections with tinted
+                  // headers and per-country counts,
+                  // the destinations in a grid whose
+                  // column count follows the width --
+                  // one on a phone, three on desktop.
+                  final groups = groupByCountry(filtered);
+                  return LayoutBuilder(
+                    builder: (context, constraints) {
+                      final columns = constraints.maxWidth < 600
+                          ? 1
+                          : constraints.maxWidth < 900
+                              ? 2
+                              : 3;
+                      final children = <Widget>[
+                        Padding(
                           padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
                           child: Text(
                             '${filtered.length} of ${destinations.length} '
@@ -321,45 +454,30 @@ class _CataloguePageState extends State<CataloguePage> {
                                       .onSurfaceVariant,
                                 ),
                           ),
-                        );
-                      }
-                      final dest = filtered[index - 1];
-                      return ListTile(
-                        title: Text(dest.name),
-                        subtitle: Text([
-                          if (dest.country != null &&
-                              dest.country!.isNotEmpty)
-                            dest.country!,
-                          if (dest.continent != null &&
-                              dest.continent!.isNotEmpty)
-                            dest.continent!,
-                        ].join(' · ')),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (dest.visited)
-                              Icon(Icons.check_circle,
-                                  size: 18,
-                                  color:
-                                      Theme.of(context).colorScheme.primary),
-                            if (dest.favourite)
-                              Icon(Icons.star,
-                                  size: 18,
-                                  color: Theme.of(context).colorScheme.tertiary),
-                          ],
                         ),
-                        onTap: () {
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => DestinationPage(
-                                repository: widget.repository,
-                                destination: dest,
-                                onChanged: _reload,
-                              ),
-                            ),
-                          );
-                        },
-                      );
+                      ];
+                      for (var g = 0; g < groups.length; g++) {
+                        final group = groups[g];
+                        if (group.country != null) {
+                          children.add(_groupHeader(
+                              group.country!, group.destinations.length, g));
+                        }
+                        final inGroup = group.destinations;
+                        for (var start = 0;
+                            start < inGroup.length;
+                            start += columns) {
+                          final row =
+                              inGroup.skip(start).take(columns).toList();
+                          children.add(Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              for (final dest in row)
+                                Expanded(child: _destinationCard(dest, g)),
+                            ],
+                          ));
+                        }
+                      }
+                      return ListView(children: children);
                     },
                   );
                 },
