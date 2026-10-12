@@ -678,9 +678,11 @@ String exportTrip(Trip trip) =>
 /// `trips.json` snapshot the legacy sidebar
 /// downloads as a backup (`storage.normalize_all`:
 /// `{"schema_version": 1, "trips": [...]}`).
-/// The restore side is the open A2 question: it
-/// is a bulk write to the live database, so its
-/// shape stays a user decision.
+/// No restore side (user, 2026-10-12): importing
+/// a snapshot back is a bulk write to the live
+/// database, and the export-only backup covers
+/// the need -- the legacy synced `trips.json`
+/// rather than restoring snapshots.
 String exportTrips(List<Trip> trips) =>
     const JsonEncoder.withIndent('  ').convert({
       'schema_version': 1,

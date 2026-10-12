@@ -126,8 +126,11 @@ carries `benefits_*` and `deepseek_api_key`.
    pass: `flutter analyze` clean, a live-verification test
    (`mobile/test/parity_live_test.dart` — skips without the
    git-ignored config, so CI is unaffected) and the TripsPage
-   dead-branch cleanup. **Open: the backup's restore side** — a bulk
-   write to the live database, so its shape is a user decision.
+   dead-branch cleanup. **The backup's restore side is skipped by
+   decision** (user, 2026-10-12): importing a snapshot back is a
+   bulk write to the live database, and the export-only backup
+   covers the need — the legacy synced `trips.json` rather than
+   restoring snapshots. **Parity is complete.**
 5. **Release-signing note**: the release APK currently signs with the debug
    key (fine for sideloading a personal app; a real keystore is an open
    nicety, not a blocker).
