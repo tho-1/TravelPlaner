@@ -47,9 +47,13 @@ class ItineraryCompareTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: DataTable(
+          // A fade on the right edge says "there is more
+          // sideways" without hiding the active row's data.
+          Stack(
+            children: [
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
               columns: const [
                 DataColumn(label: Text('')),
                 DataColumn(label: Text('Variant')),
@@ -86,6 +90,32 @@ class ItineraryCompareTab extends StatelessWidget {
                   ),
               ],
             ),
+          ),
+              // The right-edge fade: "more columns this way".
+              Positioned(
+                top: 0,
+                bottom: 0,
+                right: 0,
+                width: 36,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          Theme.of(context).colorScheme.surface,
+                          Theme.of(context)
+                              .colorScheme
+                              .surface
+                              .withValues(alpha: 0),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           Padding(
             padding: const EdgeInsets.only(top: 4),

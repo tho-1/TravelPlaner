@@ -1447,6 +1447,87 @@ dropdown still spans the full width.
 
 ---
 
+## 0q. Session 2026-10-13 (2) — colour, and the detail header
+
+**The self-guided visual pass.** This time the
+app was screenshotted by the agent itself
+(a PowerShell harness: position the window,
+SendInput clicks on the rail/cards/segments,
+CopyFromScreen to PNG) — 26 captures covering
+every tab, a detail page, all three Trips
+sub-tabs, a live weekend search, map
+hover/zoom/fly-to, the filter sheet and the
+phone-width layout. Every fix from §0o was
+confirmed working live; the walk surfaced one
+real bug and five polish items.
+
+**The bug: the Finder reset its scroll on every
+search.** The loading spinner *replaced* the
+page (body swap), destroying the scroll
+offset — after a ~15 s board query you landed
+at the top, ~1600 px from the results. Now the
+list stays mounted and the spinner overlays it
+(`Stack` + `AbsorbPointer` + a translucent
+scrim).
+
+**The polish batch, all implemented:**
+stop actions (up/down/eye/remove) moved into
+the stop header row behind an ⋯ menu — the
+separate four-button row made every collapsed
+stop twice as tall as its content; the
+transport Primary Port card now uses
+`secondaryContainer` instead of hardcoded
+near-white; the month selector moved into the
+Map app bar (a popup, "October ▾") and the
+body heading + chip row went away — the map
+starts ~60 px higher; the compare table got a
+right-edge fade that says "more columns this
+way"; the food section folds its empty
+"Main dishes —" row away.
+
+**Colour.** The nav icons are always in full
+colour (selection is the rail pill, not a
+drained icon — Thorsten's ask); the favourite
+star is yellow (`accentFavourite`, 0xFFF6B100)
+in the catalogue card and the detail chip; the
+catalogue's country headers got a real shaded
+band (`primary` at 14% + a stronger accent bar
++ a count pill) — the alternating
+near-invisible tints never read as headers.
+
+**The detail header redesign** (Thorsten's
+screenshot of Bogotá): the four fact cards
+stacked icon / number / label vertically,
+misaligned and ~100 px tall. Now: horizontal
+stat tiles — the icon in a tinted rounded
+square (safety green, cost amber, flight blue,
+population purple), value over label beside it,
+four in a row on desktop, 2×2 on narrow —
+one row, ~56 px. The passive header chips
+(Visited / Favourite / Prio) duplicated the
+interactive chip row below and are gone; only
+the reviews chip remains, tinted
+`primaryContainer`. The comment editor no
+longer exists when there is nothing to edit:
+an "Add comment" button replaces the giant
+blank box, and the Delete flow folds the
+editor away again.
+
+**Tests.** Two fixture updates with real
+causes: the "no photo" test asserted
+`findsNothing` on `Image` — the page is
+shorter now, so the mini-map's tile images
+(built lazily, failing harmlessly in tests)
+fell inside the build window; the test now
+asserts no **`RawImage`** (a decoded photo),
+which is what it actually meant. The catalogue
+test's "(1)"/"(2)" counts became the pills'
+"1"/"2". 395 pass, `flutter analyze` clean,
+the exe rebuilt and the four changed surfaces
+re-verified by screenshot.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

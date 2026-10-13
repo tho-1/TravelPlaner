@@ -236,17 +236,19 @@ class _FlightRoutesSectionState extends State<FlightRoutesSection> {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFf8f9fc),
-        border: Border.all(color: const Color(0xFFe2e8f0)),
+        color: Theme.of(context).colorScheme.secondaryContainer,
         borderRadius: BorderRadius.circular(10),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Primary Airport (Inbound & Outbound Direct Flights)',
+          Text('Primary Airport (Inbound & Outbound Direct Flights)',
               style: TextStyle(
                 fontSize: 11,
-                color: Color(0xFF64748b),
+                color: Theme.of(context)
+                    .colorScheme
+                    .onSecondaryContainer
+                    .withValues(alpha: 0.75),
                 letterSpacing: 0.5,
                 fontWeight: FontWeight.w600,
               )),
@@ -256,24 +258,24 @@ class _FlightRoutesSectionState extends State<FlightRoutesSection> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(name,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF0f172a),
+                    color: Theme.of(context).colorScheme.onSecondaryContainer,
                   )),
               if (routes.iataCode.isNotEmpty)
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFe0e7ff),
+                    color: Theme.of(context).colorScheme.primary,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(routes.iataCode,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: Color(0xFF3730a3),
+                        color: Theme.of(context).colorScheme.onPrimary,
                       )),
                 ),
             ],

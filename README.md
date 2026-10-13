@@ -39,11 +39,12 @@ in before data shows up.
 
 The app runs in **light mode** — the map tiles and charts are imagery
 designed for light surfaces. Four tabs, each with its own colour icon
-(`mobile/lib/ui/nav_icons.dart`):
+(`mobile/lib/ui/nav_icons.dart`, always in full colour — selection is
+the rail pill, not a drained icon):
 
-* **Catalogue** — search, filters, country-grouped sections with per-country
-  counts, a per-card line with safety · cost/day · flight hours, add
-  destination, AI populate.
+* **Catalogue** — search, filters, country groups under shaded header
+  bands with count pills, a per-card line with safety · cost/day ·
+  flight hours, yellow favourite stars, add destination, AI populate.
 * **Trips** — the itinerary editor: trip/variant switchers with their
   actions in per-row ⋯ menus, stops as a timeline (each stop one line that
   opens its date/time editor), transport legs between them, a side panel
@@ -62,10 +63,14 @@ designed for light surfaces. Four tabs, each with its own colour icon
   the month's stats and the legend overlaid on the map, tap a country to
   list its cities.
 
-A destination's detail page shows the profile sections (overview,
-highlights, logistics, food, best months, climate — temperature/rainfall
-with rainy-day counts, the AQI profile with severity bands, the IQAir
-PM2.5 history) plus a mini-map, banner photo and gallery from the PC's
+A destination's detail page opens with compact **coloured stat tiles**
+(safety / cost per day / FRA flight / population — one row, icon beside
+the numbers) and an **Add comment** button; the comment editor only
+exists once there is something in it. The profile sections follow
+(overview, highlights, logistics, food, best months, climate —
+temperature/rainfall with rainy-day counts, the AQI profile with
+severity bands, the IQAir PM2.5 history) plus a mini-map, banner photo
+and gallery from the PC's
 `Pictures/` caches, **AI populate** / **food populate** (DeepSeek, key in
 the config file — without it the buttons are not offered) and
 **Transport & Direct Connections**: direct flight routes (plus high-speed

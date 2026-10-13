@@ -1044,6 +1044,32 @@ class _WorldMapPageState extends State<WorldMapPage> {
       appBar: AppBar(
         title: const Text('Map'),
         actions: [
+          // The month selector IS the page's question; it
+          // lives in the app bar so the map starts higher.
+          PopupMenuButton<int>(
+            tooltip: 'Select month',
+            onSelected: (index) => setState(() => _monthIndex = index),
+            itemBuilder: (_) => [
+              for (var i = 0; i < fullMonths.length; i++)
+                CheckedPopupMenuItem(
+                  value: i,
+                  checked: _monthIndex == i,
+                  child: Text(fullMonths[i]),
+                ),
+            ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.calendar_month_outlined, size: 20),
+                  const SizedBox(width: 6),
+                  Text(fullMonths[_monthIndex]),
+                  const Icon(Icons.arrow_drop_down),
+                ],
+              ),
+            ),
+          ),
           IconButton(
             icon: Badge(
               isLabelVisible: _filters.isActive,
@@ -1257,28 +1283,6 @@ class _MapBody extends StatelessWidget {
         return ListView(
           padding: const EdgeInsets.all(12),
           children: [
-            Text('How good is the time to go, month by month',
-                style: theme.textTheme.titleMedium),
-            const SizedBox(height: 8),
-            // The month selector: the legacy page's
-            // "Select Month", defaulting to today.
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  for (var i = 0; i < 12; i++)
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: ChoiceChip(
-                        label: Text(monthAbbreviations[i]),
-                        selected: monthIndex == i,
-                        onSelected: (_) => onMonthChanged(i),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
             // The legacy's unmapped-countries warning: the
             // dataset does not know every country the
             // catalogue holds, and a silent gap in the

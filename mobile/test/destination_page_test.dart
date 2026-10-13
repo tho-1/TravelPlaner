@@ -367,7 +367,10 @@ void main() {
     ));
     await tester.pumpAndSettle();
 
-    expect(find.byType(Image), findsNothing);
+    // No photo decoded anywhere (the map's tile images fail
+    // on purpose in tests and never decode); the header
+    // falls back to the typography.
+    expect(find.byType(RawImage), findsNothing);
     expect(find.text('Egypt · Africa'), findsOneWidget);
   });
 }

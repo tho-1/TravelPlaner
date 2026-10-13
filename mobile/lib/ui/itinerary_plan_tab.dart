@@ -288,8 +288,10 @@ class _StopCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // The header line is the tap target that opens
-            // the editor; the icon buttons keep their own
-            // hit areas in front of it.
+            // the editor; the eye and the actions menu live
+            // IN the header (a separate four-button row made
+            // every collapsed stop twice as tall as its
+            // content).
             InkWell(
               borderRadius: BorderRadius.circular(8),
               onTap: onToggleExpand,
@@ -326,6 +328,64 @@ class _StopCard extends StatelessWidget {
                     child: Text(role,
                         style: theme.textTheme.labelSmall),
                   ),
+                  IconButton(
+                    icon: Icon(
+                      selected
+                          ? Icons.visibility
+                          : Icons.visibility_outlined,
+                      color: selected
+                          ? theme.colorScheme.primary
+                          : null,
+                    ),
+                    tooltip: 'Highlight on map',
+                    onPressed: () =>
+                        onToggleHighlight(stop.id),
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: 'Stop actions',
+                    icon: const Icon(Icons.more_vert, size: 20),
+                    onSelected: (action) {
+                      switch (action) {
+                        case 'up':
+                          onMove(stop.id, -1);
+                        case 'down':
+                          onMove(stop.id, 1);
+                        case 'remove':
+                          _confirmRemove(context);
+                      }
+                    },
+                    itemBuilder: (_) => [
+                      PopupMenuItem(
+                        value: 'up',
+                        enabled: index > 0,
+                        child: const Row(children: [
+                          Icon(Icons.arrow_upward, size: 18),
+                          SizedBox(width: 10),
+                          Text('Move up'),
+                        ]),
+                      ),
+                      PopupMenuItem(
+                        value: 'down',
+                        enabled: index < total - 1,
+                        child: const Row(children: [
+                          Icon(Icons.arrow_downward, size: 18),
+                          SizedBox(width: 10),
+                          Text('Move down'),
+                        ]),
+                      ),
+                      const PopupMenuDivider(),
+                      PopupMenuItem(
+                        value: 'remove',
+                        child: const Row(children: [
+                          Icon(Icons.delete_outline,
+                              size: 18,
+                              color: Color(0xFFB3261E)),
+                          SizedBox(width: 10),
+                          Text('Remove stop'),
+                        ]),
+                      ),
+                    ],
+                  ),
                   AnimatedRotation(
                     turns: expanded ? 0.5 : 0,
                     duration: const Duration(milliseconds: 150),
@@ -333,42 +393,6 @@ class _StopCard extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-            Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_upward),
-                  tooltip: 'Move up',
-                  onPressed: index == 0
-                      ? null
-                      : () => onMove(stop.id, -1),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.arrow_downward),
-                  tooltip: 'Move down',
-                  onPressed: index == total - 1
-                      ? null
-                      : () => onMove(stop.id, 1),
-                ),
-                IconButton(
-                  icon: Icon(
-                    selected
-                        ? Icons.visibility
-                        : Icons.visibility_outlined,
-                    color: selected
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
-                  ),
-                  tooltip: 'Highlight on map',
-                  onPressed: () =>
-                      onToggleHighlight(stop.id),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  tooltip: 'Remove stop',
-                  onPressed: () => _confirmRemove(context),
-                ),
-              ],
             ),
             // Offstage rather than removed: pending edits
             // survive closing the accordion, and the Save

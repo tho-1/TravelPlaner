@@ -124,11 +124,12 @@ void main() {
     ));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    // Each country's header carries its count.
+    // Each country's header carries its count, in the
+    // shaded band's count pill.
     expect(find.text('Egypt'), findsOneWidget);
-    expect(find.text('(1)'), findsOneWidget);
+    expect(find.text('1'), findsOneWidget);
     expect(find.text('Italy'), findsOneWidget);
-    expect(find.text('(2)'), findsOneWidget);
+    expect(find.text('2'), findsOneWidget);
     expect(find.text('Rome'), findsOneWidget);
     expect(find.text('Milan'), findsOneWidget);
   });

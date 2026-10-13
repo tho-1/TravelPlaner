@@ -1,4 +1,4 @@
-/// App shell: load the Turso config once, then a bottom
+﻿/// App shell: load the Turso config once, then a bottom
 /// nav with Catalogue, Trips and the weekend Finder.
 /// Unconfigured is a normal state -- the config file is
 /// git-ignored -- so the shell explains how to configure
@@ -108,7 +108,7 @@ class _HomeShellState extends State<HomeShell> {
   var _tab = 0;
 
   /// The width at which the shell switches from the
-  /// phone bottom bar to the desktop side rail — the
+  /// phone bottom bar to the desktop side rail â€” the
   /// Material compact/medium boundary.
   static const _wideBreakpoint = 600.0;
 
@@ -120,23 +120,23 @@ class _HomeShellState extends State<HomeShell> {
 
   static const _destinations = [
     NavigationDestination(
-      icon: NavIcon(NavTabIcon.globe, selected: false),
-      selectedIcon: NavIcon(NavTabIcon.globe, selected: true),
+      icon: NavIcon(NavTabIcon.globe),
+      selectedIcon: NavIcon(NavTabIcon.globe),
       label: 'Catalogue',
     ),
     NavigationDestination(
-      icon: NavIcon(NavTabIcon.suitcase, selected: false),
-      selectedIcon: NavIcon(NavTabIcon.suitcase, selected: true),
+      icon: NavIcon(NavTabIcon.suitcase),
+      selectedIcon: NavIcon(NavTabIcon.suitcase),
       label: 'Trips',
     ),
     NavigationDestination(
-      icon: NavIcon(NavTabIcon.compass, selected: false),
-      selectedIcon: NavIcon(NavTabIcon.compass, selected: true),
+      icon: NavIcon(NavTabIcon.compass),
+      selectedIcon: NavIcon(NavTabIcon.compass),
       label: 'Finder',
     ),
     NavigationDestination(
-      icon: NavIcon(NavTabIcon.map, selected: false),
-      selectedIcon: NavIcon(NavTabIcon.map, selected: true),
+      icon: NavIcon(NavTabIcon.map),
+      selectedIcon: NavIcon(NavTabIcon.map),
       label: 'Map',
     ),
   ];
@@ -146,23 +146,23 @@ class _HomeShellState extends State<HomeShell> {
   /// four tabs.
   static const _railDestinations = [
     NavigationRailDestination(
-      icon: NavIcon(NavTabIcon.globe, selected: false),
-      selectedIcon: NavIcon(NavTabIcon.globe, selected: true),
+      icon: NavIcon(NavTabIcon.globe),
+      selectedIcon: NavIcon(NavTabIcon.globe),
       label: Text('Catalogue'),
     ),
     NavigationRailDestination(
-      icon: NavIcon(NavTabIcon.suitcase, selected: false),
-      selectedIcon: NavIcon(NavTabIcon.suitcase, selected: true),
+      icon: NavIcon(NavTabIcon.suitcase),
+      selectedIcon: NavIcon(NavTabIcon.suitcase),
       label: Text('Trips'),
     ),
     NavigationRailDestination(
-      icon: NavIcon(NavTabIcon.compass, selected: false),
-      selectedIcon: NavIcon(NavTabIcon.compass, selected: true),
+      icon: NavIcon(NavTabIcon.compass),
+      selectedIcon: NavIcon(NavTabIcon.compass),
       label: Text('Finder'),
     ),
     NavigationRailDestination(
-      icon: NavIcon(NavTabIcon.map, selected: false),
-      selectedIcon: NavIcon(NavTabIcon.map, selected: true),
+      icon: NavIcon(NavTabIcon.map),
+      selectedIcon: NavIcon(NavTabIcon.map),
       label: Text('Map'),
     ),
   ];
@@ -229,3 +229,4 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 }
+

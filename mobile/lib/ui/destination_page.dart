@@ -30,6 +30,7 @@ import 'climate_chart.dart';
 import 'aqi_chart.dart';
 import 'iqair_table.dart';
 import 'flight_routes_section.dart';
+import 'theme.dart';
 import 'world_map_page.dart';
 
 class DestinationPage extends StatefulWidget {
@@ -76,6 +77,12 @@ class _DestinationPageState extends State<DestinationPage> {
   var _populating = false;
   var _populatingFood = false;
   var _aiConfigured = false;
+
+  /// The comment editor is only mounted when there is
+  /// something to edit: an empty destination used to open
+  /// with a huge blank box. Adding starts the editor; the
+  /// Delete flow folds it back to the add button.
+  var _commentEditing = false;
 
   @override
   void initState() {
@@ -279,6 +286,9 @@ class _DestinationPageState extends State<DestinationPage> {
     );
     if (delete == true) {
       _comment.clear();
+      // Fold the editor away: with nothing saved there is
+      // nothing to edit, and the add button returns.
+      setState(() => _commentEditing = false);
       _update('comment', null);
     }
   }
@@ -335,8 +345,9 @@ class _DestinationPageState extends State<DestinationPage> {
                 ),
                 FilterChip(
                   avatar: Icon(dest.favourite
-                      ? Icons.star_outline
-                      : Icons.star_border_outlined),
+                      ? Icons.star
+                      : Icons.star_border_outlined,
+                      color: dest.favourite ? accentFavourite : null),
                   label: const Text('Favourite'),
                   selected: dest.favourite,
                   onSelected: (value) => _update('favourite', value),
@@ -367,39 +378,57 @@ class _DestinationPageState extends State<DestinationPage> {
             const SizedBox(height: 14),
             _FactGrid(destination: dest, profile: profile),
             const SizedBox(height: 20),
-            TextField(
-              controller: _comment,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: 'Comment',
-                hintText: 'Worth a long weekend…',
-                alignLabelWithHint: true,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                // The legacy's explicit delete: saving an
-                // empty box over an existing comment asks
-                // first — one stray select-all + Save
-                // used to lose the text outright.
-                if (_dest.comment != null &&
-                    _dest.comment!.trim().isNotEmpty)
-                  TextButton(
-                    onPressed: _busy ? null : _confirmDeleteComment,
-                    child: const Text('Delete'),
-                  ),
-                const SizedBox(width: 8),
-                FilledButton.icon(
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('Save comment'),
+            // The comment editor only exists when there is
+            // something in it: an empty destination opened
+            // with a giant blank box before.
+            if (_comment.text.trim().isEmpty && !_commentEditing)
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.edit_note),
+                  label: const Text('Add comment'),
                   onPressed: _busy
                       ? null
-                      : () => _saveComment(),
+                      : () => setState(() => _commentEditing = true),
                 ),
-              ],
-            ),
+              )
+            else ...[
+              TextField(
+                controller: _comment,
+                autofocus: _commentEditing,
+                minLines: 2,
+                maxLines: 6,
+                decoration: const InputDecoration(
+                  labelText: 'Comment',
+                  hintText: 'Worth a long weekend…',
+                  alignLabelWithHint: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  // The legacy's explicit delete: saving an
+                  // empty box over an existing comment asks
+                  // first — one stray select-all + Save
+                  // used to lose the text outright.
+                  if (_dest.comment != null &&
+                      _dest.comment!.trim().isNotEmpty)
+                    TextButton(
+                      onPressed: _busy ? null : _confirmDeleteComment,
+                      child: const Text('Delete'),
+                    ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Save comment'),
+                    onPressed: _busy
+                        ? null
+                        : () => _saveComment(),
+                  ),
+                ],
+              ),
+            ],
             const _SectionTitle('Overview'),
             if (_coordinate != null) ...[
               DestinationMiniMap(coordinate: _coordinate!),
@@ -526,6 +555,8 @@ class _FoodSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final dishes = profile.foodDishList;
+    // An empty dish list folds away: a labeled "—" row said
+    // nothing the missing data did not already say.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -542,16 +573,14 @@ class _FoodSection extends StatelessWidget {
               ],
             ),
             const SizedBox(width: 40),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Main dishes (in local language)',
-                      style: theme.textTheme.labelLarge),
-                  const SizedBox(height: 2),
-                  if (dishes.isEmpty)
-                    const Text('—')
-                  else
+            if (dishes.isNotEmpty)
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Main dishes (in local language)',
+                        style: theme.textTheme.labelLarge),
+                    const SizedBox(height: 2),
                     Wrap(
                       spacing: 0,
                       runSpacing: 2,
@@ -1091,28 +1120,18 @@ class _DestinationHeaderState extends State<_DestinationHeader> {
           )),
         ],
         const SizedBox(height: 8),
+        // Only what is NOT editable below: the reviews chip.
+        // Visited / favourite / researched / prio live in the
+        // interactive chip row under the header — the passive
+        // copies here said everything twice.
         Wrap(
           spacing: 6,
           runSpacing: 6,
           children: [
-            if (_destination.visited)
-              const _HeaderChip(
-                  icon: Icons.check_circle_outline,
-                  label: 'Visited',
-                  tone: _HeaderChipTone.positive),
-            if (_destination.favourite)
-              const _HeaderChip(
-                  icon: Icons.star_outline,
-                  label: 'Favourite',
-                  tone: _HeaderChipTone.accent),
             if (widget.profile.reviewsCount != null)
               _HeaderChip(
                   icon: Icons.reviews_outlined,
                   label: '${widget.profile.reviewsCount}/10 reviews'),
-            if (_destination.prioInt != null)
-              _HeaderChip(
-                  icon: Icons.priority_high_outlined,
-                  label: 'Prio ${_destination.prioInt}'),
           ],
         ),
       ],
@@ -1228,23 +1247,18 @@ class _EmptyNote extends StatelessWidget {
   }
 }
 
-enum _HeaderChipTone { plain, positive, accent }
-
 class _HeaderChip extends StatelessWidget {
   final IconData icon;
   final String label;
-  final _HeaderChipTone tone;
 
-  const _HeaderChip({required this.icon, required this.label, this.tone = _HeaderChipTone.plain});
+  const _HeaderChip({required this.icon, required this.label});
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final background = switch (tone) {
-      _HeaderChipTone.positive => scheme.primaryContainer,
-      _HeaderChipTone.accent => scheme.tertiaryContainer,
-      _HeaderChipTone.plain => scheme.surfaceContainerHighest,
-    };
+    // The one passive chip on the page (the reviews count):
+    // a soft primary tint, the only chrome in the header.
+    final background = scheme.primaryContainer;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
@@ -1342,11 +1356,12 @@ class _FactGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final facts = <(IconData, String, String?)>[
+    final facts = <(IconData, String, String?, Color)>[
       (
         Icons.shield_outlined,
         'Safety',
         destination.safetyRating?.toStringAsFixed(1),
+        accentSafety,
       ),
       (
         Icons.payments_outlined,
@@ -1354,6 +1369,7 @@ class _FactGrid extends StatelessWidget {
         destination.avgCostDay == null
             ? null
             : '${destination.avgCostDay!.round()} €',
+        accentCost,
       ),
       (
         Icons.flight_takeoff_outlined,
@@ -1361,11 +1377,13 @@ class _FactGrid extends StatelessWidget {
         destination.flightTimeFra == null
             ? null
             : '${destination.flightTimeFra!.toStringAsFixed(1)} h',
+        accentFlight,
       ),
       (
         Icons.public_outlined,
         'Population',
         _populationLabel(profile.population),
+        accentPopulation,
       ),
       // The reviews count stays in the header chip (it used
       // to render twice), and the "Stay" prose is a line
@@ -1375,28 +1393,50 @@ class _FactGrid extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (var row = 0; row < facts.length; row += 3)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            // IntrinsicHeight: equal-height cards in a row
-            // inside a scrolling ListView (a Row with
-            // stretch would demand an infinite height).
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+        // Horizontal stat tiles: icon in a tinted square on
+        // the left, value over label on the right. The old
+        // vertical cards stacked icon / number / label and
+        // burned ~100 px of height on alignment padding.
+        LayoutBuilder(builder: (context, constraints) {
+          final wide = constraints.maxWidth >= 560;
+          return Column(
+            children: [
+              Row(
                 children: [
-                  for (var column = 0; column < 3; column++)
-                    if (row + column < facts.length)
-                      Expanded(child: _FactCard(fact: facts[row + column]))
-                    else
-                      const Expanded(child: SizedBox.shrink()),
+                  for (var i = 0; i < (wide ? 4 : 2); i++)
+                    if (i < facts.length) ...[
+                      if (i > 0 && wide) const SizedBox(width: 8),
+                      Expanded(
+                          child: _StatTile(
+                              icon: facts[i].$1,
+                              label: facts[i].$2,
+                              value: facts[i].$3,
+                              color: facts[i].$4)),
+                    ],
                 ],
               ),
-            ),
-          ),
+              if (!wide && facts.length > 2) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    for (var i = 2; i < facts.length; i++) ...[
+                      if (i > 2) const SizedBox(width: 8),
+                      Expanded(
+                          child: _StatTile(
+                              icon: facts[i].$1,
+                              label: facts[i].$2,
+                              value: facts[i].$3,
+                              color: facts[i].$4)),
+                    ],
+                  ],
+                ),
+              ],
+            ],
+          );
+        }),
         if (profile.recommendedStay != null)
           Padding(
-            padding: const EdgeInsets.only(top: 2),
+            padding: const EdgeInsets.only(top: 6),
             child: Row(
               children: [
                 Icon(Icons.hotel_outlined,
@@ -1439,34 +1479,57 @@ class _FactGrid extends StatelessWidget {
   }
 }
 
-class _FactCard extends StatelessWidget {
-  final (IconData, String, String?) fact;
+class _StatTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String? value;
+  final Color color;
 
-  const _FactCard({required this.fact});
+  const _StatTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final (icon, label, value) = fact;
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 12),
-        child: Column(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        child: Row(
           children: [
-            Icon(icon, size: 18, color: theme.colorScheme.primary),
-            const SizedBox(height: 6),
-            Text(
-              value ?? '–',
-              style: theme.textTheme.titleMedium,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Icon(icon, size: 18, color: color),
             ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value ?? '–',
+                    style: theme.textTheme.titleMedium,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  Text(
+                    label,
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ),
             ),
           ],

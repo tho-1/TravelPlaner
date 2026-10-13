@@ -15,6 +15,7 @@ import '../models/catalogue_filters.dart';
 import '../models/destination.dart';
 import '../models/destination_profile.dart';
 import 'destination_page.dart';
+import 'theme.dart';
 import 'filter_sheet.dart';
 
 class CataloguePage extends StatefulWidget {
@@ -202,23 +203,21 @@ class _CataloguePageState extends State<CataloguePage> {
   }
 
   /// The legacy's group header: the country name with
-  /// its count, on the group's tint with a soft left
-  /// accent. The legacy's hex tints (#f3f7fc / #f5f5f5,
-  /// accents #cfe0f4 / #cfcfcf) are light-theme
-  /// colors; the port keeps the rule -- an alternating
-  /// tint and a soft accent -- with theme-aware
-  /// surfaces so dark mode works too.
+  /// its count. The port now gives the header a real
+  /// shaded band in the theme's primary colour -- the
+  /// old alternating near-invisible tints did not read
+  /// as section headers.
   Widget _groupHeader(String country, int count, int groupIndex) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 14, 16, 4),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
       decoration: BoxDecoration(
-        color: _groupTint(groupIndex, scheme),
+        color: scheme.primary.withValues(alpha: 0.14),
         borderRadius: BorderRadius.circular(10),
         border: Border(
-            left:
-                BorderSide(color: _groupAccent(groupIndex, scheme), width: 5)),
+            left: BorderSide(
+                color: scheme.primary.withValues(alpha: 0.55), width: 5)),
       ),
       child: Row(
         children: [
@@ -231,12 +230,17 @@ class _CataloguePageState extends State<CataloguePage> {
                   ?.copyWith(fontWeight: FontWeight.w700),
             ),
           ),
-          Text(
-            '($count)',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+            decoration: BoxDecoration(
+              color: scheme.primary.withValues(alpha: 0.18),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '$count',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: scheme.onSurface, fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),
@@ -288,7 +292,7 @@ class _CataloguePageState extends State<CataloguePage> {
                       Icon(Icons.check_circle,
                           size: 15, color: scheme.primary),
                     if (dest.favourite)
-                      Icon(Icons.star, size: 15, color: scheme.tertiary),
+                      Icon(Icons.star, size: 15, color: accentFavourite),
                     const Spacer(),
                     Expanded(
                       child: Text(

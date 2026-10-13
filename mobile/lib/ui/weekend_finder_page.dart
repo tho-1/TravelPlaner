@@ -179,20 +179,13 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     final result = _result;
     return Scaffold(
       appBar: AppBar(title: const Text('Weekend Finder')),
-      body: _searching
-          ? Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const CircularProgressIndicator(),
-                  SizedBox(height: 16),
-                  Text(_activeProvider() is CsvBoardProvider
-                      ? 'Matching flights…'
-                      : 'Querying the flight board…'),
-                ],
-              ),
-            )
-          : ListView(
+      // The list stays mounted during a search: swapping it
+      // for a spinner used to reset the scroll position, so
+      // after every search you landed back at the top and
+      // had to scroll past all the input cards again.
+      body: Stack(
+        children: [
+          ListView(
               padding: const EdgeInsets.all(16),
               children: [
                 _weekendCard(),
@@ -214,6 +207,32 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                 ],
               ],
             ),
+          if (_searching)
+            Positioned.fill(
+              child: ColoredBox(
+                color: Theme.of(context)
+                    .colorScheme
+                    .surface
+                    .withValues(alpha: 0.72),
+                child: AbsorbPointer(
+                  absorbing: true,
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: 16),
+                        Text(_activeProvider() is CsvBoardProvider
+                            ? 'Matching flights…'
+                            : 'Querying the flight board…'),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 

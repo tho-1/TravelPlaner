@@ -22,16 +22,16 @@ enum NavTabIcon { globe, suitcase, compass, map }
 class NavIcon extends StatelessWidget {
   final NavTabIcon kind;
 
-  /// Full colour when selected, muted when not.
-  final bool selected;
-
-  const NavIcon(this.kind, {super.key, required this.selected});
+  const NavIcon(this.kind, {super.key});
 
   @override
   Widget build(BuildContext context) {
+    // Always in full colour: the tab colours are part of the
+    // app's identity, and selection is signalled by the rail
+    // pill / bottom-bar indicator, not by draining the icon.
     return CustomPaint(
       size: const Size(26, 26),
-      painter: _NavIconPainter(kind, selected: selected),
+      painter: _NavIconPainter(kind, selected: true),
     );
   }
 }

@@ -14,6 +14,14 @@ import 'package:flutter/material.dart';
 /// The teal every scheme is seeded from.
 const seedColour = Color(0xFF0E7C86);
 
+/// Accents used across the app — the palette the colour
+/// icons and the stat tiles share.
+const accentSafety = Color(0xFF2E9E6B);
+const accentCost = Color(0xFFE3A857);
+const accentFlight = Color(0xFF4FA3D1);
+const accentPopulation = Color(0xFF9575CD);
+const accentFavourite = Color(0xFFF6B100);
+
 ThemeData buildTheme(Brightness brightness) {
   final scheme = ColorScheme.fromSeed(
     seedColor: seedColour,
