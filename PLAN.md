@@ -1194,6 +1194,124 @@ drawer. Awaiting the go-ahead.
 
 ---
 
+## 0p. Session 2026-10-12/13 — the archive: one repo, one app
+
+**The trigger.** Twice in two days the
+wrong app got started — first by
+Thorsten (the frozen Phase-3 web
+prototype on port 8508, mistaken for the
+new interface), then by *another agent*
+asked to visually inspect the app: it
+went Streamlit first, then the web
+prototype, never the Flutter app. The
+docs said "legacy", but the file layout
+said otherwise: `app.py` and forty Python
+modules at the root, `web/` + `api.py`
+beside them, and a README listing three
+ways to start something. Layout beats
+prose.
+
+**The fix — archive, not delete.** The
+2026-10-10 decision kept the Streamlit
+app as knowledge and fall-back; phase 6
+(cutover) was "deferred — do not run"
+because its cleanup step would delete
+that fallback. The safe form, executed
+now:
+
+1. **Tag first.** `legacy-streamlit`
+   (annotated) marks the last commit where
+   everything ran from the root — the
+   guaranteed restore point. Restore:
+   `git switch legacy-streamlit`.
+2. **`git mv` the two retired worlds
+   into `archive/`**: `archive/streamlit/`
+   (app.py, `pages/`, 33 root modules,
+   `sync/`, `itinerary/`, `tests/`,
+   requirements, `pyproject.toml`, the
+   data CSVs) and `archive/web-prototype/`
+   (`api.py`, `web/`, its test). The
+   git-ignored locals that belong to that
+   world moved physically: the three
+   `*_secrets.py` API-key modules and the
+   probe/inspection tools. `chat.json` +
+   `chat2026-10-11.json` (tooling
+   transcripts) went to
+   `archive/chat-logs/`. `git mv` keeps
+   the history — `git log --follow` works
+   across the move.
+3. **`archive/README.md`** states the
+   contract: frozen, do not run from
+   here, how to restore, where the
+   maintenance tools live (the rainy-day
+   regeneration tool among them — open
+   item #2 now documents that path).
+4. **CI slims to the Flutter job.** The
+   honest consequence: the 511-test
+   Python suite, ruff and compileall stop
+   gating `main` — they test frozen code
+   and remain runnable from the tag. The
+   395-test Flutter suite is the gate.
+5. **Docs rewritten to match the
+   layout**: `AGENTS.md` (the entry point
+   now opens with "the app is `mobile/`,
+   the only thing to run"; architecture
+   map, data locations, invariants and
+   open items all re-anchored; the two
+   retired Streamlit-Cloud open items
+   formally retired), `README.md`
+   (one "Running it", the three-UIs table
+   replaced by a pointer to the archive),
+   `HANDOFF.md` (phase 6: executed in its
+   safe form), `NATIVE_HTML_PLAN.md`
+   (phase 6 state).
+
+**Deliberately kept at the root:**
+`Pictures/`, `flight_routes_cache/`,
+`iqair_cache/` (the Flutter app reads
+them); the other legacy runtime dirs
+(`sync_journals/`, caches, backups,
+`trips.json`) — data, not code, and part
+of the fall-back; both workbooks;
+`.streamlit/secrets.toml` (live tokens
+the tag-restore needs). `git clone` is
+still not a machine move; the
+git-ignored files travel with the
+folder.
+
+**Verification.** `flutter analyze`
+clean, 395 tests pass (the archive move
+touches no Dart), the tree holds exactly
+one app entry point, and the tag was
+checked out in a throwaway worktree to
+confirm the old layout is intact there.
+
+**The catch that proved the discipline.**
+`mobile/tools/generate_assets.py` — the
+documented regeneration path for the
+bundled airport/country/coordinate
+tables — imports the Python modules that
+own those tables, which had just moved.
+First run after the move: it "worked"
+but produced **150 airports instead of
+4563** and an empty airline-color map —
+the frozen modules resolve their data
+files relative to their own (moved)
+folder. The failure was silent, exactly
+the class the project's rules warn
+about. Fixed in the *live* bridge script,
+not the frozen modules:
+`airport_city.AIRPORTS_CSV` and the
+workbook path are now pinned to the
+repository root explicitly, and the
+regenerated assets came back
+byte-identical to the committed ones
+(4563 / 114 / 144 / 4). A regeneration
+that outputs less than before is a bug,
+not a smaller world.
+
+---
+
 ## 0o. Session 2026-10-12 (3) — the native UX pass
 
 **How it started.** Auditing the whole

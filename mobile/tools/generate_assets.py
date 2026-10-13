@@ -29,15 +29,28 @@ resolution below finds the repo relative to this file.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(ROOT))
+# The Python modules that own these tables live in the archive
+# since 2026-10-13 (frozen reference, tag ``legacy-streamlit``).
+LEGACY = ROOT / "archive" / "streamlit"
+sys.path.insert(0, str(LEGACY))
+# data_utils resolves the workbook via runtime_paths, whose
+# repo root is its own (moved) folder; the workbook stayed at
+# the repository root, so pin the data dir explicitly -- before
+# the data_utils import, its module constants read the env var.
+os.environ.setdefault("TRAVEL_PLANNER_DATA_DIR", str(ROOT))
 
 
 def main() -> None:
     import airport_city
+
+    # The frozen module resolves its CSV relative to its own
+    # (moved) folder; the data stayed at the repository root.
+    airport_city.AIRPORTS_CSV = ROOT / "data" / "airports.csv"
 
     airports = {
         code: [city, country]
@@ -73,7 +86,7 @@ def _coordinates() -> list[dict]:
     """
     import json
 
-    path = ROOT / "city_coordinates.json"
+    path = LEGACY / "city_coordinates.json"
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except Exception as error:
@@ -104,7 +117,14 @@ def _airline_colors() -> dict[str, str]:
     import flight_routes
     from data_utils import load_airlines_color_map
 
-    color_map = load_airlines_color_map()
+    # Same story: environment.py derives its repo root from its
+    # own moved file, so pass the workbook explicitly (the
+    # local-workbook-else-committed-seed logic of
+    # environment.get_workbook_path, inlined).
+    workbook = ROOT / "Destinations-local.xlsx"
+    if not workbook.exists():
+        workbook = ROOT / "Destinations-cloud.xlsx"
+    color_map = load_airlines_color_map(workbook)
     return {
         flight_routes._normalize_key(info["name"]): info["color"]
         for info in color_map.values()

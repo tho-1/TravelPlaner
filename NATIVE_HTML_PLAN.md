@@ -399,7 +399,7 @@ epository.py |
 | 3 — native HTML frontend | done, 2a066fb | web/ |
 | 4 — trips runtime cutover | done, 7fadbbc | itinerary/storage.py |
 | 5 — Flutter app (desktop + Android) | **parity reached, then a UX pass (2026-10-12)**: catalogue/trips/detail/weekend finder/map/AI populate, plus light mode, colour nav icons, a proper app icon, map zoom/pan/borders/hover, a fly-to search, a Trips accordion, finder day pickers; `flutter analyze` clean, 395 tests | mobile/ |
-| 6 — cutover/cleanup | deferred by decision (2026-10-10) | — |
+| 6 — cutover/cleanup | **executed in its safe form (2026-10-13)**: legacy moved to `archive/` + tag `legacy-streamlit`; the tree holds one app | archive/, .github/workflows/ci.yml |
 
 Phase 5 in detail (all of it ported rule-for-rule from the Streamlit app and
 verified against the live database):

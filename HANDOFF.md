@@ -14,7 +14,7 @@ orientation. Delete this file when the native phases are done.
 | — benefits credentials bug | fixed, committed `2a066fb` | `benefits_turso.py`, `tests/conftest.py` |
 | 4 — trips runtime cutover | done, committed `7fadbbc` | `itinerary/storage.py`, `tests/test_trips_turso.py` |
 | 5 — Flutter app (desktop + Android) | **parity pushed: weekend finder, destination richness, world map, AI populate, UX pass — `fb90956`, `c55d801`, `c02008b`, `80d1f6c`, `33379ce`** | `mobile/` |
-| 6 — cutover/cleanup | **deferred — do not run** (it would delete the Streamlit fallback the user decided to keep, 2026-10-10) | — |
+| 6 — cutover/cleanup | **executed in its safe form 2026-10-13**: the Streamlit app and the web prototype moved to `archive/` (frozen, restorable via the tag `legacy-streamlit`) instead of being deleted; the working tree now contains only `mobile/` as an app | `archive/`, tag `legacy-streamlit` |
 
 ## What the parity session added (2026-10-11)
 

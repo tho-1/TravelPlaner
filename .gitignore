@@ -88,3 +88,4 @@ codereview.md
 # Session transcripts exported by other agent tooling
 session-ses_*.md
 .kilo/
+node_modules/

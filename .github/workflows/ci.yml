@@ -1,4 +1,4 @@
-name: CI
+﻿name: CI
 
 on:
   push:
@@ -10,72 +10,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# The live app is mobile/ (Flutter desktop + Android). The Streamlit app and
+# the Phase-3 web prototype moved to archive/ (frozen reference, restorable
+# via the legacy-streamlit tag) - their 511-test Python suite, ruff and
+# compileall gates retired with them and remain runnable from the tag.
+
 jobs:
-  checks:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-            requirements-dev.txt
-
-      # NOT `pip install -e .`: this repo is a Streamlit application, not a
-      # library, and an editable install fails setuptools' flat-layout package
-      # discovery (multiple top-level packages). See pyproject.toml.
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r requirements-dev.txt
-
-      - name: Byte-compile every module (the project's "build")
-        run: python -m compileall -q . -x '(^|/)(\.venv|archive|Pictures|__pycache__)(/|$)'
-
-      - name: Lint (ruff)
-        run: ruff check .
-
-      - name: Test suite
-        # The suite never touches the live workbook/trips.json:
-        # tests/conftest.py redirects all runtime state into a temp directory.
-        run: python -m pytest -p no:cacheprovider
-
-      - name: Tests also run without pytest (dependency-free path)
-        run: python tests/run_all.py --no-pytest
-
-  # A Windows job because the app is used on Windows and two of the fixed bugs
-  # (atomic replace, file locking) are platform specific.
-  windows-checks:
-    runs-on: windows-latest
-    timeout-minutes: 25
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r requirements-dev.txt
-
-      - name: Test suite (Windows file locking / atomic replace)
-        run: python -m pytest -p no:cacheprovider
-
-  # The native app (mobile/): its suite is 158 tests + analyze, and until now
-  # CI gated only the Python side -- the app's primary code could regress
-  # without a red build. The app needs no credentials for these checks: the
-  # tests use a scripted Turso fake (test/fake_turso.dart), and an
-  # unconfigured app is a normal rendered state.
   mobile-checks:
     runs-on: ubuntu-latest
     timeout-minutes: 25
