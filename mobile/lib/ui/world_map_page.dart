@@ -1460,6 +1460,13 @@ class _MapBody extends StatelessWidget {
                 Positioned(
                   top: 8,
                   left: 8,
+                  // Bounded to the map: with only top/left
+                  // set the strip's Wrap got an unbounded
+                  // width, so the last chip ("bad /
+                  // off-season") clipped at the map edge on
+                  // a phone instead of wrapping to a second
+                  // line.
+                  right: 8,
                   child: _StatStrip(
                     mappedCountries: mapped,
                     ideal: idealCount,
@@ -1470,23 +1477,31 @@ class _MapBody extends StatelessWidget {
                 Positioned(
                   bottom: 8,
                   left: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFB0BEC5)),
-                    ),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 2,
-                      children: [
-                        for (final condition in Condition.values)
-                          _LegendDot(
-                              color: Color(condition.colorValue),
-                              label: condition.label),
-                      ],
+                  // Bounded like the stat strip: the legend
+                  // fits one line today, but an unbounded
+                  // Wrap would clip rather than wrap if a
+                  // label ever grew.
+                  right: 8,
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFB0BEC5)),
+                      ),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 2,
+                        children: [
+                          for (final condition in Condition.values)
+                            _LegendDot(
+                                color: Color(condition.colorValue),
+                                label: condition.label),
+                        ],
+                      ),
                     ),
                   ),
                 ),

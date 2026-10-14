@@ -1613,7 +1613,13 @@ so the shell's `setState` never reached it
 the setting back). The switch now keeps local
 state and moves only once the write confirms,
 so a failed save cannot look saved either.
-410 → 411 tests.
+One more device find: the map's stat strip
+clipped its fourth chip ("bad / off-season")
+at the map edge on the phone — the
+`Positioned` gave the `Wrap` an unbounded
+width, so it could not wrap; the strip (and
+the legend, prophylactically) are now bounded
+to the map width. 410 → 411 tests.
 
 ---
 
