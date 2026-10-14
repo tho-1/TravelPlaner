@@ -49,15 +49,18 @@ import '../models/geo.dart';
 import 'destination_page.dart';
 import 'filter_sheet.dart';
 
-/// A focused mini-map for the destination page: the city and
-/// its country's condition fill, with a marker and the
-/// coordinate.
+/// A focused mini-map for the destination page: framed on
+/// the destination's **country** (bounds auto-fitted, so a
+/// coastal city like Salvador shows the whole coastline
+/// instead of an unreadable close-up), every landmass
+/// tinted so water reads as water, and the country filled
+/// with its month colour.
 class DestinationMiniMap extends StatelessWidget {
   final CityCoordinate coordinate;
 
   /// The condition colour for the destination's current month,
   /// when the caller parsed the profile. Null leaves the
-  /// country unfilled.
+  /// country uncoloured.
   final Color? countryColor;
 
   const DestinationMiniMap({
@@ -68,36 +71,93 @@ class DestinationMiniMap extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        WorldMapView(
-          latitude: coordinate.lat,
-          longitude: coordinate.lon,
-          zoom: 6,
-          interactive: false,
-          cities: [
-            MapCity(
-              latitude: coordinate.lat,
-              longitude: coordinate.lon,
-              name: coordinate.name,
-              country: coordinate.country,
-              condition: Condition.unknown,
-              filteredOut: true,
-            ),
-          ],
-          countryFills: coordinate.country.isEmpty
-              ? const {}
-              : {coordinate.country: countryColor ?? Colors.transparent},
-        ),
-        const SizedBox(height: 6),
-        Text(
-          '${coordinate.lat.toStringAsFixed(3)}, '
-          '${coordinate.lon.toStringAsFixed(3)}'
-          '${coordinate.country.isEmpty ? '' : ' · ${coordinate.country}'}',
-          style: Theme.of(context).textTheme.bodySmall,
-        ),
-      ],
+    return FutureBuilder<CountryGeometry>(
+      future: CountryGeometry.load(),
+      builder: (context, snapshot) {
+        final geometry = snapshot.data;
+        // Land tint for every known country: on the pale
+        // basemap, coastlines used to be invisible -- "which
+        // part is the country, which is the water?".
+        final fills = <String, Color>{
+          if (geometry != null)
+            for (final shape in geometry.shapes)
+              shape.name: const Color(0xFFE3E9EE),
+        };
+        if (coordinate.country.isNotEmpty) {
+          fills[coordinate.country] =
+              countryColor ?? const Color(0xFFB0BEC5);
+        }
+
+        return LayoutBuilder(builder: (context, constraints) {
+          // Frame the country: the largest zoom whose tile
+          // span still holds the country's bounding box,
+          // centred between the country's middle and the
+          // city. Clamped to 3-7 -- a huge country zooms out
+          // to its continent, a small one stays put.
+          var latitude = coordinate.lat;
+          var longitude = coordinate.lon;
+          var zoom = 5;
+          final shape = geometry?.lookup(coordinate.country);
+          if (shape != null) {
+            final (minLon, minLat, maxLon, maxLat) = shape.bounds;
+            final width = constraints.maxWidth;
+            const height = 220.0;
+            var fit = 3;
+            for (var z = 7; z >= 3; z--) {
+              final worldSize = math.pow(2, z) * 256.0;
+              final latPixels = (latitudeToWorldY(minLat) -
+                      latitudeToWorldY(maxLat)) *
+                  worldSize;
+              final lonPixels =
+                  (maxLon - minLon) / 360.0 * worldSize;
+              if (latPixels <= height * 0.8 &&
+                  lonPixels <= width * 0.8) {
+                fit = z;
+                break;
+              }
+            }
+            zoom = fit;
+            // Centre between the country's middle and the
+            // city: the whole country stays in frame while
+            // the destination keeps the emphasis.
+            latitude = (minLat + maxLat) / 2 * 0.55 +
+                coordinate.lat * 0.45;
+            longitude = (minLon + maxLon) / 2 * 0.55 +
+                coordinate.lon * 0.45;
+          }
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              WorldMapView(
+                latitude: latitude,
+                longitude: longitude,
+                zoom: zoom,
+                height: 220,
+                interactive: false,
+                cities: [
+                  MapCity(
+                    latitude: coordinate.lat,
+                    longitude: coordinate.lon,
+                    name: coordinate.name,
+                    country: coordinate.country,
+                    condition: Condition.unknown,
+                    filteredOut: true,
+                  ),
+                ],
+                countryFills: fills,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${coordinate.lat.toStringAsFixed(3)}, '
+                '${coordinate.lon.toStringAsFixed(3)}'
+                '${coordinate.country.isEmpty ? '' : ' · ${coordinate.country}'}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          );
+        });
+      },
     );
   }
 }

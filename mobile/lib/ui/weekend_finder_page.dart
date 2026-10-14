@@ -94,6 +94,12 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   /// and the expand-all flag behind the header button.
   final _expandedCities = <String>{};
   var _allExpanded = false;
+
+  /// Attached to the results block: after a search
+  /// completes, the page scrolls itself to the results —
+  /// the input cards above stay up, but the answer should
+  /// come to you.
+  final _resultsKey = GlobalKey();
   @override
   void initState() {
     super.initState();
@@ -162,6 +168,19 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
         _result = search;
         _searching = false;
       });
+      // Bring the results into view: the input cards above
+      // stay mounted, so without this the answer sits below
+      // the fold.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _resultsKey.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: const Duration(milliseconds: 450),
+            alignment: 0.02,
+          );
+        }
+      });
     } catch (error) {
       // The provider errors surface as notes inside the
       // result; this is for anything else, so a failure
@@ -203,7 +222,7 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                 ),
                 if (result != null) ...[
                   const SizedBox(height: 16),
-                  _report(result),
+                  KeyedSubtree(key: _resultsKey, child: _report(result)),
                 ],
               ],
             ),
@@ -849,7 +868,7 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
         Row(
           children: [
             Expanded(
-              child: Text('${report.cityCount} destinations',
+              child:               Text('${report.cityCount} destinations fit this weekend',
                   style: theme.textTheme.titleMedium),
             ),
             if (cities.isNotEmpty)

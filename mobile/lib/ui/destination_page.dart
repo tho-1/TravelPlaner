@@ -24,6 +24,7 @@ import '../data/gallery_cache.dart';
 import '../data/gallery_repository.dart';
 import '../data/photo_repository.dart';
 import '../models/destination.dart';
+import '../models/condition.dart';
 import '../models/destination_profile.dart';
 import '../turso/config.dart';
 import 'climate_chart.dart';
@@ -431,7 +432,17 @@ class _DestinationPageState extends State<DestinationPage> {
             ],
             const _SectionTitle('Overview'),
             if (_coordinate != null) ...[
-              DestinationMiniMap(coordinate: _coordinate!),
+              DestinationMiniMap(
+                coordinate: _coordinate!,
+                // The country wears its current-month
+                // colour: on the pale basemap, a coastal
+                // city's view used to read as "grey and
+                // grey".
+                countryColor: Color(conditionOfMonth(
+                        DestinationProfile.from(_dest)
+                            .months[DateTime.now().month - 1])
+                    .colorValue),
+              ),
               const SizedBox(height: 12),
             ],
             if (profile.hasOverviewText) ...[

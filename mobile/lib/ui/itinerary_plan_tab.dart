@@ -25,6 +25,7 @@ import '../data/geocode_repository.dart';
 import '../models/destination.dart';
 import '../models/trip.dart';
 import '../models/trip_ops.dart';
+import 'theme.dart';
 
 /// The stop roles, with the legacy's badge
 /// semantics (`itinerary.itinerary.ROLES`).
@@ -801,11 +802,18 @@ class _LegRow extends StatelessWidget {
     final leg = variant.legs[legIndex];
     final from = variant.stops[legIndex].ref;
     final to = variant.stops[legIndex + 1].ref;
+    // The mode as a colour cue: an itinerary should read
+    // like one at a glance.
+    final (modeIcon, modeColor) = switch (leg.mode) {
+      'flight' => (Icons.flight_takeoff, accentFlight),
+      'train' => (Icons.train, const Color(0xFF2E9E6B)),
+      _ => (Icons.directions_bus, accentCost),
+    };
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         children: [
-          const Icon(Icons.route, size: 18),
+          Icon(modeIcon, size: 18, color: modeColor),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

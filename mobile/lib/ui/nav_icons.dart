@@ -22,7 +22,12 @@ enum NavTabIcon { globe, suitcase, compass, map }
 class NavIcon extends StatelessWidget {
   final NavTabIcon kind;
 
-  const NavIcon(this.kind, {super.key});
+  /// Side length in logical pixels; 26 is the nav size.
+  /// Larger sizes turn the icon into a small illustration
+  /// (empty states).
+  final double size;
+
+  const NavIcon(this.kind, {super.key, this.size = 26});
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +35,7 @@ class NavIcon extends StatelessWidget {
     // app's identity, and selection is signalled by the rail
     // pill / bottom-bar indicator, not by draining the icon.
     return CustomPaint(
-      size: const Size(26, 26),
+      size: Size.square(size),
       painter: _NavIconPainter(kind, selected: true),
     );
   }
@@ -101,6 +106,10 @@ class _NavIconPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // All geometry below is drawn in a 26x26 box; scale it
+    // to whatever size the widget was given (the empty
+    // states draw it at 56-64).
+    canvas.scale(size.width / 26, size.height / 26);
     switch (kind) {
       case NavTabIcon.globe:
         _paintGlobe(canvas);

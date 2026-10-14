@@ -5,16 +5,20 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'dart:io' show File;
 
 import '../data/ai_config.dart';
 import '../data/deepseek_client.dart';
 import '../data/destination_repository.dart';
 import '../data/ai_populator.dart';
 import '../data/catalogue_match.dart';
+import '../data/photo_repository.dart';
 import '../models/catalogue_filters.dart';
 import '../models/destination.dart';
 import '../models/destination_profile.dart';
+import '../turso/config.dart';
 import 'destination_page.dart';
+import 'nav_icons.dart';
 import 'theme.dart';
 import 'filter_sheet.dart';
 
@@ -36,10 +40,26 @@ class _CataloguePageState extends State<CataloguePage> {
   /// uses, so the two pages can never drift.
   CatalogueFilters _filters = CatalogueFilters.initial();
 
+  /// Where per-destination photos live, if the machine
+  /// has them: cards show a banner thumbnail when one
+  /// exists (git-ignored desktop cache; empty on the
+  /// phone, which simply has no photos).
+  String? _picturesDir;
+
+  /// Banner lookups are file IO — resolved once per
+  /// destination per session and cached here, so a
+  /// re-sort or a filter change does not re-scan.
+  static final Map<String, Future<File?>> _bannerCache = {};
+
   @override
   void initState() {
     super.initState();
     _future = widget.repository.loadDestinations();
+    TursoConfig.load().then((config) {
+      if (mounted && config.picturesDir.trim().isNotEmpty) {
+        setState(() => _picturesDir = config.picturesDir);
+      }
+    });
   }
 
   void _reload() {
@@ -247,9 +267,12 @@ class _CataloguePageState extends State<CataloguePage> {
     );
   }
 
-  /// One destination on its group's tint -- the legacy
-  /// tints every button with the group's alternating
-  /// background so the sections scan easily.
+  /// One destination on its group's tint. A travel
+  /// catalogue should feel like places, not a spreadsheet:
+  /// the card leads with the destination's banner photo
+  /// when the machine has one (initial-letter tile when it
+  /// does not), and a continent-coloured dot rides the
+  /// subtitle.
   Widget _destinationCard(Destination dest, int groupIndex) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
@@ -269,41 +292,68 @@ class _CataloguePageState extends State<CataloguePage> {
           onTap: () => _openDestination(dest),
           child: Padding(
             padding: const EdgeInsets.all(10),
-            child: Column(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  dest.name,
-                  style: theme.textTheme.titleSmall,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (dest.continent != null && dest.continent!.isNotEmpty)
-                  Text(
-                    dest.continent!,
-                    style: theme.textTheme.bodySmall,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    if (dest.visited)
-                      Icon(Icons.check_circle,
-                          size: 15, color: scheme.primary),
-                    if (dest.favourite)
-                      Icon(Icons.star, size: 15, color: accentFavourite),
-                    const Spacer(),
-                    Expanded(
-                      child: Text(
-                        _metaLine(dest),
-                        textAlign: TextAlign.end,
-                        style: theme.textTheme.bodySmall,
-                        maxLines: 1,
+                _CardThumb(destination: dest, picturesDir: _picturesDir),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        dest.name,
+                        style: theme.textTheme.titleSmall,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                  ],
+                      if (dest.continent != null &&
+                          dest.continent!.isNotEmpty)
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                color: _continentColor(dest.continent!),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
+                            Flexible(
+                              child: Text(
+                                dest.continent!,
+                                style: theme.textTheme.bodySmall,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          if (dest.visited)
+                            Icon(Icons.check_circle,
+                                size: 15, color: scheme.primary),
+                          if (dest.favourite)
+                            Icon(Icons.star,
+                                size: 15, color: accentFavourite),
+                          const Spacer(),
+                          Expanded(
+                            child: Text(
+                              _metaLine(dest),
+                              textAlign: TextAlign.end,
+                              style: theme.textTheme.bodySmall,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -311,6 +361,23 @@ class _CataloguePageState extends State<CataloguePage> {
         ),
       ),
     );
+  }
+
+  /// Continent accents — a small repeated colour cue that
+  /// makes the list scannable ("where are the Asian
+  /// destinations?") without a filter.
+  Color _continentColor(String continent) {
+    final normalized = continent.toLowerCase();
+    if (normalized.contains('europe')) return const Color(0xFF4FA3D1);
+    if (normalized.contains('asia')) return const Color(0xFFE57373);
+    if (normalized.contains('africa')) return const Color(0xFFE3A857);
+    if (normalized.contains('north')) return const Color(0xFF81C784);
+    if (normalized.contains('south')) return const Color(0xFFBA68C8);
+    if (normalized.contains('oceania') ||
+        normalized.contains('australia')) {
+      return const Color(0xFF4DB6AC);
+    }
+    return const Color(0xFF90A4AE);
   }
 
   /// The at-a-glance numbers (safety · cost per day ·
@@ -446,23 +513,26 @@ class _CataloguePageState extends State<CataloguePage> {
                     // the database is empty or the filter dropped
                     // everything.
                     return ListView(children: [
-                      const SizedBox(height: 120),
+                      const SizedBox(height: 100),
                       Center(
                         child: Padding(
                           padding: const EdgeInsets.all(24),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
-                                destinations.isEmpty
-                                    ? Icons.public_off_outlined
-                                    : Icons.filter_alt_off_outlined,
-                                size: 48,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
+                              // The app's own globe illustration
+                              // instead of a grey icon: even the
+                              // empty state says "travel".
+                              Opacity(
+                                opacity: 0.85,
+                                child: NavIcon(
+                                  destinations.isEmpty
+                                      ? NavTabIcon.globe
+                                      : NavTabIcon.compass,
+                                  size: 64,
+                                ),
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 16),
                               Text(
                                 destinations.isEmpty
                                     ? 'The database holds no destinations.'
@@ -476,6 +546,22 @@ class _CataloguePageState extends State<CataloguePage> {
                                 style:
                                     Theme.of(context).textTheme.bodyLarge,
                               ),
+                              if (destinations.isNotEmpty &&
+                                  matches.isNotEmpty) ...[
+                                const SizedBox(height: 6),
+                                Text(
+                                  'Loosen the search or the filters — '
+                                  'the world is still out there.',
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant),
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -572,6 +658,77 @@ enum _QuickFilter {
       case _QuickFilter.research:
         return destination.toBeResearched;
     }
+  }
+}
+
+/// The card's photo: the destination's banner from the
+/// machine's `Pictures/` cache, or a tinted initial tile
+/// when there is none. Resolved through the page-level
+/// cache so filter changes do not re-scan the disk.
+class _CardThumb extends StatelessWidget {
+  final Destination destination;
+  final String? picturesDir;
+
+  const _CardThumb({required this.destination, required this.picturesDir});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (picturesDir == null) {
+      return _initialTile(context, scheme);
+    }
+    return FutureBuilder<File?>(
+      future: _CataloguePageState._bannerCache.putIfAbsent(
+        destination.name,
+        () => _loadBanner(picturesDir!, destination.name),
+      ),
+      builder: (context, snapshot) {
+        final file = snapshot.data;
+        if (file == null) return _initialTile(context, scheme);
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.file(
+            file,
+            width: 52,
+            height: 52,
+            fit: BoxFit.cover,
+            errorBuilder: (_, _, _) => _initialTile(context, scheme),
+          ),
+        );
+      },
+    );
+  }
+
+  /// One banner lookup; failures are the normal
+  /// no-photos state, not errors.
+  static Future<File?> _loadBanner(String dir, String name) async {
+    try {
+      return await PhotoRepository(dir).findBanner(name, name);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Widget _initialTile(BuildContext context, ColorScheme scheme) {
+    final initial = destination.name.isEmpty
+        ? '?'
+        : destination.name.substring(0, 1).toUpperCase();
+    return Container(
+      width: 52,
+      height: 52,
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        initial,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+              color: scheme.primary,
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+    );
   }
 }
 
