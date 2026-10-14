@@ -5,17 +5,32 @@ library;
 
 import 'package:flutter/material.dart';
 
-class SettingsPage extends StatelessWidget {
+class SettingsPage extends StatefulWidget {
   /// Whether opening a destination records an
   /// open-destination tab.
   final bool openTabsEnabled;
-  final ValueChanged<bool> onToggleTabs;
+
+  /// Persist the new value; returns whether it was saved.
+  /// The page keeps its own switch position until the write
+  /// confirms -- the page is a pushed route and does not
+  /// rebuild with the shell, so without local state the
+  /// switch stayed in its push-time position (the bug found
+  /// on the phone 2026-10-14: tapping looked inert, and a
+  /// second tap flipped the setting back).
+  final Future<bool> Function(bool value) onToggleTabs;
 
   const SettingsPage({
     super.key,
     required this.openTabsEnabled,
     required this.onToggleTabs,
   });
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  late var _enabled = widget.openTabsEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -32,8 +47,15 @@ class SettingsPage extends StatelessWidget {
               'and survives a restart; the switch itself is '
               'stored per device.',
             ),
-            value: openTabsEnabled,
-            onChanged: onToggleTabs,
+            value: _enabled,
+            onChanged: (value) async {
+              // Move the switch only once the write confirmed
+              // -- a failed save must not look saved.
+              final saved = await widget.onToggleTabs(value);
+              if (saved && mounted) {
+                setState(() => _enabled = value);
+              }
+            },
           ),
         ],
       ),

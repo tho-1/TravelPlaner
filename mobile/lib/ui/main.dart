@@ -349,17 +349,22 @@ class _HomeShellState extends State<HomeShell> {
     ));
   }
 
-  Future<void> _toggleTabs(bool on) async {
+  /// Persist the settings switch; returns whether it was
+  /// saved, so the page's switch only moves on a confirmed
+  /// write. The Turso tab list itself is untouched by a
+  /// toggle -- switching back on restores the list.
+  Future<bool> _toggleTabs(bool on) async {
     final saved = AppSettings(openTabsEnabled: on).save(_settingsDir);
     if (!saved) {
-      if (!mounted) return;
+      if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Could not save the setting.'),
       ));
-      return;
+      return false;
     }
     setState(() => _tabsEnabled = on);
     if (on && _openTabs.isEmpty) await _loadTabs();
+    return true;
   }
 
   @override

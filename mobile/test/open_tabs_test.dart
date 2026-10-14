@@ -239,18 +239,34 @@ void main() {
   });
 
   group('SettingsPage', () {
-    testWidgets('the switch reports changes', (tester) async {
-      var enabled = true;
+    testWidgets('the switch moves only after the write confirms',
+        (tester) async {
+      var saved = true;
+      bool? reported;
       await tester.pumpWidget(MaterialApp(
         home: SettingsPage(
-          openTabsEnabled: enabled,
-          onToggleTabs: (value) => enabled = value,
+          openTabsEnabled: true,
+          onToggleTabs: (value) async {
+            reported = value;
+            return saved;
+          },
         ),
       ));
 
       expect(find.text('Open-destination tabs'), findsOneWidget);
       await tester.tap(find.byType(SwitchListTile));
-      expect(enabled, isFalse);
+      await tester.pumpAndSettle();
+      expect(reported, isFalse);
+      expect(tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
+          isFalse);
+
+      // A failed write must not look saved: the switch stays.
+      saved = false;
+      await tester.tap(find.byType(SwitchListTile));
+      await tester.pumpAndSettle();
+      expect(reported, isTrue);
+      expect(tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
+          isFalse);
     });
   });
 }
