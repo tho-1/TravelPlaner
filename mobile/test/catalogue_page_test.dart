@@ -72,6 +72,48 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+      'the Visited view wins over the default only-unvisited filter',
+      (tester) async {
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    await binding.setSurfaceSize(const Size(420, 1200));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final fake = FakeTurso((_) => okRows(
+          ['destination', 'country', 'visited', 'data'],
+          [
+            ['Alexandria', 'Egypt', 1, jsonEncode(const [])],
+            ['Rome', 'Italy', null, jsonEncode(const [])],
+          ],
+        ));
+    await tester.pumpWidget(MaterialApp(
+      home: CataloguePage(
+        repository:
+            DestinationRepository(TursoClient(_config, httpClient: fake.client())),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // The legacy default hides the visited row...
+    expect(find.textContaining('1 of 2 destinations'), findsOneWidget);
+    expect(find.text('Alexandria'), findsNothing);
+
+    // ...which used to dead-end the Visited chip (the
+    // visited rows were filtered out before it ran). The
+    // explicit view must win while it is selected.
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Visited'));
+    await tester.pumpAndSettle();
+    expect(find.text('Alexandria'), findsOneWidget);
+    expect(find.text('Rome'), findsNothing);
+
+    // Switching back restores the stored default view.
+    await tester.tap(find.widgetWithText(ChoiceChip, 'All'));
+    await tester.pumpAndSettle();
+    expect(find.text('Rome'), findsOneWidget);
+    expect(find.text('Alexandria'), findsNothing);
+
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('the safety filter keeps destinations without a rating',
       (tester) async {
     final binding = TestWidgetsFlutterBinding.ensureInitialized();

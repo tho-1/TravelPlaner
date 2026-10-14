@@ -525,10 +525,20 @@ class _CataloguePageState extends State<CataloguePage> {
                         dest,
                   ];
                   // The shared filter set, then the quick
-                  // chip on top of it.
+                  // chip on top of it. The "Visited" view
+                  // and the default "only unvisited" filter
+                  // contradict -- together they can never
+                  // match (the visited rows are filtered out
+                  // before the chip sees them: the dead end
+                  // found on the phone 2026-10-14), so the
+                  // explicit view wins while it is selected.
+                  // The stored filter is untouched and "All"
+                  // restores the default view.
                   final outcome = applyCatalogueFilters(
                     matches,
-                    _filters,
+                    _quick == _QuickFilter.visited
+                        ? _filters.copyWith(onlyUnvisited: false)
+                        : _filters,
                     (dest) => DestinationProfile.from(dest),
                   );
                   final filtered = [

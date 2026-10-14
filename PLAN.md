@@ -1590,6 +1590,24 @@ corrupt-is-default, failed write), and the two
 tab widgets plus the settings page. 410 pass,
 `flutter analyze` clean, exe rebuilt.
 
+**On the phone (Mi 10T Pro, same day).** The
+APK installed and ran against the live database
+first try. Two device-only bugs found and
+fixed: the phone's tabs strip drew *under* the
+status bar (the clock and battery covered the
+chips) — the whole phone column now sits in a
+`SafeArea` when the strip is shown, so the
+status-bar inset is claimed exactly once and
+the pages' own app bars stop double-padding;
+and the **"Visited" quick chip dead-ended
+against the default "only unvisited" filter**
+(both legacy pages default to hiding visited
+rows, so the chip could never match) — while
+the Visited view is selected it wins over the
+contradicting filter, the stored filter is
+untouched, and "All" restores it. One more
+test (410 → 411).
+
 ---
 
 ## 1. Where things stood before the 2026-10-03 batch (historical)

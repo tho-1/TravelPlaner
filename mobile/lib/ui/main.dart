@@ -432,21 +432,7 @@ class _HomeShellState extends State<HomeShell> {
                 ),
               ],
             )
-          : Column(
-              children: [
-                if (_tabsEnabled && _openTabs.isNotEmpty)
-                  ValueListenableBuilder<String?>(
-                    valueListenable: activeDestinationRoute,
-                    builder: (context, active, _) => OpenTabsStrip(
-                      tabs: _openTabs,
-                      active: active,
-                      onOpen: _openTab,
-                      onClose: _closeTab,
-                    ),
-                  ),
-                Expanded(child: pages),
-              ],
-            ),
+          : _phoneLayout(pages),
       bottomNavigationBar: wide
           ? null
           : NavigationBar(
@@ -456,6 +442,33 @@ class _HomeShellState extends State<HomeShell> {
               destinations: _destinations,
             ),
     );
+  }
+
+  /// The phone layout: the open-tabs strip above the pages.
+  /// With the strip visible the whole column sits in a
+  /// SafeArea -- without it the strip drew *under* the
+  /// status bar (the phone's clock and battery covered the
+  /// chips, found on the Mi 10T Pro 2026-10-14), and the
+  /// pages' own app bars pad for the status bar themselves,
+  /// so the inset must be claimed exactly once.
+  Widget _phoneLayout(Widget pages) {
+    final showStrip = _tabsEnabled && _openTabs.isNotEmpty;
+    final content = Column(
+      children: [
+        if (showStrip)
+          ValueListenableBuilder<String?>(
+            valueListenable: activeDestinationRoute,
+            builder: (context, active, _) => OpenTabsStrip(
+              tabs: _openTabs,
+              active: active,
+              onOpen: _openTab,
+              onClose: _closeTab,
+            ),
+          ),
+        Expanded(child: pages),
+      ],
+    );
+    return showStrip ? SafeArea(bottom: false, child: content) : content;
   }
 }
 
