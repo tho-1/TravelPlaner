@@ -68,6 +68,13 @@ class TursoConfig {
   /// per-device pattern as the routes cache.
   final String geocodeCache;
 
+  /// The folder per-device app state is written to
+  /// (`app_settings.json`). Optional: the desktop names
+  /// the repo root, next to the other per-device state;
+  /// the phone, which configures no paths, falls back to
+  /// its documents directory.
+  final String stateDir;
+
   const TursoConfig({
     required this.url,
     required this.token,
@@ -77,6 +84,7 @@ class TursoConfig {
     this.picturesDir = '',
     this.flightRoutesCache = '',
     this.geocodeCache = '',
+    this.stateDir = '',
   });
 
   bool get isConfigured => url.trim().isNotEmpty && token.trim().isNotEmpty;
@@ -113,6 +121,7 @@ class TursoConfig {
             (map['flight_routes_cache'] as String?)?.trim() ?? '',
         geocodeCache:
             (map['geocode_cache'] as String?)?.trim() ?? '',
+        stateDir: (map['state_dir'] as String?)?.trim() ?? '',
       );
     } catch (_) {
       return const TursoConfig(

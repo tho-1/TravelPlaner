@@ -45,11 +45,17 @@ class WeekendFinderPage extends StatefulWidget {
   /// so a search runs without network.
   final FlightBoardProvider? board;
 
+  /// Called when a result opens a destination page, so the
+  /// shell records the open-destination tab. Null when the
+  /// feature is off.
+  final void Function(String name)? onOpenDestination;
+
   const WeekendFinderPage({
     super.key,
     required this.benefits,
     required this.destinations,
     this.board,
+    this.onOpenDestination,
   });
 
   @override
@@ -1020,7 +1026,9 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
       }
     }
     if (match == null) return;
+    widget.onOpenDestination?.call(match.name);
     Navigator.of(context).push(MaterialPageRoute(
+      settings: RouteSettings(name: 'destination/${match.name}'),
       builder: (_) => DestinationPage(
         repository: widget.destinations,
         destination: match!,

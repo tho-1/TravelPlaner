@@ -55,6 +55,12 @@ class DestinationPage extends StatefulWidget {
   /// Pictures folder.
   final String? picturesDir;
 
+  /// Called when a destination is opened from this page's
+  /// related links, so the shell records the open tab.
+  /// Passed on to the pushed page, so the chain records
+  /// every hop.
+  final void Function(String name)? onOpenDestination;
+
   const DestinationPage({
     super.key,
     required this.repository,
@@ -63,6 +69,7 @@ class DestinationPage extends StatefulWidget {
     this.aiClient,
     this.aiConfig,
     this.picturesDir,
+    this.onOpenDestination,
   });
 
   @override
@@ -494,14 +501,19 @@ class _DestinationPageState extends State<DestinationPage> {
             FlightRoutesSection(
               repository: widget.repository,
               destination: dest,
-              onOpenDestination: (destination) =>
-                  Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => DestinationPage(
-                  repository: widget.repository,
-                  destination: destination,
-                  onChanged: widget.onChanged,
-                ),
-              )),
+              onOpenDestination: (destination) {
+                widget.onOpenDestination?.call(destination.name);
+                Navigator.of(context).push(MaterialPageRoute(
+                  settings:
+                      RouteSettings(name: 'destination/${destination.name}'),
+                  builder: (_) => DestinationPage(
+                    repository: widget.repository,
+                    destination: destination,
+                    onChanged: widget.onChanged,
+                    onOpenDestination: widget.onOpenDestination,
+                  ),
+                ));
+              },
             ),
           ],
         ),

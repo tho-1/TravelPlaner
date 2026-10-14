@@ -25,7 +25,22 @@ import 'filter_sheet.dart';
 class CataloguePage extends StatefulWidget {
   final DestinationRepository repository;
 
-  const CataloguePage({super.key, required this.repository});
+  /// Called when a destination is opened, so the shell
+  /// can record the open-destination tab. Null when the
+  /// feature is off -- the open then pushes without
+  /// recording, exactly the pre-tabs behavior.
+  final void Function(String name)? onOpenDestination;
+
+  /// Opens the settings page. Null hides the gear (the
+  /// widget tests pump the catalogue standalone).
+  final void Function()? onOpenSettings;
+
+  const CataloguePage({
+    super.key,
+    required this.repository,
+    this.onOpenDestination,
+    this.onOpenSettings,
+  });
 
   @override
   State<CataloguePage> createState() => _CataloguePageState();
@@ -209,14 +224,20 @@ class _CataloguePageState extends State<CataloguePage> {
     }
   }
 
-  /// Open one destination's detail page.
+  /// Open one destination's detail page. The shell's
+  /// callback (when set) records the open tab before the
+  /// push; the named route lets the shell mark the tab
+  /// active and pop it on close.
   void _openDestination(Destination dest) {
+    widget.onOpenDestination?.call(dest.name);
     Navigator.of(context).push(
       MaterialPageRoute(
+        settings: RouteSettings(name: 'destination/${dest.name}'),
         builder: (_) => DestinationPage(
           repository: widget.repository,
           destination: dest,
           onChanged: _reload,
+          onOpenDestination: widget.onOpenDestination,
         ),
       ),
     );
@@ -437,6 +458,12 @@ class _CataloguePageState extends State<CataloguePage> {
             onPressed: _addDestination,
           ),
           IconButton(icon: const Icon(Icons.refresh), onPressed: _reload),
+          if (widget.onOpenSettings != null)
+            IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: 'Settings',
+              onPressed: widget.onOpenSettings,
+            ),
         ],
       ),
       body: Column(

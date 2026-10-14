@@ -282,6 +282,11 @@ class WorldMapView extends StatefulWidget {
   /// labels on the level.
   final void Function(int zoom)? onZoomChanged;
 
+  /// Records the open-destination tab when a city marker
+  /// opens a page (null: no recording -- the mini-map
+  /// passes nothing).
+  final void Function(String name)? onOpenDestination;
+
   const WorldMapView({
     super.key,
     required this.latitude,
@@ -298,6 +303,7 @@ class WorldMapView extends StatefulWidget {
     this.controller,
     this.onZoomChanged,
     this.overlayBuilder,
+    this.onOpenDestination,
   });
 
   @override
@@ -812,7 +818,10 @@ class _WorldMapViewState extends State<WorldMapView> {
         child: GestureDetector(
           onTap: (city.destination != null && city.repository != null)
               ? () {
+                  widget.onOpenDestination?.call(city.destination!.name);
                   Navigator.of(context).push(MaterialPageRoute(
+                    settings: RouteSettings(
+                        name: 'destination/${city.destination!.name}'),
                     builder: (_) => DestinationPage(
                       repository: city.repository!,
                       destination: city.destination!,
@@ -1012,7 +1021,16 @@ class _ChoroplethPainter extends CustomPainter {
 class WorldMapPage extends StatefulWidget {
   final DestinationRepository repository;
 
-  const WorldMapPage({super.key, required this.repository});
+  /// Called when a city marker or result opens a
+  /// destination page, so the shell records the
+  /// open-destination tab. Null when the feature is off.
+  final void Function(String name)? onOpenDestination;
+
+  const WorldMapPage({
+    super.key,
+    required this.repository,
+    this.onOpenDestination,
+  });
 
   @override
   State<WorldMapPage> createState() => _WorldMapPageState();
@@ -1174,6 +1192,7 @@ class _WorldMapPageState extends State<WorldMapPage> {
             zoom: _zoom,
             onZoomChanged: (zoom) => setState(() => _zoom = zoom),
             onDataChanged: _reload,
+            onOpenDestination: widget.onOpenDestination,
           );
         },
       ),
@@ -1217,6 +1236,10 @@ class _MapBody extends StatelessWidget {
   /// pre-edit state until a manual refresh.
   final VoidCallback onDataChanged;
 
+  /// Records the open-destination tab (null when the
+  /// feature is off); the drill-down rows pass it on.
+  final void Function(String name)? onOpenDestination;
+
   const _MapBody({
     required this.destinations,
     required this.index,
@@ -1233,6 +1256,7 @@ class _MapBody extends StatelessWidget {
     required this.zoom,
     required this.onZoomChanged,
     required this.onDataChanged,
+    this.onOpenDestination,
   });
 
   @override
@@ -1408,6 +1432,7 @@ class _MapBody extends StatelessWidget {
                   showCityLabels: showCityLabels && zoom >= 4,
                   controller: mapController,
                   onZoomChanged: onZoomChanged,
+                  onOpenDestination: onOpenDestination,
                   highlightCountry: selectedCountry,
                   onCountryTap: (tapped) {
                     // The shapes carry the dataset's long names
@@ -1560,6 +1585,7 @@ class _MapBody extends StatelessWidget {
                     month: month,
                     repository: repository,
                     onChanged: onDataChanged,
+                    onOpenDestination: onOpenDestination,
                   ),
             ],
           ],
@@ -1765,6 +1791,10 @@ class _CountryCityRow extends StatelessWidget {
   /// so the map reflects it without a manual refresh.
   final VoidCallback onChanged;
 
+  /// Records the open-destination tab (null when the
+  /// feature is off).
+  final void Function(String name)? onOpenDestination;
+
   /// The **selected** month's name. The caption must name
   /// the month the reader picked, not today's — selecting
   /// July in October used to read "Ideal in Oct" because the
@@ -1777,6 +1807,7 @@ class _CountryCityRow extends StatelessWidget {
     required this.month,
     required this.repository,
     required this.onChanged,
+    this.onOpenDestination,
   });
 
   @override
@@ -1805,7 +1836,9 @@ class _CountryCityRow extends StatelessWidget {
         ].join(' · ')),
         trailing: const Icon(Icons.chevron_right),
         onTap: () {
+          onOpenDestination?.call(destination.name);
           Navigator.of(context).push(MaterialPageRoute(
+            settings: RouteSettings(name: 'destination/${destination.name}'),
             builder: (_) => DestinationPage(
               repository: repository,
               destination: destination,

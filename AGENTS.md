@@ -132,7 +132,8 @@ database is a flake waiting to happen. The app's unconfigured state (no
 mobile/                        the app (Flutter, desktop + Android)
   lib/ui/                      one file per screen + shared widgets
     main.dart                  shell: 4 tabs (Catalogue/Trips/Finder/Map),
-                               rail on desktop, bottom bar on phone
+                               rail on desktop, bottom bar on phone,
+                               the open-tabs panel/strip + their wiring
     catalogue_page.dart        search, filters, country groups, cards
     destination_page.dart      one destination: header, facts, sections,
                                climate/AQI charts, gallery, transport
@@ -144,7 +145,11 @@ mobile/                        the app (Flutter, desktop + Android)
     world_map_page.dart        the month choropleth (tiles, borders,
                                hover, zoom/pan, fly-to)
     nav_icons.dart             the hand-drawn colour tab icons
-  lib/data/                    repositories (Turso pipeline, caches)
+    open_tabs.dart             the open-destination panel (desktop) /
+                               chip strip (phone); settings_page.dart
+                               holds the on/off switch
+  lib/data/                    repositories (Turso pipeline, caches,
+                               open tabs, app settings)
   lib/models/                  pure models (destination, trip, weekend
                                match, timetable, geo, filters)
   assets/                      turso_config.json (git-ignored), generated
@@ -174,10 +179,10 @@ must not be touched** — it carries the sync journals.
 
 | # | Item | State |
 |---|---|---|
-| 1 | **"Open destinations" tabs in the Flutter app** | Not ported from the legacy sidebar yet. Plan agreed: back it with the existing Turso `open_tabs` table (full-replace writes, like `storage_turso.load/save_open_tabs`), a closeable tab list in the desktop rail / phone drawer. Awaiting the go-ahead. |
+| 1 | **"Open destinations" tabs in the Flutter app** | **Done (2026-10-14, PLAN §0r).** Turso-backed (`open_tabs`, full-replace writes, the `storage_turso` contract), a side panel on the desktop / chip strip on the phone, and an on/off switch under ⚙ Settings in the catalogue's app bar (per-device `app_settings.json` via the config's `state_dir`). |
 | 2 | **7 rainy-day rows use the old definition** | They hold trace-precipitation values instead of the ≥ 1 mm definition (Thessaloniki, Ubud, Ulaanbaatar, Valencia, Valparaiso, Vientiane, Vung Tau). Deliberately not regenerated (costs API calls). The tool is archived: restore via the tag, run `python write_climate_data.py --list-legacy-rainy-days`, write the workbook rows, push to Turso. |
 | 3 | **Trips → Map: the "Focus country" dropdown** | Still spans the full width and dominates the control rows. Minor polish. |
-| 4 | **Local commits not pushed** | `088f304` (docs) and `6dd4714` (the UX pass) are on local `main` — push when ready. |
+| 4 | **Local commits not pushed** | Resolved 2026-10-14: everything through `085ec08` is on `origin/main`. |
 
 Retired with the Streamlit Cloud app (2026-10-13): the "cloud persistence
 check" and the "open_destinations.json lost on redeploy" items — there is no

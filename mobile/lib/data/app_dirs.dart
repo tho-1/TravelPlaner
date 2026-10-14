@@ -37,3 +37,10 @@ Future<String> perDeviceCacheDir(String configured) async {
     return '';
   }
 }
+
+/// The documents directory resolved at startup, or ''
+/// where none exists (a test that skipped [initAppDirs]
+/// on the test binding). Callers that need a *writable
+/// per-device home* and have no configured path use
+/// this, with '' meaning "no home" to the caller.
+String documentsDir() => _documentsDir ?? '';

@@ -1528,6 +1528,70 @@ re-verified by screenshot.
 
 ---
 
+## 0r. Session 2026-10-14 — open-destination tabs, with a settings switch
+
+**AGENTS.md open item #1 is closed.** The
+legacy sidebar's open-destination tabs are
+ported: destinations you open collect into a
+closeable list — a slim side panel between the
+rail and the content on the desktop (the
+Streamlit sidebar's "Open destinations" block,
+same ⭐/📍 + ✖ rows), a chip strip above the
+pages on the phone. Tapping a tab reopens the
+destination; ✖ removes it, and when the closed
+tab's page is on top it pops (the legacy
+switched away on closing the active tab).
+
+**Storage is the legacy contract, ported.**
+`open_tabs(destination TEXT PRIMARY KEY,
+updated_at TEXT)` — the table the archived
+`storage_turso.py` wrote. `loadTabs` is the
+same ordered SELECT; `saveTabs` is the same
+full-replace (DELETE + escaped INSERT OR
+IGNORE, one pipeline). The first read against
+a database without the table creates it
+(`CREATE TABLE IF NOT EXISTS`) and retries
+once. The invariants hold: a failed read is an
+empty list *with* problems (the panel shows a
+cloud-off warning with the problems in its
+tooltip, never a silent "no tabs"); a failed
+write returns false and surfaces as a
+snackbar.
+
+**The switch is a real setting, per device.**
+`AppSettings` writes `app_settings.json`
+(atomically, tmp + rename) into the new
+`state_dir` config key — the repo root on the
+PC, next to `trips.json`; the phone falls back
+to its documents directory. Off means the
+pages receive no recording callback and the
+panel disappears; the persisted Turso list is
+untouched, so switching back on restores it.
+Default: on.
+
+**Wiring.** Every destination-page push site
+(catalogue card, map city marker, map
+drill-down row, finder result, destination
+related links) records the tab through an
+injected `onOpenDestination` callback — null
+while off — and pushes a named route
+(`destination/<name>`), which a navigator
+observer turns into the "active tab" marker;
+the panel highlights it. Settings lives on the
+catalogue's app bar (⚙), the one surface both
+form factors always show; the page is thin, the
+shell owns values and persistence.
+
+**Tests.** 15 new: the repository contract
+(ordered read, create-and-retry, escape,
+full-replace statement order, failed
+read/write), the settings file (round trip,
+corrupt-is-default, failed write), and the two
+tab widgets plus the settings page. 410 pass,
+`flutter analyze` clean, exe rebuilt.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

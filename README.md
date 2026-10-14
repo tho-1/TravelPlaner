@@ -63,6 +63,15 @@ the rail pill, not a drained icon):
   the month's stats and the legend overlaid on the map, tap a country to
   list its cities.
 
+**Open-destination tabs** (⚙ Settings in the catalogue's app bar turns
+them off and on): destinations you open collect into a closeable list —
+a side panel beside the rail on the desktop, a chip strip above the
+pages on the phone. The list lives in Turso (`open_tabs`, full-replace
+writes — the legacy sidebar's exact contract) and survives a restart;
+the switch itself is per-device state in `app_settings.json`, stored in
+the `state_dir` the config names (the repo root on the PC; the phone
+uses its documents directory).
+
 A destination's detail page opens with compact **coloured stat tiles**
 (safety / cost per day / FRA flight / population — one row, icon beside
 the numbers) and an **Add comment** button; the comment editor only
@@ -144,9 +153,11 @@ runnable from the `legacy-streamlit` tag — see `archive/README.md`.
 mobile/
   lib/ui/                one file per screen: shell, catalogue, detail,
                          trips (+ plan/map/compare tabs), weekend finder,
-                         world map, nav icons, theme, charts
+                         world map, open tabs, settings, nav icons,
+                         theme, charts
   lib/data/              repositories: destinations, trips, benefits,
-                         weekend, geocode, flight routes, catalogue match
+                         weekend, geocode, flight routes, catalogue match,
+                         open tabs, app settings
   lib/models/            pure models: destination, trip + ops, weekend
                          match, timetable, geo, catalogue filters, condition
   lib/turso/             the SQL-over-HTTP pipeline client + config
