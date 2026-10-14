@@ -7,6 +7,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../data/app_dirs.dart';
 import '../data/app_settings.dart';
@@ -236,9 +237,13 @@ class _HomeShellState extends State<HomeShell> {
     geocoder = GeocodeRepository(widget.config.geocodeCache);
     openTabs = OpenTabsRepository(client);
     // The configured state dir wins (the desktop's repo
-    // root); the phone falls back to its documents dir.
-    _settingsDir = widget.config.stateDir.trim().isNotEmpty
-        ? widget.config.stateDir
+    // root) — but only when it is absolute on *this*
+    // platform: the bundled config carries the PC path,
+    // which is unwritable on the phone. There the app's
+    // documents dir holds the settings file.
+    final configuredState = widget.config.stateDir.trim();
+    _settingsDir = configuredState.isNotEmpty && p.isAbsolute(configuredState)
+        ? configuredState
         : documentsDir();
     _tabsEnabled = AppSettings.load(_settingsDir).openTabsEnabled;
     _loadTabs();
