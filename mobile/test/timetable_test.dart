@@ -10,7 +10,6 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:travel_planner/models/timetable.dart';
-import 'package:travel_planner/models/weekend_match.dart';
 
 void main() {
   group('wallClock', () {
@@ -157,42 +156,6 @@ void main() {
     });
   });
 
-  group('fetchWindow', () {
-    final weekend = Weekend(DateTime(2026, 10, 16));
-    const windows = Windows();
-
-    test('the departures windows come from the outbound bounds', () {
-      final (since, until) =
-          fetchWindow(weekend, windows, weekend.friday, 'departures');
-      expect(since, DateTime(2026, 10, 16, 14, 0));
-      expect(until, DateTime(2026, 10, 17, 0, 0));
-      final (satSince, satUntil) =
-          fetchWindow(weekend, windows, weekend.saturday, 'departures');
-      expect(satSince, DateTime(2026, 10, 17, 0, 0));
-      expect(satUntil, DateTime(2026, 10, 17, 12, 0));
-    });
-
-    test('the arrival windows come from the return bounds', () {
-      final (satSince, satUntil) =
-          fetchWindow(weekend, windows, weekend.saturday, 'arrivals');
-      expect(satSince, DateTime(2026, 10, 17, 12, 0));
-      expect(satUntil, DateTime(2026, 10, 18, 0, 0));
-      final (sunSince, sunUntil) =
-          fetchWindow(weekend, windows, weekend.sunday, 'arrivals');
-      expect(sunSince, DateTime(2026, 10, 18, 0, 0));
-      expect(sunUntil, DateTime(2026, 10, 19, 0, 0));
-      final (monSince, monUntil) =
-          fetchWindow(weekend, windows, weekend.monday, 'arrivals');
-      expect(monSince, DateTime(2026, 10, 19, 0, 0));
-      expect(monUntil, DateTime(2026, 10, 19, 9, 0));
-    });
-
-    test('a day the weekend does not cover has no window', () {
-      expect(fetchWindow(weekend, windows, DateTime(2026, 10, 20), 'departures').$1,
-          isNull);
-    });
-  });
-
   group('fetch', () {
     /// A board handler: `pages` is keyed by the `page` query
     /// parameter, each entry the records of that page.
@@ -323,175 +286,128 @@ void main() {
     });
   });
 
-  group('parseCsvFlights', () {
-    final day = DateTime(2026, 10, 16);
+  group('AeroApiBoardProvider (the fallback, report j)', () {
+    AeroApiBoardProvider provider(http.Client client) => AeroApiBoardProvider(
+        apiKey: 'key', httpClient: client, throttleSeconds: 0);
 
-    test('the canonical header parses rows', () {
-      final (flights, problems) = parseCsvFlights('''
-flight_no,airline,origin,destination,departure,arrival
-LH1000,Lufthansa,FRA,BCN,09.10.2026 15:05,09.10.2026 17:05
-''', day);
-      expect(problems, isEmpty);
-      expect(flights.single.flightNo, 'LH1000');
-      expect(flights.single.airline, 'Lufthansa');
-      expect(flights.single.origin, 'FRA');
-      expect(flights.single.destination, 'BCN');
-      expect(flights.single.departure, DateTime(2026, 10, 9, 15, 5));
-      expect(flights.single.arrival, DateTime(2026, 10, 9, 17, 5));
+    final aeroRecord = <String, Object?>{
+      'ident': 'DLH400',
+      'operator': 'DLH',
+      'flight_number': '400',
+      'cancelled': false,
+      'diverted': false,
+      'origin': {
+        'code_iata': 'FRA',
+        'name': 'Frankfurt Airport',
+        'terminal': '1',
+      },
+      'destination': {
+        'code_iata': 'JFK',
+        'name': 'John F Kennedy Intl',
+        'terminal': '1',
+      },
+      'scheduled_out': '2026-10-16T12:00:00Z',
+      'scheduled_on': '2026-10-16T23:30:00Z',
+    };
+
+    test('a record maps to a wall-clock Flight with the IATA operator', () {
+      final flight = AeroApiBoardProvider.flightFromAeroApi(
+        aeroRecord,
+        'departures',
+        DateTime(2026, 10, 16, 14),
+        DateTime(2026, 10, 17),
+      );
+      expect(flight, isNotNull);
+      expect(flight!.flightNo, 'DLH400');
+      // The ICAO operator maps to the IATA code the rest of
+      // the app is keyed by.
+      expect(flight.airline, 'LH');
+      expect(flight.origin, 'FRA');
+      expect(flight.destination, 'JFK');
+      // 12:00Z is 14:00 in Berlin (summer time).
+      expect(flight.departure, DateTime(2026, 10, 16, 14));
+      expect(flight.airportName, 'John F Kennedy Intl');
+      expect(flight.terminal, '1');
     });
 
-    test('alias headers work (Flight, Airline, From, To, Dep, Arr)', () {
-      final (flights, problems) = parseCsvFlights('''
-Flight,Airline,From,To,Dep,Arr
-LH1000,Lufthansa,FRA,BCN,15:05,17:05
-''', day);
-      expect(problems, isEmpty);
-      expect(flights.single.flightNo, 'LH1000');
-      // A bare time takes the query's day.
-      expect(flights.single.departure, DateTime(2026, 10, 16, 15, 5));
-      expect(flights.single.arrival, DateTime(2026, 10, 16, 17, 5));
+    test('a record outside the window is dropped, as is a cancelled one', () {
+      expect(
+        AeroApiBoardProvider.flightFromAeroApi(
+          aeroRecord,
+          'departures',
+          DateTime(2026, 10, 17, 14),
+          DateTime(2026, 10, 18),
+        ),
+        isNull,
+      );
+      expect(
+        AeroApiBoardProvider.flightFromAeroApi(
+          {...aeroRecord, 'cancelled': true},
+          'departures',
+          DateTime(2026, 10, 16, 14),
+          DateTime(2026, 10, 17),
+        ),
+        isNull,
+      );
     });
 
-    test('an ISO date in the time field', () {
-      final (flights, problems) = parseCsvFlights('''
-flight_no,airline,origin,destination,departure,arrival
-LH1000,Lufthansa,FRA,BCN,2026-10-09 15:05,2026-10-09 17:05
-''', day);
-      expect(problems, isEmpty);
-      expect(flights.single.departure, DateTime(2026, 10, 9, 15, 5));
+    test('the request carries the key and the UTC window', () async {
+      Uri? seen;
+      String? key;
+      final client = MockClient((request) async {
+        seen ??= request.url;
+        key = request.headers['x-apikey'];
+        return http.Response(
+          jsonEncode({'flights': [aeroRecord]}),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      });
+      final result = await provider(client).fetch(
+        DateTime(2026, 10, 16),
+        'departures',
+        since: DateTime(2026, 10, 16, 14),
+        until: DateTime(2026, 10, 17),
+      );
+      expect(key, 'key');
+      expect(seen!.host, 'aeroapi.flightaware.com');
+      expect(seen!.path, '/aeroapi/airports/EDDF/flights');
+      expect(seen!.queryParameters['flight_type'], 'departures');
+      // The window goes out as UTC: 14:00 Berlin is 12:00Z,
+      // and midnight Berlin (Oct 17) is 22:00Z the day before.
+      expect(seen!.queryParameters['start'], '2026-10-16T12:00:00Z');
+      expect(seen!.queryParameters['end'], '2026-10-16T22:00:00Z');
+      expect(result.flights, hasLength(1));
+      expect(result.source, 'flightaware');
     });
 
-    test('a trailing +1 means the next day', () {
-      final (flights, problems) = parseCsvFlights('''
-flight_no,airline,origin,destination,departure,arrival
-LH1000,Lufthansa,FRA,BCN,15:05+1,17:05+1
-''', day);
-      expect(problems, isEmpty);
-      expect(flights.single.departure, DateTime(2026, 10, 17, 15, 5));
-      expect(flights.single.arrival, DateTime(2026, 10, 17, 17, 5));
+    test('a shape change and a rejected key fail loudly', () async {
+      final changed = MockClient((request) async => http.Response(
+            jsonEncode({'oops': const []}),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          ));
+      await expectLater(
+        provider(changed).fetch(DateTime(2026, 10, 16), 'departures'),
+        throwsA(isA<ProviderUnavailable>()
+            .having((e) => e.message, 'message', contains('flight list'))),
+      );
+      final denied = MockClient((request) async => http.Response('no', 401));
+      await expectLater(
+        provider(denied).fetch(DateTime(2026, 10, 16), 'departures'),
+        throwsA(isA<ProviderUnavailable>()
+            .having((e) => e.message, 'message', contains('key'))),
+      );
     });
 
-    test('an arrival before the departure is pushed a day', () {
-      // An overnight leg: the arrival is the next morning.
-      final (flights, problems) = parseCsvFlights('''
-flight_no,airline,origin,destination,departure,arrival
-LH1000,Lufthansa,FRA,BCN,23:30,00:10
-''', day);
-      expect(problems, isEmpty);
-      expect(flights.single.departure, DateTime(2026, 10, 16, 23, 30));
-      expect(flights.single.arrival, DateTime(2026, 10, 17, 0, 10));
-    });
-
-    test('operated_by is the operator, the airline cell the marketing carrier',
-        () {
-      final (flights, problems) = parseCsvFlights('''
-flight_no,airline,origin,destination,departure,arrival,operated_by
-LH1000,United,FRA,BCN,15:05,17:05,Lufthansa
-''', day);
-      expect(problems, isEmpty);
-      // Benefits follow the operator.
-      expect(flights.single.operatorAirline, 'Lufthansa');
-      expect(flights.single.marketingAirline, 'United');
-    });
-
-    test('a missing arrival falls back to the departure', () {
-      final (flights, problems) = parseCsvFlights('''
-flight_no,airline,origin,destination,departure,arrival
-LH1000,Lufthansa,FRA,BCN,15:05,
-''', day);
-      expect(problems, isEmpty);
-      expect(flights.single.arrival, DateTime(2026, 10, 16, 15, 5));
-    });
-
-    test('a row without origin or destination is a problem line', () {
-      final (flights, problems) = parseCsvFlights('''
-flight_no,airline,origin,destination,departure,arrival
-LH1000,Lufthansa,,BCN,15:05,17:05
-''', day);
-      expect(flights, isEmpty);
-      expect(problems.single, contains('line 2'));
-      expect(problems.single, contains('origin or destination missing'));
-    });
-
-    test('an unreadable time is a problem line', () {
-      final (flights, problems) = parseCsvFlights('''
-flight_no,airline,origin,destination,departure,arrival
-LH1000,Lufthansa,FRA,BCN,noon,17:05
-''', day);
-      expect(flights, isEmpty);
-      expect(problems.single, contains('line 2'));
-      expect(problems.single, contains('unreadable time'));
-    });
-
-    test('missing required columns are reported', () {
-      final (flights, problems) = parseCsvFlights('''
-flight_no,airline,origin,destination,departure
-LH1000,Lufthansa,FRA,BCN,15:05
-''', day);
-      expect(flights, isEmpty);
-      expect(problems.single,
-          contains('Missing required column(s): arrival'));
-    });
-
-    test('an empty text has no header row', () {
-      final (flights, problems) = parseCsvFlights('', day);
-      expect(flights, isEmpty);
-      expect(problems.single, 'The file has no header row.');
-    });
-
-    test('a quoted field may contain a comma', () {
-      final (flights, problems) = parseCsvFlights('''
-flight_no,airline,origin,destination,departure,arrival
-LH1000,"Lufthansa, CityLine",FRA,BCN,15:05,17:05
-''', day);
-      expect(problems, isEmpty);
-      expect(flights.single.airline, 'Lufthansa, CityLine');
-    });
-
-    test('one bad row does not discard the good ones', () {
-      final (flights, problems) = parseCsvFlights('''
-flight_no,airline,origin,destination,departure,arrival
-LH1000,Lufthansa,FRA,BCN,15:05,17:05
-LH1001,Lufthansa,FRA,BCN,not-a-time,17:05
-LH1002,Lufthansa,FRA,BCN,16:05,18:05
-''', day);
-      expect(flights.map((flight) => flight.flightNo),
-          ['LH1000', 'LH1002']);
-      expect(problems.single, contains('line 3'));
-    });
-  });
-
-  group('CsvBoardProvider', () {
-    test('an empty side warns that no CSV is loaded', () async {
-      final result =
-          await const CsvBoardProvider().fetch(DateTime(2026, 10, 16), 'departures');
-      expect(result.flights, isEmpty);
-      expect(result.warning, 'No CSV data loaded.');
-      expect(result.source, 'csv');
-    });
-
-    test('skipped rows are counted in the warning', () async {
-      final provider = CsvBoardProvider(departuresCsv: '''
-flight_no,airline,origin,destination,departure,arrival
-LH1000,Lufthansa,FRA,BCN,bad,17:05
-''');
-      final result =
-          await provider.fetch(DateTime(2026, 10, 16), 'departures');
-      expect(result.flights, isEmpty);
-      expect(result.warning, contains('1 row(s) skipped'));
-      expect(result.warning, contains('line 2'));
-    });
-
-    test('the arrivals side is read for arrivals queries', () async {
-      final provider = CsvBoardProvider(arrivalsCsv: '''
-flight_no,airline,origin,destination,departure,arrival
-LH2000,Lufthansa,BCN,FRA,17:05,19:05
-''');
-      final result =
-          await provider.fetch(DateTime(2026, 10, 17), 'arrivals');
-      expect(result.flights.single.flightNo, 'LH2000');
-      expect(result.flights.single.origin, 'BCN');
-      expect(result.flights.single.destination, 'FRA');
+    test('the ICAO table covers the Lufthansa Group and the '
+        'benefit carriers', () {
+      expect(icaoToIata['DLH'], 'LH');
+      expect(icaoToIata['SWR'], 'LX');
+      expect(icaoToIata['CPA'], 'CX');
+      // Unknown operators are kept unmapped -- and then
+      // simply never count as a benefit.
+      expect(icaoToIata.containsKey('XYZ'), isFalse);
     });
   });
 }

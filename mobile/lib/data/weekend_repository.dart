@@ -14,9 +14,11 @@ import 'package:flutter/services.dart' show rootBundle;
 
 import '../models/airline_benefits.dart';
 import '../models/timetable.dart';
+import '../models/travel_days.dart';
 import '../models/weekend_match.dart';
 import 'benefits_repository.dart';
 import 'catalogue_match.dart';
+import 'error_log.dart';
 
 /// IATA code -> "City|Country" records from the generated
 /// `assets/airports.json` (built from the Python
@@ -27,8 +29,31 @@ class AirportLookup {
   static final Map<String, (String, String)> _table = {};
   static var _loaded = false;
 
+  /// Railway stations on Fraport's board: Lufthansa AIRail
+  /// trains carry LH flight numbers into main-station codes,
+  /// which are *DB station codes, not IATA* -- the airport
+  /// table cannot know them. Without this table they render
+  /// under their code ("?QKL", report f, 2026-10-16). The
+  /// nine the legacy `airport_city.RAIL_STATIONS` knew plus
+  /// QKL/ZWS, which the board serves since. Names are ASCII,
+  /// matching the rest of the tables.
+  static const railStations = <String, (String, String)>{
+    'DHC': ('Bremen', 'DE'),
+    'DTZ': ('Dortmund', 'DE'),
+    'QDU': ('Dusseldorf', 'DE'),
+    'QKL': ('Cologne', 'DE'),
+    'XHJ': ('Aachen', 'DE'),
+    'XIR': ('Dresden', 'DE'),
+    'ZBA': ('Basel', 'CH'),
+    'ZEU': ('Goettingen', 'DE'),
+    'ZMB': ('Hamburg', 'DE'),
+    'ZMU': ('Munich', 'DE'),
+    'ZWS': ('Stuttgart', 'DE'),
+  };
+
   static Future<void> ensureLoaded() async {
     if (_loaded) return;
+    _table.addAll(railStations);
     try {
       final text = await rootBundle.loadString('assets/airports.json');
       final decoded = jsonDecode(text) as Map<String, dynamic>;
@@ -66,6 +91,7 @@ class AirportLookup {
   static void installForTesting(Map<String, (String, String)> table) {
     _table
       ..clear()
+      ..addAll(railStations)
       ..addAll(table);
     _loaded = true;
   }
@@ -78,30 +104,37 @@ typedef WeekendSearch = ({
   BenefitSource benefits,
 });
 
-/// The flight filters the finder card exposes: whether the
-/// match honours the benefit-airline flags, and the longest
+/// The flight filters the finder card exposes: which
+/// airlines count (the dropdown, report d) and the longest
 /// leg the user is willing to sit through. `null` disables
-/// the cap.
+/// the cap. `minNights` is the stay-length floor — a
+/// *visible* finder control (report e, clarified 2026-10-16:
+/// default "at least 1 night", the user may change it).
 class WeekendSearchOptions {
-  final bool benefitsOnly;
+  final AirlineScope airlineScope;
   final Duration? maxLegDuration;
+  final int minNights;
 
   const WeekendSearchOptions({
-    this.benefitsOnly = true,
+    this.airlineScope = AirlineScope.lufthansaGroup,
     this.maxLegDuration,
+    this.minNights = 1,
   });
 }
 
 class WeekendRepository {
   final FlightBoardProvider provider;
 
-  WeekendRepository(this.provider);
+  /// The optional second source (report j): asked only
+  /// about windows that failed or look incomplete, never
+  /// about healthy ones.
+  final FlightBoardProvider? fallback;
 
-  /// Run the five board queries for one weekend and match
-  /// them.
+  WeekendRepository(this.provider, {this.fallback});
+
+  /// Run one board query per selected day and match them.
   Future<WeekendSearch> search(
-    Weekend weekend,
-    Windows windows,
+    TravelPlan plan,
     BenefitSource benefits, {
     WeekendSearchOptions options = const WeekendSearchOptions(),
   }) async {
@@ -111,37 +144,80 @@ class WeekendRepository {
     final returns = <Flight>[];
     final notes = <String>[];
 
-    // One board query per enabled out/back day — the
-    // holiday-bridge days (Thursday out, Tuesday back)
-    // query only when their picker switched them on.
-    final queries = <(DateTime, String, List<Flight>)>[
-      if (windows.thursdayFrom != null)
-        (weekend.thursday, 'departures', outbound),
-      if (windows.fridayFrom != null)
-        (weekend.friday, 'departures', outbound),
-      if (windows.saturdayBefore != null)
-        (weekend.saturday, 'departures', outbound),
-      if (windows.saturdayReturnAfter != null)
-        (weekend.saturday, 'arrivals', returns),
-      if (windows.sundayEnabled) (weekend.sunday, 'arrivals', returns),
-      if (windows.mondayReturnBefore != null)
-        (weekend.monday, 'arrivals', returns),
-      if (windows.tuesdayReturnBefore != null)
-        (weekend.tuesday, 'arrivals', returns),
+    // One board query per selected out/back day.
+    final queries = <(TravelDay, String, List<Flight>)>[
+      for (final day in plan.outDays) (day, 'departures', outbound),
+      for (final day in plan.backDays) (day, 'arrivals', returns),
     ];
-    for (final (day, kind, sink) in queries) {
-      final (since, until) = fetchWindow(weekend, windows, day, kind);
-      if (since == null || until == null) continue;
+    final windowsByKey = <String, (TravelDay, String, List<Flight>)>{
+      for (final query in queries) '${_isoDate(query.$1.day)} ${query.$2}': query,
+    };
+    final windowCounts = <String, int>{};
+    final failedWindows = <String>[];
+    for (final (rule, kind, sink) in queries) {
+      final (since, until) = rule.fetchWindow();
+      final windowLabel = '${_isoDate(rule.day)} $kind';
       try {
-        final result = await provider.fetch(day, kind, since: since, until: until);
+        final result = await provider.fetch(rule.day, kind,
+            since: since, until: until);
         if (result.warning.isNotEmpty) {
-          notes.add('${_isoDate(day)} $kind: ${result.warning}');
+          notes.add('$windowLabel: ${result.warning}');
         }
         sink.addAll(result.flights);
+        windowCounts[windowLabel] = result.flights.length;
       } on ProviderUnavailable catch (error) {
-        notes.add(error.message);
-        break;
+        // One dead window must not end the search (the old
+        // `break` lost every later day because one query
+        // failed): the other days still answer, and the
+        // failure is a visible note *and* a log line, never
+        // silence.
+        notes.add('$windowLabel: ${error.message}');
+        ErrorLog.instance.record('weekend-finder', error.message,
+            details: {'window': windowLabel});
+        failedWindows.add(windowLabel);
+      } catch (error) {
+        notes.add('$windowLabel: the query failed ($error)');
+        ErrorLog.instance
+            .record('weekend-finder', '$error', details: {'window': windowLabel});
+        failedWindows.add(windowLabel);
       }
+    }
+
+    // An empty or implausible window is never silently "no
+    // flights": the Fraport feed carried exactly one arrival
+    // on 2026-10-25 where sibling windows carried hundreds
+    // (report f, 2026-10-16). Compare the windows against
+    // each other and say what looks wrong.
+    final busiest =
+        windowCounts.values.fold<int>(0, (a, b) => a > b ? a : b);
+    final suspicious = <String>{...failedWindows};
+    for (final entry in windowCounts.entries) {
+      final warning = _windowWarning(entry.key, entry.value, busiest);
+      if (warning == null) continue;
+      suspicious.add(entry.key);
+      notes.add(warning);
+      ErrorLog.instance.record('weekend-finder', warning, details: {
+        'window': entry.key,
+        'flights': entry.value,
+        'busiest': busiest,
+      });
+    }
+
+    // The fallback pass (report j): every suspicious window
+    // is asked again from the second source, and what it
+    // returns is merged in -- deduplicated by flight number
+    // and departure, so two sources never double-count.
+    for (final label in suspicious) {
+      final query = windowsByKey[label];
+      if (query == null) continue;
+      await _fillFromFallback(
+        rule: query.$1,
+        kind: query.$2,
+        sink: query.$3,
+        primaryCount: windowCounts[label] ?? 0,
+        windowLabel: label,
+        notes: notes,
+      );
     }
 
     // The leg-duration cap: how many flights each list lost
@@ -161,15 +237,116 @@ class WeekendRepository {
     final report = findWeekends(
       outbound: outbound,
       returns: returns,
-      weekend: weekend,
-      windows: windows,
-      benefitCheck: options.benefitsOnly
-          ? (airline) => hasBenefits(airline, benefits.flags)
-          : (_) => true,
+      plan: plan,
+      airlineCheck: (code, name) => airlineInScope(
+          code, name, options.airlineScope, benefits.flags),
       cityLookup: AirportLookup.cityForAirport,
       countryNameFor: CountryNames.nameFor,
+      minNights: options.minNights,
     );
+    if (report.shortStaysDropped > 0) {
+      // Report e: a filter that can empty a list says what
+      // it dropped and why. The floor is the user's choice
+      // ("Min. nights"), so the note names it.
+      notes.add('${report.shortStaysDropped} option(s) in '
+          '${report.shortStayCities} cit(y/ies) dropped for staying '
+          'fewer than ${options.minNights} '
+          'night(s).');
+    }
+
+    // Unknown airport/station codes become log lines with
+    // the board's own name for them, so the city table can
+    // be grown from the log instead of from screenshots.
+    for (final city in [...report.cities, ...report.oneWayOnly]) {
+      for (final code in city.unmappedAirports) {
+        ErrorLog.instance.record(
+            'weekend-finder',
+            'airport code $code is not on the city table',
+            details: {
+              'shown as': city.city,
+              'airports': city.airports.toList()..sort(),
+            });
+      }
+    }
     return (report: withNotes(report, notes), benefits: benefits);
+  }
+
+  /// The "this data looks wrong" note for one window, or
+  /// null when it looks healthy. A window that answered
+  /// nothing at all, or that answered a fraction of what
+  /// sibling windows answered, is a board-side gap -- the
+  /// reader must not mistake it for "nowhere to fly".
+  static String? _windowWarning(String window, int flights, int busiest) {
+    if (flights == 0) {
+      return '$window: the board returned no flights at all — nothing '
+          'is scheduled or the board has no data for this window yet; '
+          'the results below may be incomplete.';
+    }
+    if (busiest >= 30 && flights < busiest * 0.02) {
+      return '$window: only $flights flight(s) where other windows '
+          'returned up to $busiest — the board\'s data for this window '
+          'looks incomplete; the results below may be incomplete.';
+    }
+    return null;
+  }
+
+  /// Ask the fallback about one suspicious window and merge
+  /// what it returns (report j). The primary's flights stay
+  /// authoritative -- the fallback only adds what is
+  /// missing, keyed by flight number and departure.
+  Future<void> _fillFromFallback({
+    required TravelDay rule,
+    required String kind,
+    required List<Flight> sink,
+    required int primaryCount,
+    required String windowLabel,
+    required List<String> notes,
+  }) async {
+    final source = fallback;
+    if (source == null) return;
+    final (since, until) = rule.fetchWindow();
+    try {
+      final result = await source.fetch(rule.day, kind,
+          since: since, until: until);
+      final seen = {
+        for (final flight in sink)
+          '${flight.flightNo}|${flight.departure.toIso8601String()}',
+      };
+      var added = 0;
+      for (final flight in result.flights) {
+        final key =
+            '${flight.flightNo}|${flight.departure.toIso8601String()}';
+        if (seen.add(key)) {
+          sink.add(flight);
+          added++;
+        }
+      }
+      if (added > 0) {
+        final note = '$windowLabel: the primary source looked incomplete '
+            '($primaryCount flight(s)) — filled in $added flight(s) '
+            'from ${result.source}.';
+        notes.add(note);
+        ErrorLog.instance.record('weekend-finder', note, details: {
+          'window': windowLabel,
+          'primary': primaryCount,
+          'fallback flights': result.flights.length,
+          'added': added,
+        });
+      }
+    } on ProviderUnavailable catch (error) {
+      final note =
+          '$windowLabel: the fallback source could not help either '
+          '(${error.message}).';
+      notes.add(note);
+      ErrorLog.instance.record('weekend-finder', error.message,
+          details: {'window': windowLabel, 'source': 'fallback'});
+    } catch (error) {
+      final note =
+          '$windowLabel: the fallback source failed ($error).';
+      notes.add(note);
+      ErrorLog.instance.record('weekend-finder', '$error',
+          details: {'window': windowLabel, 'source': 'fallback'});
+    }
   }
 
   /// Retain only flights within the cap; returns the number
@@ -187,13 +364,14 @@ class WeekendRepository {
   /// matcher stays free of fetch failures.
   static MatchReport withNotes(MatchReport report, List<String> notes) {
     return MatchReport(
-      weekend: report.weekend,
-      windows: report.windows,
+      plan: report.plan,
       cities: report.cities,
       oneWayOnly: report.oneWayOnly,
       outboundTotal: report.outboundTotal,
       returnTotal: report.returnTotal,
       outboundRejectedAirlines: report.outboundRejectedAirlines,
+      shortStaysDropped: report.shortStaysDropped,
+      shortStayCities: report.shortStayCities,
       notes: notes,
     );
   }

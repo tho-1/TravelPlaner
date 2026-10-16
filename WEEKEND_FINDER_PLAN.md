@@ -26,6 +26,42 @@ Exact filter rules:
 - One result row per **city**; each row expands to its viable (out, back) flight pairs.
 - Times are Europe/Berlin; all six bounds are UI inputs with the defaults above.
 
+## STATUS 2026-10-16: the Flutter app's finder (reports a–j batch)
+
+The finder the user actually runs is `mobile/lib/ui/weekend_finder_page.dart`
+now; this document's Python sections below describe the retired Streamlit
+original and stay as the rule book the port was built from. What changed in
+the mobile app on 2026-10-16 (details: `MOBILE_REPORTS_2026-10-16.md`,
+`PLAN.md` §0s):
+
+* **Day model (report b):** the fixed Thu/Fri/Sat/Sun/Mon/Tue slots are
+  gone. The user picks a travel **period** (native range picker, "This
+  weekend"/"Next weekend" presets), which populates candidate days
+  (period ± 1, labelled "flex" outside the period). Out/on and back/on are
+  free multi-selects over those days; each selected day carries one rule —
+  any time / **departs after** HH:MM (out) / **lands before** HH:MM (back).
+  The matcher rules that matter (direct both legs, benefits follow the
+  operator, both legs required, near misses visible, ranking, max two ways
+  home per outbound, honest empty answers) are kept rule-for-rule.
+* **CSV override (report c): removed** — no more pasted boards. Fraport is
+  the source; failures are now visible errors + error-log entries instead
+  of an escape hatch.
+* **Airlines filter (report d):** a dropdown — Only Lufthansa Group
+  (default) / Only Lufthansa (name contains "Lufthansa") / All with
+  benefits / All.
+* **Stay length (report e, clarified):** a visible "Min. nights" dropdown
+  (Any/1/2/3/4), **default 1 night**; dropped options are counted in the
+  report.
+* **Error log + data-quality notes (report f):** `error_log.jsonl` per
+  device (⚙ Settings → Error log). Thin/failed board windows warn loudly —
+  2026-10-25 (DST) arrivals really held one flight where sibling days hold
+  233–366; the board's data is missing, not the search. AIRail station
+  codes (QKL, ZWS, MKF, …) are an explicit table now; unknown codes get
+  the board's own name and a log entry, never a `?CODE` label.
+* **Fallback source (report j):** optional FlightAware AeroAPI
+  (`flightaware_api_key` in the config), consulted only for failed or
+  implausible windows. No scraping sources (FL24 terms forbid it).
+
 ## STATUS 2026-10-08: complete — Fraport provider implemented and tested
 
 All seven steps are done and tested. Step 4 (the Fraport board provider) was

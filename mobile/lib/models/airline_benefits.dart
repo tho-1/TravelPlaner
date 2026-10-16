@@ -339,6 +339,94 @@ List<String> unmatchedAirlines(Iterable<String> airlines,
   return out;
 }
 
+/// The airline filter the finder's dropdown exposes (report
+/// d, 2026-10-16). The two Lufthansa options are **identity**
+/// scopes -- membership, not benefit flags; the user's own
+/// definition for [AirlineScope.lufthansa] is "all airlines
+/// with Lufthansa in their name".
+enum AirlineScope {
+  /// Lufthansa Group carriers (the explicit table below).
+  lufthansaGroup,
+
+  /// Everything with "Lufthansa" in its name.
+  lufthansa,
+
+  /// The benefits database's yes-only flags -- the finder's
+  /// original behaviour.
+  allWithBenefits,
+
+  /// No filter at all.
+  all,
+}
+
+/// The dropdown's labels, in the enum's order.
+const airlineScopeLabels = <AirlineScope, String>{
+  AirlineScope.lufthansaGroup: 'Only Lufthansa Group',
+  AirlineScope.lufthansa: 'Only Lufthansa',
+  AirlineScope.allWithBenefits: 'All with benefits',
+  AirlineScope.all: 'All',
+};
+
+/// The Lufthansa Group's passenger carriers, by IATA code
+/// and by canonical name -- the explicit table the project
+/// prefers over a heuristic. (ITA Airways joined the group
+/// in 2025; SunExpress is a 50/50 venture and not listed.)
+const lufthansaGroupCodes = <String>{
+  'LH', // Lufthansa (incl. CityLine-operated flights)
+  'CL', // Lufthansa City / CityLine
+  'EW', // Eurowings
+  '4Y', // Eurowings Discover
+  'LX', // SWISS
+  'WK', // Edelweiss
+  'OS', // Austrian
+  'SN', // Brussels Airlines
+  'EN', // Air Dolomiti
+  'AZ', // ITA Airways
+};
+
+const lufthansaGroupNames = <String>{
+  'lufthansa',
+  'lufthansacity',
+  'lufthansacityline',
+  'lufthansaregional',
+  'eurowings',
+  'eurowingsdiscover',
+  'swiss',
+  'edelweiss',
+  'austrian',
+  'brussels',
+  'airdolomiti',
+  'ita',
+  'itaairways',
+};
+
+/// Whether one flight's carrier passes the scope.
+///
+/// `airline` is the board's operator code (`al`), `name`
+/// its carrier name (`alname`) when the record carries one.
+bool airlineInScope(String airline, String name, AirlineScope scope,
+    Map<String, bool>? benefitFlags) {
+  switch (scope) {
+    case AirlineScope.all:
+      return true;
+    case AirlineScope.allWithBenefits:
+      return hasBenefits(airline, benefitFlags);
+    case AirlineScope.lufthansa:
+      // The user's definition: every airline with
+      // "Lufthansa" in its name (Lufthansa, Lufthansa City,
+      // ...). The code fallback covers board rows that carry
+      // only `al`.
+      final spelling = name.trim().isNotEmpty ? name : airline;
+      return spelling.toLowerCase().contains('lufthansa') ||
+          const {'LH', 'CL'}.contains(spelling.trim().toUpperCase());
+    case AirlineScope.lufthansaGroup:
+      final code = airline.trim().toUpperCase();
+      if (lufthansaGroupCodes.contains(code)) return true;
+      final key = canonicalAirlineKey(name.trim().isNotEmpty ? name : airline);
+      return lufthansaGroupNames.contains(key);
+  }
+}
+
 /// One line for the results header, so "nothing matched" is
 /// explainable: with a real source it names the qualifying
 /// carriers instead of counting a 597-entry table. With the

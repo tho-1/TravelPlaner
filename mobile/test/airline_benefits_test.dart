@@ -149,6 +149,74 @@ void main() {
     expect(result, ['BA', 'Condor']);
   });
 
+  group('AirlineScope (report d)', () {
+    const flags = {'LH': true, 'BA': false};
+
+    test('lufthansaGroup is the explicit membership table', () {
+      expect(
+        airlineInScope('LH', 'Lufthansa', AirlineScope.lufthansaGroup, flags),
+        isTrue,
+      );
+      expect(
+        airlineInScope('LX', 'SWISS', AirlineScope.lufthansaGroup, flags),
+        isTrue,
+      );
+      expect(
+        airlineInScope('AZ', 'ITA Airways', AirlineScope.lufthansaGroup, flags),
+        isTrue,
+      );
+      expect(
+        airlineInScope('BA', 'British Airways', AirlineScope.lufthansaGroup,
+            flags),
+        isFalse,
+      );
+    });
+
+    test('lufthansa is name membership ("all with Lufthansa in the name")',
+        () {
+      expect(
+        airlineInScope('LH', 'Lufthansa', AirlineScope.lufthansa, flags),
+        isTrue,
+      );
+      expect(
+        airlineInScope(
+            'CL', 'Lufthansa City', AirlineScope.lufthansa, flags),
+        isTrue,
+      );
+      // SWISS is in the group but has no Lufthansa name.
+      expect(
+        airlineInScope('LX', 'SWISS', AirlineScope.lufthansa, flags),
+        isFalse,
+      );
+      // A board row that carries only the code still counts
+      // for the Lufthansa-branded codes.
+      expect(airlineInScope('LH', '', AirlineScope.lufthansa, flags), isTrue);
+    });
+
+    test('allWithBenefits is the benefits database (unknown is not a yes)',
+        () {
+      expect(
+        airlineInScope(
+            'LH', 'Lufthansa', AirlineScope.allWithBenefits, flags),
+        isTrue,
+      );
+      expect(
+        airlineInScope('BA', 'British Airways', AirlineScope.allWithBenefits,
+            flags),
+        isFalse,
+      );
+      expect(
+        airlineInScope('XX', 'Mystery', AirlineScope.allWithBenefits, flags),
+        isFalse,
+      );
+    });
+
+    test('all keeps every airline', () {
+      expect(airlineInScope('XX', '', AirlineScope.all, flags), isTrue);
+      expect(airlineInScope('BA', 'B A', AirlineScope.all, flags), isTrue);
+    });
+  });
+
   group('BenefitsRepository', () {
     test('the flags come from the benefits database', () async {
       final fake = FakeTurso((statements) {

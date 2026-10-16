@@ -353,7 +353,16 @@ class _CataloguePageState extends State<CataloguePage> {
                           ],
                         ),
                       const SizedBox(height: 2),
-                      Row(
+                      // The facts a catalogue scan needs
+                      // (review rating, prio, population).
+                      // A Wrap, not a single ellipsised
+                      // line: the old meta line was cut off
+                      // at phone width and labelled the
+                      // wrong things (2026-10-16).
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 2,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           if (dest.visited)
                             Icon(Icons.check_circle,
@@ -361,16 +370,8 @@ class _CataloguePageState extends State<CataloguePage> {
                           if (dest.favourite)
                             Icon(Icons.star,
                                 size: 15, color: accentFavourite),
-                          const Spacer(),
-                          Expanded(
-                            child: Text(
-                              _metaLine(dest),
-                              textAlign: TextAlign.end,
-                              style: theme.textTheme.bodySmall,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
+                          for (final fact in _metaFacts(dest))
+                            Text(fact, style: theme.textTheme.bodySmall),
                         ],
                       ),
                     ],
@@ -401,26 +402,37 @@ class _CataloguePageState extends State<CataloguePage> {
     return const Color(0xFF90A4AE);
   }
 
-  /// The at-a-glance numbers (safety · cost per day ·
-  /// flight time from FRA), so a scan of the catalogue
-  /// answers "which of these is expensive / far" without
-  /// opening each card. Missing values drop out; an
-  /// all-null row renders nothing.
-  String _metaLine(Destination dest) {
-    final parts = <String>[];
-    final safety = dest.safetyRating;
-    if (safety != null) {
-      parts.add('safe ${_trim(safety)}/10');
+  /// The at-a-glance facts: **Review Rating, Prio (only
+  /// when the column is populated) and Population** — the
+  /// three numbers that decide "is this worth opening?". It
+  /// replaced the truncated safety/cost/flight line
+  /// (2026-10-16, the user's report g).
+  List<String> _metaFacts(Destination dest) {
+    final facts = <String>[];
+    final review = coerceNumber(dest.column('Reviews'));
+    if (review != null) {
+      facts.add('Review ${_trim(review)}/10');
     }
-    final cost = dest.avgCostDay;
-    if (cost != null) {
-      parts.add('${_trim(cost)} €/day');
+    final prio = dest.prio;
+    if (!isBlank(prio)) {
+      // `Prio Thorsten` is an object/text column ("n/a"
+      // occurs): show the raw text rather than a fake 0.
+      final number = coerceNumber(prio);
+      facts.add('Prio ${number == null ? '$prio'.trim() : _trim(number)}');
     }
-    final flight = dest.flightTimeFra;
-    if (flight != null) {
-      parts.add('${_trim(flight)} h to FRA');
+    final population = coerceNumber(dest.column('Population (Metro Area)'));
+    if (population != null) {
+      facts.add('Population ${_compactNumber(population)}');
     }
-    return parts.join(' · ');
+    return facts;
+  }
+
+  /// "10.7M" / "430K" — the same compact form the detail
+  /// page's population KPI uses.
+  static String _compactNumber(double value) {
+    if (value >= 1000000) return '${_trim(value / 1000000)}M';
+    if (value >= 1000) return '${_trim(value / 1000)}K';
+    return _trim(value);
   }
 
   static String _trim(double value) =>

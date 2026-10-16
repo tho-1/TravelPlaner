@@ -6,17 +6,20 @@
 /// in without a token.
 library;
 
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
 
 import '../data/app_dirs.dart';
 import '../data/app_settings.dart';
 import '../data/benefits_repository.dart';
 import '../data/destination_repository.dart';
+import '../data/error_log.dart';
 import '../data/geocode_repository.dart';
 import '../data/open_tabs_repository.dart';
 import '../data/trip_repository.dart';
 import '../models/destination.dart';
+import '../models/timetable.dart';
 import '../turso/config.dart';
 import '../turso/pipeline_client.dart';
 import 'catalogue_page.dart';
@@ -71,7 +74,26 @@ Future<void> main() async {
   // The per-device cache directories (the phone's
   // app-documents fallback) before the first frame.
   await initAppDirs();
-  runApp(TravelPlannerApp(config: await TursoConfig.load()));
+  final config = await TursoConfig.load();
+  // The error log (report f): one JSONL file per device,
+  // next to the settings file. The global hooks mean an
+  // uncaught error is on record for later analysis instead
+  // of dying with the toast.
+  ErrorLog.instance.bind(stateDirFor(config.stateDir));
+  FlutterError.onError = (details) {
+    ErrorLog.instance.record(
+      'flutter',
+      details.exceptionAsString(),
+      details: {'stack': '${details.stack}'},
+    );
+    FlutterError.presentError(details);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    ErrorLog.instance
+        .record('flutter', '$error', details: {'stack': '$stack'});
+    return true;
+  };
+  runApp(TravelPlannerApp(config: config));
 }
 
 class TravelPlannerApp extends StatelessWidget {
@@ -151,6 +173,11 @@ class _HomeShellState extends State<HomeShell> {
   late final BenefitsRepository benefits;
   late final GeocodeRepository geocoder;
   late final OpenTabsRepository openTabs;
+
+  /// The finder's second flight source (report j): built
+  /// only when a FlightAware key is configured, and only
+  /// ever asked about windows that look broken.
+  late final FlightBoardProvider? flightFallback;
   var _tab = 0;
 
   /// The open-destination tabs (the legacy sidebar's
@@ -187,7 +214,7 @@ class _HomeShellState extends State<HomeShell> {
     NavigationDestination(
       icon: NavIcon(NavTabIcon.suitcase),
       selectedIcon: NavIcon(NavTabIcon.suitcase),
-      label: 'Trips',
+      label: 'Planner',
     ),
     NavigationDestination(
       icon: NavIcon(NavTabIcon.compass),
@@ -213,7 +240,7 @@ class _HomeShellState extends State<HomeShell> {
     NavigationRailDestination(
       icon: NavIcon(NavTabIcon.suitcase),
       selectedIcon: NavIcon(NavTabIcon.suitcase),
-      label: Text('Trips'),
+      label: Text('Planner'),
     ),
     NavigationRailDestination(
       icon: NavIcon(NavTabIcon.compass),
@@ -236,15 +263,15 @@ class _HomeShellState extends State<HomeShell> {
     benefits = BenefitsRepository(widget.config);
     geocoder = GeocodeRepository(widget.config.geocodeCache);
     openTabs = OpenTabsRepository(client);
+    flightFallback = widget.config.fallbackFlightsConfigured
+        ? AeroApiBoardProvider(apiKey: widget.config.flightAwareApiKey)
+        : null;
     // The configured state dir wins (the desktop's repo
     // root) — but only when it is absolute on *this*
     // platform: the bundled config carries the PC path,
     // which is unwritable on the phone. There the app's
     // documents dir holds the settings file.
-    final configuredState = widget.config.stateDir.trim();
-    _settingsDir = configuredState.isNotEmpty && p.isAbsolute(configuredState)
-        ? configuredState
-        : documentsDir();
+    _settingsDir = stateDirFor(widget.config.stateDir);
     _tabsEnabled = AppSettings.load(_settingsDir).openTabsEnabled;
     _loadTabs();
   }
@@ -296,16 +323,25 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
-  /// Close a tab: drop it from the list, persist, and pop
-  /// the destination's page when it is the one on top
-  /// (the legacy switches away when the active tab
-  /// closes). A deep chain (a destination opened from
+  /// Close a tab: drop it from the list and persist. The
+  /// destination's page is popped when it is the one on top
+  /// (the legacy switches away when the active tab closes)
+  /// -- except when the close comes from the open-items
+  /// sheet, where popping under the sheet would tear the
+  /// stack apart. A deep chain (a destination opened from
   /// another's related links) pops only its own top page.
-  void _closeTab(String name) {
+  void _closeTab(String name, {bool popRoute = true}) {
     setState(() => _openTabs.remove(name));
     _persistTabs();
+    if (!popRoute) return;
     Navigator.of(context).popUntil(
         (route) => route.settings.name != 'destination/$name');
+  }
+
+  /// Close every tab at once (the sheet's "Close all").
+  void _closeAllTabs() {
+    setState(() => _openTabs.clear());
+    _persistTabs();
   }
 
   /// Open a tab: push the destination's page, resolving
@@ -389,6 +425,7 @@ class _HomeShellState extends State<HomeShell> {
         WeekendFinderPage(
           benefits: benefits,
           destinations: destinations,
+          fallback: flightFallback,
           onOpenDestination: _tabsEnabled ? _recordTab : null,
         ),
         WorldMapPage(
@@ -409,23 +446,6 @@ class _HomeShellState extends State<HomeShell> {
                   labelType: NavigationRailLabelType.all,
                 ),
                 const VerticalDivider(thickness: 1, width: 1),
-                // The open-destination tabs: the legacy
-                // sidebar's list, now a slim panel of its
-                // own between the rail and the content.
-                if (_tabsEnabled) ...[
-                  ValueListenableBuilder<String?>(
-                    valueListenable: activeDestinationRoute,
-                    builder: (context, active, _) => OpenTabsPanel(
-                      tabs: _openTabs,
-                      destinations: _tabDestinations,
-                      active: active,
-                      problems: _tabProblems,
-                      onOpen: _openTab,
-                      onClose: _closeTab,
-                    ),
-                  ),
-                  const VerticalDivider(thickness: 1, width: 1),
-                ],
                 Expanded(
                   child: Center(
                     child: ConstrainedBox(
@@ -437,7 +457,20 @@ class _HomeShellState extends State<HomeShell> {
                 ),
               ],
             )
-          : _phoneLayout(pages),
+          : pages,
+      // The open destinations are one floating button now
+      // (report i): the desktop panel and the phone strip
+      // are gone, and the button appears only when there is
+      // something to hold -- open tabs, or a read problem
+      // the user must see.
+      floatingActionButton: _tabsEnabled &&
+              (_openTabs.isNotEmpty || _tabProblems.isNotEmpty)
+          ? OpenTabsFab(
+              count: _openTabs.length,
+              hasProblems: _tabProblems.isNotEmpty,
+              onPressed: _showOpenTabs,
+            )
+          : null,
       bottomNavigationBar: wide
           ? null
           : NavigationBar(
@@ -449,31 +482,38 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
-  /// The phone layout: the open-tabs strip above the pages.
-  /// With the strip visible the whole column sits in a
-  /// SafeArea -- without it the strip drew *under* the
-  /// status bar (the phone's clock and battery covered the
-  /// chips, found on the Mi 10T Pro 2026-10-14), and the
-  /// pages' own app bars pad for the status bar themselves,
-  /// so the inset must be claimed exactly once.
-  Widget _phoneLayout(Widget pages) {
-    final showStrip = _tabsEnabled && _openTabs.isNotEmpty;
-    final content = Column(
-      children: [
-        if (showStrip)
-          ValueListenableBuilder<String?>(
+  /// The open-items sheet behind the floating button: the
+  /// rows open and close exactly like the old panel's did.
+  void _showOpenTabs() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          void refresh() => setSheetState(() {});
+          return ValueListenableBuilder<String?>(
             valueListenable: activeDestinationRoute,
-            builder: (context, active, _) => OpenTabsStrip(
+            builder: (context, active, _) => OpenTabsSheet(
               tabs: _openTabs,
+              destinations: _tabDestinations,
               active: active,
-              onOpen: _openTab,
-              onClose: _closeTab,
+              problems: _tabProblems,
+              onOpen: (name) {
+                Navigator.of(sheetContext).pop();
+                _openTab(name);
+              },
+              onClose: (name) {
+                _closeTab(name, popRoute: false);
+                refresh();
+              },
+              onCloseAll: () {
+                _closeAllTabs();
+                refresh();
+              },
             ),
-          ),
-        Expanded(child: pages),
-      ],
+          );
+        },
+      ),
     );
-    return showStrip ? SafeArea(bottom: false, child: content) : content;
   }
 }
 

@@ -1623,6 +1623,64 @@ to the map width. 410 → 411 tests.
 
 ---
 
+## 0s. Session 2026-10-16 — the mobile bug batch (reports a–j), recorded then implemented
+
+Ten reports from phone testing (2026-10-16): nine in the first batch (a–i)
+plus (j), the flight-fallback source asked for later the same day. They are
+written up in **`MOBILE_REPORTS_2026-10-16.md`** — that file holds the
+answers to the questions in them (the (b) and (i) redesign proposals with
+the requested brainstorm/challenge, the (f) diagnosis with live evidence,
+the (j) source research) and the autonomous decisions flagged there for
+review. This section is the plan of record; its status column is updated as
+the items land.
+
+| # | Report | Plan | Status |
+|---|---|---|---|
+| a | App shows "travel_planner"; logo drawing is wrong | display strings → "Travel Planner" (ids stay), regenerate icons from geometric primitives via `mobile/tools/generate_app_icons.py` | done |
+| b | Finder "out on"/"back on": free day selection | period picker → candidate days (period ± 1) → per-day select + any/after/before + time; presets keep the legacy defaults | done |
+| c | "CSV override" is incomprehensible | remove the UI, `CsvBoardProvider`, `parseCsvFlights`, template | done |
+| d | Airlines filter → dropdown | `AirlineScope`: Lufthansa Group (default) / Lufthansa (name contains) / All with benefits / All | done |
+| e | Drop 1-night results (clarified: a **visible** "Min. nights" dropdown, default â€” at least 1 night) | `minNights` in the matcher (default 1), finder dropdown Any/1/2/3/4, drop count reported | done |
+| f | Error log; Sunday returns had no data; `?MKF`/`?QKL`/`?ZWS` entries | `error_log.jsonl` + Settings viewer; per-window failure/implausibility notes; rail-station table + board-name fallback labels | done |
+| g | Card text truncated/irrelevant | Review Rating, Prio (when set), Population — wrapped, never cut | done |
+| h | "Trips" menu → "Planner" | nav labels + app bar | done |
+| i | Alternative to the open tabs | floating button (count badge) + bottom sheet, replaces panel and strip | done |
+| j | Fallback flight data source? | research first (no scraping: FL24 forbids it); FlightAware **AeroAPI** recommended and implemented as an *optional* fallback (`flightaware_api_key` in the config) consulted only for windows that failed or look incomplete | done |
+
+Evidence worth keeping from the (f) diagnosis: the user's "no return data on
+Sunday" is **real** — the Fraport arrivals feed for 2026-10-25 (the winter-timetable
+/ DST Sunday) holds exactly **one** flight where sibling windows hold 233–366
+(cached searches in `weekend_cache/` + live probes 2026-10-16 with three cursor
+times; departures that day and the next Sunday are complete). And `?QKL`/`?ZWS`/
+`?MKF` are **Lufthansa AIRail train station codes** the board lists like flights
+(`ac: "TRS"`, verified live: QKL=Cologne Main Station, ZWS=Stuttgart Railway) —
+the port never learned the legacy `RAIL_STATIONS` table, so unknown codes rendered
+as `?CODE`, the exact symptom `archive/streamlit/airport_city.py` documents for
+`?QDU`.
+
+Evidence for (j): the Fraport board stays the primary source — it is free,
+complete for FRA, and already mapped. For a second source the research
+conclusion was **FlightAware AeroAPI** (licensed, documented, per-airport
+flights endpoint with scheduled times and operator); scraping
+FlightRadar24/Flightradar-style boards is explicitly out (their payload
+terms forbid it) and the free tiers of the aggregator APIs (Aviationstack
+et al.) are too small for a full FRA day. The key is optional
+(`flightaware_api_key`); without it the finder behaves exactly as before.
+The fallback is consulted **only** about windows that failed or look
+incomplete (the (f) thin-window rule) — never about healthy ones.
+
+**Tests.** The batch's new tests caught five defects before landing: a
+missing `error_log.jsonl` read as a failure (invariant 1 — a missing file
+is a clean empty log, only unreadable ones are problems), the open-tabs
+test tapping the sheet header's ✖ instead of the row's close, the two
+finder dropdown rows overflowing under the test font (`isExpanded` +
+ellipsized items), the AeroAPI mapper returning UTC-flagged times where
+the board convention is naive wall clock, and the weekend fixture failing
+windows per *request* although the board walk makes several page calls
+per window. `flutter analyze` clean, **417 tests pass**.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

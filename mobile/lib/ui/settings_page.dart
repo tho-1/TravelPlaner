@@ -5,6 +5,8 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'error_log_page.dart';
+
 class SettingsPage extends StatefulWidget {
   /// Whether opening a destination records an
   /// open-destination tab.
@@ -42,8 +44,8 @@ class _SettingsPageState extends State<SettingsPage> {
             title: const Text('Open-destination tabs'),
             subtitle: const Text(
               'Destinations you open collect into a closeable '
-              'list -- a side panel on the desktop, a chip '
-              'strip on the phone. The list lives in Turso '
+              'list behind a floating button (the stack icon '
+              'with the count). The list lives in Turso '
               'and survives a restart; the switch itself is '
               'stored per device.',
             ),
@@ -56,6 +58,20 @@ class _SettingsPageState extends State<SettingsPage> {
                 setState(() => _enabled = value);
               }
             },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.bug_report_outlined),
+            title: const Text('Error log'),
+            subtitle: const Text(
+              'What the app recorded when something failed -- '
+              'for analysis afterwards.',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              settings: const RouteSettings(name: 'error-log'),
+              builder: (_) => const ErrorLogPage(),
+            )),
           ),
         ],
       ),

@@ -459,7 +459,7 @@ class _TripsPageState extends State<TripsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Trips'),
+        title: const Text('Planner'),
         actions: [
           IconButton(
             icon: const Icon(Icons.download),

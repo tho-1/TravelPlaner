@@ -46,7 +46,7 @@ cd mobile
 ```powershell
 cd mobile
 & "C:\src\flutter\bin\flutter.bat" analyze   # must be clean
-& "C:\src\flutter\bin\flutter.bat" test      # 395 tests, no credentials needed
+& "C:\src\flutter\bin\flutter.bat" test      # 417 tests, no credentials needed
 ```
 
 CI (`.github/workflows/ci.yml`) runs exactly these two on every push to

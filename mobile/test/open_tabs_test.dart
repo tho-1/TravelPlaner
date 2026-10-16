@@ -1,7 +1,7 @@
 /// The open-destination tabs: the Turso repository (the
 /// ported `storage_turso.load/save_open_tabs` contract),
-/// the per-device settings file, and the two tab-strip
-/// widgets.
+/// the per-device settings file, and the floating-button /
+/// bottom-sheet widgets (report i).
 library;
 
 import 'dart:io';
@@ -160,24 +160,56 @@ void main() {
     });
   });
 
-  group('OpenTabsPanel (desktop)', () {
-    testWidgets('renders one closeable row per tab', (tester) async {
+  group('OpenTabsFab (the floating button, report i)', () {
+    testWidgets('shows the open count and reports taps', (tester) async {
+      var pressed = false;
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          floatingActionButton: OpenTabsFab(
+            count: 3,
+            hasProblems: false,
+            onPressed: () => pressed = true,
+          ),
+        ),
+      ));
+      expect(find.text('3'), findsOneWidget);
+      await tester.tap(find.byType(FloatingActionButton));
+      expect(pressed, isTrue);
+    });
+
+    testWidgets('a read problem shows its icon instead of a count',
+        (tester) async {
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          floatingActionButton: OpenTabsFab(
+            count: 0,
+            hasProblems: true,
+            onPressed: () {},
+          ),
+        ),
+      ));
+      expect(find.byIcon(Icons.cloud_off), findsOneWidget);
+    });
+  });
+
+  group('OpenTabsSheet (the open items)', () {
+    testWidgets('renders one closeable row per tab and opens on tap',
+        (tester) async {
       var opened = '';
       var closed = '';
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
-          body: Row(children: [
-            OpenTabsPanel(
-              tabs: const ['Kyoto', 'Sarajevo'],
-              destinations: {
-                'Kyoto': _destination('Kyoto', favourite: true),
-              },
-              active: 'Kyoto',
-              problems: const [],
-              onOpen: (name) => opened = name,
-              onClose: (name) => closed = name,
-            ),
-          ]),
+          body: OpenTabsSheet(
+            tabs: const ['Kyoto', 'Sarajevo'],
+            destinations: {
+              'Kyoto': _destination('Kyoto', favourite: true),
+            },
+            active: 'Kyoto',
+            problems: const [],
+            onOpen: (name) => opened = name,
+            onClose: (name) => closed = name,
+            onCloseAll: () {},
+          ),
         ),
       ));
 
@@ -190,51 +222,50 @@ void main() {
       await tester.tap(find.text('Sarajevo'));
       expect(opened, 'Sarajevo');
 
-      await tester.tap(find.byIcon(Icons.close).first);
+      await tester.tap(find.byTooltip('Close Kyoto'));
       expect(closed, 'Kyoto');
     });
 
-    testWidgets('an empty list is a hint, read problems are a warning',
+    testWidgets('close all is offered, and an empty list is a hint',
         (tester) async {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
-          body: OpenTabsPanel(
+          body: OpenTabsSheet(
             tabs: const [],
             destinations: const {},
             active: null,
             problems: const ['Turso is down'],
             onOpen: (_) {},
             onClose: (_) {},
+            onCloseAll: () {},
           ),
         ),
       ));
-      // A failed read is never silently "no tabs open": the
-      // header carries the warning and the tooltip the text.
+      // A failed read is never silently "no tabs open".
       expect(find.byIcon(Icons.cloud_off), findsOneWidget);
       expect(find.text('Destinations you open collect here.'),
           findsOneWidget);
+      // With no tabs there is nothing to close.
+      expect(find.text('Close all'), findsNothing);
     });
-  });
 
-  group('OpenTabsStrip (phone)', () {
-    testWidgets('chips open and close tabs', (tester) async {
-      var opened = '';
-      var closed = '';
+    testWidgets('close all is wired when tabs are open', (tester) async {
+      var closedAll = false;
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
-          body: OpenTabsStrip(
+          body: OpenTabsSheet(
             tabs: const ['Kyoto'],
+            destinations: const {},
             active: null,
-            onOpen: (name) => opened = name,
-            onClose: (name) => closed = name,
+            problems: const [],
+            onOpen: (_) {},
+            onClose: (_) {},
+            onCloseAll: () => closedAll = true,
           ),
         ),
       ));
-
-      await tester.tap(find.text('Kyoto'));
-      expect(opened, 'Kyoto');
-      await tester.tap(find.byIcon(Icons.close));
-      expect(closed, 'Kyoto');
+      await tester.tap(find.text('Close all'));
+      expect(closedAll, isTrue);
     });
   });
 

@@ -1,139 +1,61 @@
-/// Pure weekend-trip matching: flights + time windows -> ranked cities.
+/// Pure weekend-trip matching: flights + selected travel
+/// days -> ranked cities.
 ///
-/// The Dart port of `weekend_match.py` (the legacy finder's matcher), rule
-/// for rule: outbound direct FRA -> X on Friday from 14:00 or Saturday
-/// before 12:00; return direct X -> FRA landing Saturday after 12:00,
-/// Sunday any time, or Monday before 09:00. Both legs must qualify for a
-/// city to appear in the main list; one-leg cities come back separately so
-/// near misses are visible instead of silently missing.
+/// The rules that must not drift, ported rule-for-rule from
+/// `weekend_match.py`: outbound direct FRA -> X and return
+/// direct X -> FRA; both legs must qualify for a city to
+/// appear in the main list; one-leg cities come back
+/// separately so near misses are visible instead of silently
+/// missing. Which days and times qualify is no longer fixed
+/// Thu-Sat / Sat-Tue -- the user selects the days and their
+/// any/after/before bounds (see `travel_days.dart`).
 ///
-/// No network, no Turso, no Flutter. Times are naive wall-clock datetimes
-/// (the departure airport's local time), the same convention the Python
-/// matcher and the board parser keep.
+/// No network, no Turso, no Flutter. Times are naive
+/// wall-clock datetimes (the departure airport's local
+/// time), the same convention the Python matcher and the
+/// board parser keep.
 library;
+
+import 'travel_days.dart';
 
 class Flight {
   final String flightNo;
   final String airline;
+
+  /// The board's own carrier name (`alname`), when the
+  /// record carries one. The airline *filter* matches on
+  /// names ("only Lufthansa"), so the name must survive the
+  /// parser -- the code alone cannot say "Lufthansa City".
+  final String airlineName;
+
   final String origin;
   final String destination;
+
+  /// The board's own airport/station name for the far end
+  /// (`apname`, e.g. "Cologne Main Station" for the AIRail
+  /// station code QKL). It is the fallback label for a code
+  /// the city table does not know -- the `?CODE` mystery
+  /// labels of 2026-10-16.
+  final String airportName;
   final DateTime departure;
   final DateTime arrival;
   final String terminal;
 
-  /// The carrier the flight is marketed under, when it
-  /// differs from the one flying it. The board's
-  /// codeshare list is ignored entirely (it appears on
-  /// some records and not others), so only the CSV
-  /// override can populate this: a CSV row with
-  /// `operated_by` keeps the marketing airline here.
-  final String marketingAirline;
-
   const Flight({
     required this.flightNo,
     required this.airline,
+    this.airlineName = '',
     required this.origin,
     required this.destination,
+    this.airportName = '',
     required this.departure,
     required this.arrival,
     this.terminal = '',
-    this.marketingAirline = '',
   });
 
-  /// Benefits follow the operator; the board's `al` already is it.
+  /// Benefits and the airline filter follow the operator;
+  /// the board's `al` already is it.
   String get operatorAirline => airline.trim();
-}
-
-/// The out/back day rules. Every day is optional: a null
-/// bound means the day is not an out/back day at all — the
-/// holiday-bridge days (Thursday out, Tuesday back) are off
-/// by default, the legacy four are on with the legacy
-/// defaults. Sunday keeps a separate enabled flag because
-/// its null bound has always meant "any time", not "off".
-class Windows {
-  // Outbound days: the departure bound in minutes-of-day.
-  final int? thursdayFrom;
-  final int? fridayFrom;
-  final int? saturdayBefore;
-
-  // Return days: the landing bound in minutes-of-day.
-  final int? saturdayReturnAfter;
-  final bool sundayEnabled;
-  final int? sundayReturnUntil;
-
-  /// null means any Sunday return counts (the default).
-  final int? mondayReturnBefore;
-  final int? tuesdayReturnBefore;
-
-  const Windows({
-    this.thursdayFrom,
-    this.fridayFrom = 14 * 60,
-    this.saturdayBefore = 12 * 60,
-    this.saturdayReturnAfter = 12 * 60,
-    this.sundayEnabled = true,
-    this.sundayReturnUntil,
-    this.mondayReturnBefore = 9 * 60,
-    this.tuesdayReturnBefore,
-  });
-
-  bool get hasOutDay =>
-      thursdayFrom != null ||
-      fridayFrom != null ||
-      saturdayBefore != null;
-
-  bool get hasBackDay =>
-      saturdayReturnAfter != null ||
-      sundayEnabled ||
-      mondayReturnBefore != null ||
-      tuesdayReturnBefore != null;
-
-  String describe() {
-    final outParts = [
-      if (thursdayFrom != null) 'Thu from ${_hm(thursdayFrom!)}',
-      if (fridayFrom != null) 'Fri from ${_hm(fridayFrom!)}',
-      if (saturdayBefore != null) 'Sat before ${_hm(saturdayBefore!)}',
-    ];
-    final backParts = [
-      if (saturdayReturnAfter != null)
-        'Sat after ${_hm(saturdayReturnAfter!)}',
-      if (sundayEnabled)
-        (sundayReturnUntil == null
-            ? 'Sun any time'
-            : 'Sun before ${_hm(sundayReturnUntil!)}'),
-      if (mondayReturnBefore != null)
-        'Mon before ${_hm(mondayReturnBefore!)}',
-      if (tuesdayReturnBefore != null)
-        'Tue before ${_hm(tuesdayReturnBefore!)}',
-    ];
-    return 'out: ${outParts.join(', ')} · back: ${backParts.join(', ')}';
-  }
-
-  static String _hm(int minutes) =>
-      '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
-      '${(minutes % 60).toString().padLeft(2, '0')}';
-}
-
-/// The Thursday and its Sat/Sun/Mon/Tue that a search is
-/// about. Thursday and Tuesday are the holiday-bridge days
-/// the custom out/back pickers can add.
-class Weekend {
-  final DateTime friday;
-
-  const Weekend(this.friday);
-
-  DateTime get thursday => friday.subtract(const Duration(days: 1));
-  DateTime get saturday => friday.add(const Duration(days: 1));
-  DateTime get sunday => friday.add(const Duration(days: 2));
-  DateTime get monday => friday.add(const Duration(days: 3));
-  DateTime get tuesday => friday.add(const Duration(days: 4));
-
-  String describe() =>
-      '${_date(friday)} to ${_date(monday)}';
-
-  static String _date(DateTime day) =>
-      '${day.year.toString().padLeft(4, '0')}-'
-      '${day.month.toString().padLeft(2, '0')}-'
-      '${day.day.toString().padLeft(2, '0')}';
 }
 
 class TripOption {
@@ -199,23 +121,30 @@ class CityResult {
 }
 
 class MatchReport {
-  final Weekend weekend;
-  final Windows windows;
+  final TravelPlan plan;
   final List<CityResult> cities;
   final List<CityResult> oneWayOnly;
   final int outboundTotal;
   final int returnTotal;
   final Map<String, int> outboundRejectedAirlines;
+
+  /// Options and cities the minimum-stay rule removed
+  /// (report e: 1-night stays do not count). Shown, never
+  /// silent -- a filter that can empty a list says what it
+  /// dropped and why.
+  final int shortStaysDropped;
+  final int shortStayCities;
   final List<String> notes;
 
   const MatchReport({
-    required this.weekend,
-    required this.windows,
+    required this.plan,
     required this.cities,
     required this.oneWayOnly,
     required this.outboundTotal,
     required this.returnTotal,
     required this.outboundRejectedAirlines,
+    this.shortStaysDropped = 0,
+    this.shortStayCities = 0,
     required this.notes,
   });
 
@@ -226,87 +155,31 @@ class MatchReport {
 
 const homeAirport = 'FRA';
 const _monday = 1;
-const _friday = 5;
 const _saturday = 6;
 const _sunday = 7;
 
 /// Dart's weekday: Monday=1 .. Sunday=7 (the Python port uses Mon=0).
 
-/// The Fri/Sat/Sun/Mon that `day` belongs to. A Monday belongs to the
-/// weekend that is *starting* (the coming Friday) -- on a Monday you plan
-/// the weekend ahead. A Saturday or Sunday belongs to the Friday that
-/// started it.
-Weekend weekendContaining(DateTime day) {
-  final weekday = day.weekday;
-  if (weekday == _monday) {
-    return Weekend(_addDays(day, 4));
-  }
-  if (weekday == _saturday || weekday == _sunday) {
-    return Weekend(_addDays(day, _friday - weekday));
-  }
-  if (weekday == _friday) {
-    return Weekend(day);
-  }
-  return Weekend(_addDays(day, _friday - weekday));
-}
-
-/// The first Friday at least `minimumDaysAhead` days after `today`. A
-/// weekend's board is only useful once published; too little lead time
-/// yields an empty board, which is worse than the following weekend.
-DateTime nextFriday(DateTime today, {int minimumDaysAhead = 0}) {
-  var ahead = (_friday - today.weekday) % 7;
-  if (ahead == 0) ahead = 7;
-  while (ahead < minimumDaysAhead) {
-    ahead += 7;
-  }
-  return _addDays(today, ahead);
-}
-
-DateTime _addDays(DateTime day, int days) =>
-    DateTime(day.year, day.month, day.day + days);
-
-bool isOutboundCandidate(Flight flight, Weekend weekend, Windows windows) {
+bool isOutboundCandidate(Flight flight, TravelPlan plan) {
   final dep = flight.departure;
   if (!_isDirectFromHome(flight)) return false;
-  if (_sameDay(dep, weekend.thursday)) {
-    // The holiday bridge: leave on Thursday, same rule as
-    // Friday.
-    final from = windows.thursdayFrom;
-    return from != null && _minutesOfDay(dep) >= from;
-  }
-  if (_sameDay(dep, weekend.friday)) {
-    final from = windows.fridayFrom;
-    return from != null && _minutesOfDay(dep) >= from;
-  }
-  if (_sameDay(dep, weekend.saturday)) {
-    final before = windows.saturdayBefore;
-    return before != null && _minutesOfDay(dep) < before;
+  for (final day in plan.outDays) {
+    if (_sameDay(dep, day.day) && day.accepts(_minutesOfDay(dep))) {
+      return true;
+    }
   }
   return false;
 }
 
-bool isReturnCandidate(Flight flight, Weekend weekend, Windows windows) {
+/// The return-day rules apply to the **landing**: "home
+/// before 09:00" is about arriving, not about leaving.
+bool isReturnCandidate(Flight flight, TravelPlan plan) {
   final arr = flight.arrival;
   if (!_isDirectToHome(flight)) return false;
-  if (_sameDay(arr, weekend.saturday)) {
-    final after = windows.saturdayReturnAfter;
-    return after != null && _minutesOfDay(arr) >= after;
-  }
-  if (_sameDay(arr, weekend.sunday)) {
-    // The legacy's "Limit Sunday returns too": off
-    // (null) means any Sunday return counts.
-    if (!windows.sundayEnabled) return false;
-    final until = windows.sundayReturnUntil;
-    return until == null || _minutesOfDay(arr) <= until;
-  }
-  if (_sameDay(arr, weekend.monday)) {
-    final before = windows.mondayReturnBefore;
-    return before != null && _minutesOfDay(arr) < before;
-  }
-  if (_sameDay(arr, weekend.tuesday)) {
-    // The other holiday bridge: fly home Tuesday.
-    final before = windows.tuesdayReturnBefore;
-    return before != null && _minutesOfDay(arr) < before;
+  for (final day in plan.backDays) {
+    if (_sameDay(arr, day.day) && day.accepts(_minutesOfDay(arr))) {
+      return true;
+    }
   }
   return false;
 }
@@ -350,19 +223,23 @@ int nightsAway(Flight outFlight, Flight backFlight) {
 String _cityKeyOf(String airport, (String, String)? location) =>
     location == null ? '?$airport|' : '${location.$1}|${location.$2}';
 
-/// Build the full result set. `benefitCheck` and `cityLookup` are injected
+/// Build the full result set. `airlineCheck` and `cityLookup` are injected
 /// so this module stays free of Turso and of the airport asset, exactly
 /// like the Python matcher. `countryNameFor` optionally resolves an ISO
 /// country code to its English name for the labels.
+///
+/// `minNights` drops shorter options before ranking (report
+/// e: the finder's visible "Min. nights" filter, default 1
+/// night); the drop counts are on the report, never silent.
 MatchReport findWeekends({
   required Iterable<Flight> outbound,
   required Iterable<Flight> returns,
-  required Weekend weekend,
-  required Windows windows,
-  required bool Function(String airline) benefitCheck,
+  required TravelPlan plan,
+  required bool Function(String code, String name) airlineCheck,
   required (String, String)? Function(String airport) cityLookup,
   String Function(String countryCode)? countryNameFor,
   int maxOptionsPerCity = 6,
+  int minNights = 1,
 }) {
   final outList = outbound.toList();
   final backList = returns.toList();
@@ -370,8 +247,8 @@ MatchReport findWeekends({
 
   final goodOut = <Flight>[];
   for (final flight in outList) {
-    if (!isOutboundCandidate(flight, weekend, windows)) continue;
-    if (!benefitCheck(flight.operatorAirline)) {
+    if (!isOutboundCandidate(flight, plan)) continue;
+    if (!airlineCheck(flight.operatorAirline, flight.airlineName)) {
       final name = flight.operatorAirline.isEmpty ? '?' : flight.operatorAirline;
       rejectedAirlines[name] = (rejectedAirlines[name] ?? 0) + 1;
       continue;
@@ -381,8 +258,8 @@ MatchReport findWeekends({
 
   final goodBack = <Flight>[];
   for (final flight in backList) {
-    if (!isReturnCandidate(flight, weekend, windows)) continue;
-    if (!benefitCheck(flight.operatorAirline)) continue;
+    if (!isReturnCandidate(flight, plan)) continue;
+    if (!airlineCheck(flight.operatorAirline, flight.airlineName)) continue;
     goodBack.add(flight);
   }
 
@@ -403,14 +280,29 @@ MatchReport findWeekends({
 
   final cities = <String, _MutableCity>{};
 
+  /// The board's own far-end names ("Cologne Main
+  /// Station"), keyed by code: the fallback label for a code
+  /// the city table does not know.
+  final airportNames = <String, String>{};
+  for (final flight in [...outList, ...backList]) {
+    for (final code in [_airport(flight.destination), _airport(flight.origin)]) {
+      if (code.isEmpty) continue;
+      final name = flight.airportName.trim();
+      if (name.isNotEmpty) airportNames.putIfAbsent(code, () => name);
+    }
+  }
+
   /// The city entry for one airport, creating it when the
-  /// first leg for it arrives. An airport the table does
-  /// not know keeps its code as the label.
+  /// first leg for it arrives. An airport the table does not
+  /// know falls back to the board's own name for it (and
+  /// failing that its code) -- never a `?CODE` placeholder
+  /// (report f, 2026-10-16).
   _MutableCity cityFor(String airport, {required bool addAirport}) {
     final location = cityLookup(airport);
     final key = _cityKeyOf(airport, location);
     final created = cities.putIfAbsent(key, () {
-      final (city, country) = location ?? ('?$airport', '');
+      final fallback = airportNames[airport] ?? airport;
+      final (city, country) = location ?? (fallback, '');
       return _MutableCity(
         city: city,
         country: country,
@@ -422,12 +314,17 @@ MatchReport findWeekends({
     return created;
   }
 
+  var shortStaysDropped = 0;
+  var shortStayCities = 0;
+  final shortStayOnly = <String>{};
+
   for (final entry in outByAirport.entries) {
     final result = cityFor(entry.key, addAirport: true);
     if (cityLookup(entry.key) == null) {
       result.unmappedAirports.add(entry.key);
     }
     final pairs = <TripOption>[];
+    var droppedShortHere = 0;
     final outs = [...entry.value]..sort(
         (a, b) => a.departure.compareTo(b.departure));
     for (final outFlight in outs) {
@@ -435,30 +332,47 @@ MatchReport findWeekends({
         if (backFlight.departure.isBefore(outFlight.arrival)) {
           continue; // cannot leave before landing
         }
-        pairs.add(TripOption(
+        final option = TripOption(
           city: result.city,
           country: result.country,
           outFlight: outFlight,
           backFlight: backFlight,
           nights: nightsAway(outFlight, backFlight),
-        ));
+        );
+        // The minimum-stay filter runs before the budget
+        // counts, so short stays never crowd out real ones.
+        if (option.nights < minNights) {
+          droppedShortHere++;
+          continue;
+        }
+        pairs.add(option);
         if (pairs.length >= maxOptionsPerCity * 3) break;
       }
       if (pairs.length >= maxOptionsPerCity * 3) break;
     }
     if (pairs.isNotEmpty) {
       result.options = _bestOptions(pairs, maxOptionsPerCity);
+    } else if (droppedShortHere > 0) {
+      // Both legs qualify but every pair is too short: the
+      // city is not a result at all (report e), and the
+      // report says how many were dropped instead of
+      // leaving the reader to wonder. It must not resurface
+      // as a "one leg only" near miss below either.
+      shortStayCities++;
+      shortStayOnly.add(_cityKeyOf(entry.key, cityLookup(entry.key)));
     } else {
       final outs2 = [...entry.value]..sort(
           (a, b) => a.departure.compareTo(b.departure));
       result.outOnly = outs2.take(4).toList();
     }
+    shortStaysDropped += droppedShortHere;
   }
 
   // A city whose only qualifying leg is the return still counts as a
   // near miss.
   for (final entry in backByAirport.entries) {
     final location = cityLookup(entry.key);
+    if (shortStayOnly.contains(_cityKeyOf(entry.key, location))) continue;
     final known = cities[_cityKeyOf(entry.key, location)] != null;
     final result = cityFor(entry.key, addAirport: !known);
     if (result.options.isNotEmpty) continue; // already a full city
@@ -486,13 +400,14 @@ MatchReport findWeekends({
     return byCity != 0 ? byCity : a.country.compareTo(b.country);
   });
   return MatchReport(
-    weekend: weekend,
-    windows: windows,
+    plan: plan,
     cities: full,
     oneWayOnly: partial,
     outboundTotal: outList.length,
     returnTotal: backList.length,
     outboundRejectedAirlines: rejectedAirlines,
+    shortStaysDropped: shortStaysDropped,
+    shortStayCities: shortStayCities,
     notes: const [],
   );
 }
@@ -606,6 +521,6 @@ String describeRule(Map<String, int> rejected) {
       .map((entry) => '${entry.$2.key} (${entry.$2.value})')
       .join(', ');
   final more = rejected.length <= 4 ? '' : ', +${rejected.length - 4} more';
-  return '$total outbound flight(s) dropped for airlines without '
-      'benefits: $top$more';
+  return '$total outbound flight(s) dropped by the airline '
+      'filter: $top$more';
 }

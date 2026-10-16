@@ -1,5 +1,5 @@
 /// Flight-board fetching: the Fraport departure/arrival
-/// board, and the CSV override that replaces it.
+/// board.
 ///
 /// The Dart port of `timetable.py`. Semantics that must
 /// not drift:
@@ -12,8 +12,8 @@
 /// * **Times are naive wall-clocks.** The board's offsets
 ///   are unreliable on `schedArr`/`schedDep`, so the
 ///   wall-clock is taken as the local time of the airport
-///   the time belongs to -- the same convention the CSV
-///   provider and the matcher use.
+///   the time belongs to -- the same convention the
+///   matcher uses.
 /// * **Direct flights only**, and a *missing* `stops`
 ///   value is kept (the arrivals board never reports stops;
 ///   dropping those would drop every return).
@@ -106,8 +106,7 @@ DateTime _lastSundayOf(int year, int month) {
 
 /// The provider protocol: one board query in, the
 /// flights that answer it plus what the user needs
-/// to know out. The live board and the CSV override
-/// both speak it, so the finder can swap them.
+/// to know out.
 abstract interface class FlightBoardProvider {
   Future<FetchResult> fetch(
     DateTime day,
@@ -238,8 +237,11 @@ class FraportBoardProvider implements FlightBoardProvider {
   /// * **Direct flights only.** `stops` counts intermediate
   ///   stops; a value > 0 is skipped. A *missing* value is
   ///   kept: the arrivals board never reports stops at all,
-  ///   and the departures records without it are
-  ///   Lufthansa's direct train connections to FRA.
+  ///   and the Lufthansa AIRail trains (LH 34xx/35xx/36xx,
+  ///   `ac: "TRS"`) carry none either -- they are bookable
+  ///   flight numbers into/out of main-station codes (QKL,
+  ///   ZWS, ...) and the finder keeps them like the legacy
+  ///   did.
   /// * **Benefits follow the operator.** The board shows
   ///   the *operated* flight: `al`/`fnr`/`alname` are the
   ///   carrier flying the metal. The `cs` codeshare list
@@ -284,8 +286,13 @@ class FraportBoardProvider implements FlightBoardProvider {
     return Flight(
       flightNo: flightNo.isEmpty ? airline : flightNo,
       airline: airline,
+      airlineName: (record['alname'] ?? '').toString().trim(),
       origin: origin,
       destination: destination,
+      // The board's own name for the far end ("Cologne Main
+      // Station" for the AIRail code QKL): the fallback
+      // label for codes the city table does not know.
+      airportName: (record['apname'] ?? '').toString().trim(),
       departure: departure,
       arrival: arrival,
       terminal: (record['terminal'] ?? '').toString(),
@@ -349,92 +356,251 @@ class FraportBoardProvider implements FlightBoardProvider {
   }
 }
 
-/// The time range one board query must cover, from the six
-/// bounds.
+/// FlightAware AeroAPI: the licensed *fallback* flight
+/// source (report j, 2026-10-16).
 ///
-/// The matcher applies the bounds to the flights it is
-/// given; the provider uses the *same* range as its fetch
-/// window, so the board is only walked as far as the window
-/// reaches. All times are the board's own wall-clock
-/// (Europe/Berlin), which is what the matcher compares.
-(DateTime?, DateTime?) fetchWindow(
-    Weekend weekend, Windows windows, DateTime day, String kind) {
-  DateTime at(DateTime d, int hour, int minute) =>
-      DateTime(d.year, d.month, d.day, hour, minute);
-  // A day that is switched off fetches nothing: its bound
-  // is null and the board query is skipped entirely.
-  final thursdayFrom = windows.thursdayFrom == null
-      ? null
-      : Duration(minutes: windows.thursdayFrom!);
-  final fridayFrom = windows.fridayFrom == null
-      ? null
-      : Duration(minutes: windows.fridayFrom!);
-  final satBefore = windows.saturdayBefore == null
-      ? null
-      : Duration(minutes: windows.saturdayBefore!);
-  final satAfter = windows.saturdayReturnAfter == null
-      ? null
-      : Duration(minutes: windows.saturdayReturnAfter!);
-  final monBefore = windows.mondayReturnBefore == null
-      ? null
-      : Duration(minutes: windows.mondayReturnBefore!);
-  final tueBefore = windows.tuesdayReturnBefore == null
-      ? null
-      : Duration(minutes: windows.tuesdayReturnBefore!);
+/// Why this one, after checking the alternatives: keyless
+/// scraping is out -- FlightRadar24's payload explicitly
+/// forbids reusing the data and its schedule endpoint
+/// rejects future dates, FlightStats sits behind an AWS WAF
+/// captcha (verified 2026-10), Airportia blocks scripts,
+/// and AirLabs' "schedules" only look ten hours ahead. The
+/// sources that serve *future* schedules are the licensed
+/// APIs, and AeroAPI is the one whose contract the vendor
+/// documents publicly (`airports/{ident}/flights` with an
+/// `x-apikey` header).
+///
+/// It stays a fallback: the Fraport board is the primary
+/// source and this provider is only asked about windows
+/// that failed or look incomplete (one request per window).
+///
+/// Conventions the matcher relies on:
+///
+/// * **wall-clock times**, not UTC instants. AeroAPI answers
+///   in UTC; both sides are stamped with the Berlin offset.
+///   For the FRA side that is exact. The far side's own
+///   zone is not in the payload, so its wall clock is
+///   approximated with the same offset -- good to the
+///   calendar day everywhere in Europe, off by one only in
+///   the evening edge cases. (Fraport, the primary, carries
+///   true per-airport wall clocks.)
+/// * **the operator is the benefit key**: AeroAPI's
+///   `operator` is an ICAO code, mapped through
+///   [icaoToIata]; an unmapped code is kept as-is and then
+///   simply never counts as a benefit -- "unknown is not a
+///   yes".
+class AeroApiBoardProvider implements FlightBoardProvider {
+  static const name = 'flightaware';
 
-  if (kind == 'departures') {
-    if (_same(day, weekend.thursday)) {
-      // Outbound Thursday (the holiday bridge): same rule
-      // as Friday.
-      if (thursdayFrom == null) return (null, null);
-      return (at(day, 0, 0).add(thursdayFrom), at(weekend.friday, 0, 0));
+  static const endpoint =
+      'https://aeroapi.flightaware.com/aeroapi/airports/EDDF/flights';
+
+  final String apiKey;
+  final http.Client httpClient;
+
+  /// Courtesy delay between two requests, like the Fraport
+  /// provider's.
+  final double throttleSeconds;
+
+  DateTime? _lastRequestAt;
+
+  AeroApiBoardProvider({
+    required this.apiKey,
+    http.Client? httpClient,
+    this.throttleSeconds = 1.5,
+  }) : httpClient = httpClient ?? http.Client();
+
+  @override
+  Future<FetchResult> fetch(
+    DateTime day,
+    String direction, {
+    DateTime? since,
+    DateTime? until,
+  }) async {
+    final start = since ?? DateTime(day.year, day.month, day.day);
+    final end = until ??
+        DateTime(day.year, day.month, day.day, 23, 59, 59);
+    final uri = Uri.parse(endpoint).replace(queryParameters: {
+      'flight_type': direction == 'departures' ? 'departures' : 'arrivals',
+      'start': _toUtcStamp(start),
+      'end': _toUtcStamp(end),
+      'max_pages': '1',
+    });
+    await _throttle();
+    _lastRequestAt = DateTime.now();
+    final http.Response response;
+    try {
+      response = await httpClient
+          .get(uri, headers: {'x-apikey': apiKey}).timeout(
+              const Duration(seconds: 20));
+    } catch (error) {
+      throw ProviderUnavailable(
+          'aeroapi: the fallback could not be reached (${error.runtimeType})');
     }
-    if (_same(day, weekend.friday)) {
-      // Outbound Friday: departs at or after the Friday bound.
-      if (fridayFrom == null) return (null, null);
-      return (at(day, 0, 0).add(fridayFrom), at(weekend.saturday, 0, 0));
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw const ProviderUnavailable(
+          'aeroapi: the API key was rejected (HTTP 401/403)');
     }
-    if (_same(day, weekend.saturday)) {
-      // Outbound Saturday: departs before the Saturday bound.
-      if (satBefore == null) return (null, null);
-      return (at(day, 0, 0), at(day, 0, 0).add(satBefore));
+    if (response.statusCode != 200) {
+      throw ProviderUnavailable(
+          'aeroapi: the fallback returned HTTP ${response.statusCode}');
     }
-  } else {
-    if (_same(day, weekend.saturday)) {
-      // Return Saturday: lands at or after the Saturday bound.
-      if (satAfter == null) return (null, null);
-      return (at(day, 0, 0).add(satAfter), at(weekend.sunday, 0, 0));
+    final Object? body;
+    try {
+      body = jsonDecode(utf8.decode(response.bodyBytes));
+    } on FormatException {
+      throw const ProviderUnavailable(
+          'aeroapi: the fallback returned a non-JSON response');
     }
-    if (_same(day, weekend.sunday)) {
-      // Return Sunday: lands by the Sunday bound.
-      // Off (null) means any Sunday return counts:
-      // 24:00 is Monday 00:00, so the walk covers
-      // exactly what the matcher keeps -- and the
-      // "flights read" count stays honest.
-      if (!windows.sundayEnabled) return (null, null);
-      return (
-        at(day, 0, 0),
-        at(day, 0, 0).add(
-            Duration(minutes: windows.sundayReturnUntil ?? 24 * 60)),
-      );
+    if (body is! Map<String, dynamic>) {
+      throw const ProviderUnavailable(
+          'aeroapi: the fallback returned a non-JSON response');
     }
-    if (_same(day, weekend.monday)) {
-      // Return Monday: lands before the Monday bound.
-      if (monBefore == null) return (null, null);
-      return (at(day, 0, 0), at(day, 0, 0).add(monBefore));
+    final records = body['flights'];
+    if (records is! List) {
+      // A shape change must fail loudly, not look like
+      // "nowhere to fly" (the same guard the Fraport
+      // provider keeps).
+      final keys = body.keys.toList()..sort();
+      throw ProviderUnavailable(
+          'aeroapi: the response carries no flight list -- the '
+          'endpoint changed? (keys: ${keys.take(8).join(', ')})');
     }
-    if (_same(day, weekend.tuesday)) {
-      // Return Tuesday (the holiday bridge): lands before
-      // the Tuesday bound.
-      if (tueBefore == null) return (null, null);
-      return (at(day, 0, 0), at(day, 0, 0).add(tueBefore));
+    final flights = <Flight>[];
+    for (final record in records) {
+      final flight = flightFromAeroApi(record, direction, start, end);
+      if (flight != null) flights.add(flight);
+    }
+    return FetchResult(
+      flights: flights,
+      source: name,
+      warning: '',
+      fetchedAt: DateTime.now().toIso8601String(),
+    );
+  }
+
+  /// One AeroAPI record -> one [Flight], or null. The
+  /// record's window is re-checked here (the API's `start`
+  /// and `end` filter on the same times, but the window
+  /// must hold for the matcher too).
+  static Flight? flightFromAeroApi(
+      Object? record, String direction, DateTime start, DateTime end) {
+    if (record is! Map) return null;
+    if (record['cancelled'] == true || record['diverted'] == true) {
+      return null;
+    }
+    final origin = record['origin'];
+    final destination = record['destination'];
+    if (origin is! Map || destination is! Map) return null;
+    final originCode = '${origin['code_iata'] ?? ''}'.trim().toUpperCase();
+    final destinationCode =
+        '${destination['code_iata'] ?? ''}'.trim().toUpperCase();
+    if (originCode.isEmpty || destinationCode.isEmpty) return null;
+    final outUtc = _utcOf(record['scheduled_out'] ?? record['estimated_out']);
+    final onUtc = _utcOf(record['scheduled_on'] ?? record['estimated_on']);
+    if (outUtc == null || onUtc == null) return null;
+
+    // The wall clock the matcher compares: the Berlin
+    // offset on both sides (see the class doc for the far
+    // side's approximation), kept as a *naive* DateTime --
+    // the same convention wallClock() uses, so nominal
+    // times compare equal to the Fraport board's.
+    final departure = _wallClockOf(outUtc);
+    final arrival = _wallClockOf(onUtc);
+    if (departure.isBefore(start) || departure.isAfter(end)) return null;
+
+    final operator = '${record['operator'] ?? ''}'.trim().toUpperCase();
+    final ident =
+        '${record['ident'] ?? ''}'.trim().replaceAll(' ', '');
+    final flightNumber = '${record['flight_number'] ?? ''}'.trim();
+    final flightNo = ident.isNotEmpty
+        ? ident
+        : (operator.isNotEmpty ? '$operator$flightNumber' : flightNumber);
+    if (flightNo.isEmpty) return null;
+
+    return Flight(
+      flightNo: flightNo,
+      airline: icaoToIata[operator] ?? operator,
+      origin: originCode,
+      destination: destinationCode,
+      airportName: direction == 'departures'
+          ? '${destination['name'] ?? ''}'.trim()
+          : '${origin['name'] ?? ''}'.trim(),
+      departure: departure,
+      arrival: arrival,
+      terminal: direction == 'departures'
+          ? '${origin['terminal'] ?? ''}'.trim()
+          : '${destination['terminal'] ?? ''}'.trim(),
+    );
+  }
+
+  /// A naive wall clock -> the UTC stamp the API wants.
+  static String _toUtcStamp(DateTime naive) {
+    final utc = naive.subtract(Duration(hours: berlinOffsetHours(naive)));
+    return '${_naiveIso(utc)}Z';
+  }
+
+  /// A UTC instant -> the naive wall clock at the airport
+  /// (the Berlin offset stands in for its own, per the
+  /// class doc). The result is deliberately never
+  /// UTC-flagged: board times are nominal local times, and
+  /// DateTime equality distinguishes the two.
+  static DateTime _wallClockOf(DateTime utc) {
+    final shifted = utc.add(Duration(hours: berlinOffsetHours(utc)));
+    return DateTime(shifted.year, shifted.month, shifted.day, shifted.hour,
+        shifted.minute, shifted.second);
+  }
+
+  static DateTime? _utcOf(Object? text) {
+    final raw = (text ?? '').toString().trim();
+    if (raw.isEmpty) return null;
+    final parsed = DateTime.tryParse(raw);
+    return parsed?.toUtc();
+  }
+
+  static String _naiveIso(DateTime moment) {
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${moment.year}-${two(moment.month)}-${two(moment.day)}'
+        'T${two(moment.hour)}:${two(moment.minute)}:${two(moment.second)}';
+  }
+
+  Future<void> _throttle() async {
+    final previous = _lastRequestAt;
+    if (previous == null) return;
+    final wait = throttleSeconds -
+        DateTime.now().difference(previous).inMilliseconds / 1000.0;
+    if (wait > 0) {
+      await Future<void>.delayed(Duration(milliseconds: (wait * 1000).round()));
     }
   }
-  return (null, null);
 }
 
-bool _same(DateTime a, DateTime b) =>
-    a.year == b.year && a.month == b.month && a.day == b.day;
+/// ICAO -> IATA for the carriers whose flights matter here:
+/// the Lufthansa Group and the benefits table's qualifying
+/// carriers. AeroAPI answers in ICAO; the rest of the app
+/// is keyed by IATA. Extend when the error log names an
+/// operator this table missed -- an unmapped code is kept
+/// as-is and never counts as a benefit, so the gap is
+/// visible rather than wrong.
+const icaoToIata = <String, String>{
+  // Lufthansa Group
+  'DLH': 'LH', // Lufthansa
+  'CLH': 'CL', // Lufthansa CityLine
+  'GEC': 'LH', // Lufthansa Cargo (LH flight numbers)
+  'EWG': 'EW', // Eurowings
+  'SWR': 'LX', // SWISS
+  'EDW': 'WK', // Edelweiss
+  'AUA': 'OS', // Austrian
+  'BEL': 'SN', // Brussels Airlines
+  'DLA': 'EN', // Air Dolomiti
+  'ITY': 'AZ', // ITA Airways
+  // The benefits database's qualifying carriers
+  'CPA': 'CX', // Cathay Pacific
+  'JAL': 'JL', // Japan Airlines
+  'KZR': 'KC', // Air Astana
+  'HVN': 'VN', // Vietnam Airlines
+  'CSZ': 'ZH', // Shenzhen Airlines
+};
 
 /// The unique IATA codes appearing in a set of flights —
 /// the finder's "which airports did we see" report line.
@@ -449,332 +615,4 @@ List<String> airportsOf(Iterable<Flight> flights) {
   }
   final out = seen.toList()..sort();
   return out;
-}
-
-// ── the CSV override ─────────────────────────────────────────────────
-//
-// The escape hatch that keeps the finder usable with no network or
-// when the board changes under us. An explicit CSV always wins over
-// the live board (the weekend-finder plan's decision 1). The rules
-// are `timetable.parse_csv_flights`, ported rule for rule:
-
-/// Header aliases, matched case-insensitively with underscores and
-/// spaces dropped, so "operated_by", "Operated By" and "operatedby"
-/// all reach the same field.
-const _csvColumns = {
-  'flight_no': ['flightno', 'flightnumber', 'flight', 'number', 'nr'],
-  'airline': ['airline', 'carrier'],
-  'origin': ['origin', 'from', 'departureairport', 'fromairport'],
-  'destination': [
-    'destination',
-    'to',
-    'arrivalairport',
-    'toairport',
-  ],
-  'departure': [
-    'departure',
-    'dep',
-    'departuretime',
-    'scheduleddeparture',
-    'std',
-  ],
-  'arrival': ['arrival', 'arr', 'arrivaltime', 'scheduledarrival', 'sta'],
-  'operated_by': [
-    'operatedby',
-    'operator',
-    'operatedbyairline',
-    'operatingcarrier',
-    'operatedbyairlinecode',
-  ],
-  'terminal': ['terminal', 'term'],
-};
-
-/// The time stamps a CSV may carry, as anchored patterns.
-/// Each builder reads one matched pattern; the ones without
-/// a date combine the time with the query's day.
-final _stampPatterns = <(RegExp, DateTime Function(Match, DateTime))>[
-  // %H:%M, %H:%M:%S
-  (
-    RegExp(r'^(\d{1,2}):(\d{2})$'),
-    (match, day) => DateTime(day.year, day.month, day.day,
-        int.parse(match.group(1)!), int.parse(match.group(2)!)),
-  ),
-  (
-    RegExp(r'^(\d{1,2}):(\d{2}):(\d{2})$'),
-    (match, day) => DateTime(day.year, day.month, day.day,
-        int.parse(match.group(1)!), int.parse(match.group(2)!)),
-  ),
-  // %d.%m.%Y %H:%M
-  (
-    RegExp(r'^(\d{1,2})\.(\d{1,2})\.(\d{4}) (\d{1,2}):(\d{2})$'),
-    (match, _) => DateTime(
-        int.parse(match.group(3)!),
-        int.parse(match.group(2)!),
-        int.parse(match.group(1)!),
-        int.parse(match.group(4)!),
-        int.parse(match.group(5)!)),
-  ),
-  // %Y-%m-%d %H:%M
-  (
-    RegExp(r'^(\d{4})-(\d{1,2})-(\d{1,2}) (\d{1,2}):(\d{2})$'),
-    (match, _) => DateTime(
-        int.parse(match.group(1)!),
-        int.parse(match.group(2)!),
-        int.parse(match.group(3)!),
-        int.parse(match.group(4)!),
-        int.parse(match.group(5)!)),
-  ),
-  // %d/%m/%Y %H:%M
-  (
-    RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{4}) (\d{1,2}):(\d{2})$'),
-    (match, _) => DateTime(
-        int.parse(match.group(3)!),
-        int.parse(match.group(2)!),
-        int.parse(match.group(1)!),
-        int.parse(match.group(4)!),
-        int.parse(match.group(5)!)),
-  ),
-  // %H:mm %d.%m.%Y
-  (
-    RegExp(r'^(\d{1,2}):(\d{2}) (\d{1,2})\.(\d{1,2})\.(\d{4})$'),
-    (match, _) => DateTime(
-        int.parse(match.group(5)!),
-        int.parse(match.group(4)!),
-        int.parse(match.group(3)!),
-        int.parse(match.group(1)!),
-        int.parse(match.group(2)!)),
-  ),
-];
-
-/// Parse the CSV upload into flights plus the lines that could not
-/// be read. One bad line is a warning, not a reason to discard an
-/// otherwise good upload.
-(List<Flight>, List<String>) parseCsvFlights(
-    String text, DateTime defaultDay) {
-  final flights = <Flight>[];
-  final problems = <String>[];
-  final records = _csvRecords(text);
-  if (records.isEmpty) {
-    return (flights, ['The file has no header row.']);
-  }
-  final mapping = _mapColumns(records.first);
-  final missing = [
-    for (final name in ['departure', 'arrival'])
-      if (!mapping.containsKey(name)) name,
-  ];
-  if (missing.isNotEmpty) {
-    return (
-      flights,
-      [
-        'Missing required column(s): ${missing.join(', ')}. '
-            'Expected at least: flight_no, airline, origin, '
-            'destination, departure, arrival.',
-      ],
-    );
-  }
-  // Python's DictReader numbers data rows from 2 (the header is 1).
-  for (var number = 2; number < records.length + 1; number++) {
-    try {
-      final flight =
-          _flightFromRow(records[number - 1], mapping, defaultDay);
-      if (flight != null) flights.add(flight);
-    } on FormatException catch (error) {
-      problems.add('line $number: ${error.message}');
-    }
-  }
-  return (flights, problems);
-}
-
-/// Split CSV text into records (rows of fields), honouring quoted
-/// fields — a comma inside quotes does not split, and a quoted
-/// field may span lines.
-List<List<String>> _csvRecords(String text) {
-  final records = <List<String>>[];
-  var record = <String>[];
-  var field = StringBuffer();
-  var inQuotes = false;
-  for (var i = 0; i < text.length; i++) {
-    final char = text[i];
-    if (inQuotes) {
-      if (char == '"') {
-        if (i + 1 < text.length && text[i + 1] == '"') {
-          field.write('"');
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field.write(char);
-      }
-    } else if (char == '"') {
-      inQuotes = true;
-    } else if (char == ',') {
-      record.add(field.toString());
-      field.clear();
-    } else if (char == '\n') {
-      record.add(field.toString());
-      field.clear();
-      if (record.any((value) => value.trim().isNotEmpty)) {
-        records.add(record);
-      }
-      record = <String>[];
-    } else if (char != '\r') {
-      field.write(char);
-    }
-  }
-  record.add(field.toString());
-  if (record.any((value) => value.trim().isNotEmpty)) {
-    records.add(record);
-  }
-  return records;
-}
-
-Map<String, int> _mapColumns(List<String> fieldnames) {
-  final mapping = <String, int>{};
-  for (var index = 0; index < fieldnames.length; index++) {
-    final name = fieldnames[index]
-        .replaceAll(RegExp(r'[\s_]+'), '')
-        .trim()
-        .toLowerCase();
-    for (final entry in _csvColumns.entries) {
-      if (entry.value.contains(name) && !mapping.containsKey(entry.key)) {
-        mapping[entry.key] = index;
-      }
-    }
-  }
-  return mapping;
-}
-
-String _cell(List<String> row, Map<String, int> mapping, String field) {
-  final index = mapping[field];
-  if (index == null || index >= row.length) return '';
-  return row[index].trim();
-}
-
-/// One time cell. Throws [FormatException] (the port's
-/// `ValueError`) when the cell cannot be read, so the
-/// caller can report the line instead of crashing.
-DateTime _parseStamp(String text, DateTime defaultDay) {
-  final raw = text.trim();
-  if (raw.isEmpty) throw const FormatException('empty time');
-  for (final (pattern, build) in _stampPatterns) {
-    final match = pattern.firstMatch(raw);
-    if (match != null) return build(match, defaultDay);
-  }
-  // A trailing "+1" (or "-1") means the next day — the
-  // board's overnight notation. Both signs add the day,
-  // exactly like the legacy's `re.sub(r"[+\-]\d$", ...)`
-  // fallback.
-  final cleaned = raw.replaceFirst(RegExp(r'[+\-]\d$'), '');
-  final stamp = _parseFlightTime(cleaned, defaultDay);
-  if (stamp == null) throw FormatException('unreadable time "$raw"');
-  return cleaned != raw ? stamp.add(const Duration(days: 1)) : stamp;
-}
-
-/// The board's own time notation: "14:05", "14:05+1", occasionally
-/// "-". Returns `null` rather than guessing; an unparseable time is
-/// dropped instead of being silently assumed midnight.
-DateTime? _parseFlightTime(String text, DateTime day) {
-  var raw = text.trim();
-  if (raw.isEmpty || raw == '-' || raw == '--' || raw == 'n/a') {
-    return null;
-  }
-  var nextDay = false;
-  if (raw.endsWith('+1')) {
-    raw = raw.substring(0, raw.length - 2).trim();
-    nextDay = true;
-  }
-  final parts = raw.split(':');
-  final hour = int.tryParse(parts[0]);
-  final minute = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
-  if (hour == null || !(_inRange(hour, 0, 23) && _inRange(minute, 0, 59))) {
-    return null;
-  }
-  final stamp = DateTime(day.year, day.month, day.day, hour, minute);
-  return nextDay ? stamp.add(const Duration(days: 1)) : stamp;
-}
-
-bool _inRange(int value, int low, int high) => low <= value && value <= high;
-
-Flight? _flightFromRow(
-    List<String> row, Map<String, int> mapping, DateTime defaultDay) {
-  final departure = _parseStamp(_cell(row, mapping, 'departure'), defaultDay);
-  final arrivalText = _cell(row, mapping, 'arrival');
-  var arrival = arrivalText.isNotEmpty
-      ? _parseStamp(arrivalText, defaultDay)
-      : departure;
-  if (arrival.isBefore(departure)) {
-    // A data glitch, not a time machine: an overnight leg's arrival
-    // already carries the next day, so a genuinely earlier arrival
-    // means the row is wrong — keep the pair usable by pushing it a
-    // day.
-    arrival = arrival.add(const Duration(days: 1));
-  }
-  final origin = _cell(row, mapping, 'origin').toUpperCase();
-  final destination = _cell(row, mapping, 'destination').toUpperCase();
-  if (origin.isEmpty || destination.isEmpty) {
-    throw const FormatException('origin or destination missing');
-  }
-  // Benefits follow the operator: `operated_by` is the carrier
-  // flying the metal, the `airline` cell the one marketing it.
-  final airline = _cell(row, mapping, 'airline');
-  final operatedBy = _cell(row, mapping, 'operated_by');
-  final flightNo = _cell(row, mapping, 'flight_no');
-  return Flight(
-    flightNo: flightNo.isEmpty ? 'n/a' : flightNo,
-    airline: operatedBy.isNotEmpty ? operatedBy : airline,
-    origin: origin,
-    destination: destination,
-    departure: departure,
-    arrival: arrival,
-    terminal: _cell(row, mapping, 'terminal'),
-    marketingAirline: airline,
-  );
-}
-
-/// The user-supplied CSV override. No network, always available —
-/// the only source when the board cannot be reached, and an
-/// explicit override that always wins over the live board.
-class CsvBoardProvider implements FlightBoardProvider {
-  static const name = 'csv';
-
-  /// A CSV is not bound by the board's ±60-day window: it carries
-  /// its own dates.
-  static const supportsFarDates = true;
-
-  final String departuresCsv;
-  final String arrivalsCsv;
-
-  const CsvBoardProvider({this.departuresCsv = '', this.arrivalsCsv = ''});
-
-  @override
-  Future<FetchResult> fetch(
-    DateTime day,
-    String direction, {
-    DateTime? since,
-    DateTime? until,
-  }) async {
-    // The matcher applies the window bounds; the CSV is read whole.
-    final text = direction == 'departures' ? departuresCsv : arrivalsCsv;
-    if (text.trim().isEmpty) {
-      return FetchResult(
-        flights: const <Flight>[],
-        source: name,
-        warning: 'No CSV data loaded.',
-        fetchedAt: DateTime.now().toIso8601String(),
-      );
-    }
-    final (flights, problems) = parseCsvFlights(text, day);
-    var warning = '';
-    if (problems.isNotEmpty) {
-      warning = '${problems.length} row(s) skipped: '
-          '${problems.take(3).join('; ')}';
-    }
-    return FetchResult(
-      flights: flights,
-      source: name,
-      warning: warning,
-      fetchedAt: DateTime.now().toIso8601String(),
-    );
-  }
 }

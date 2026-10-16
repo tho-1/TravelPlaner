@@ -75,6 +75,14 @@ class TursoConfig {
   /// its documents directory.
   final String stateDir;
 
+  /// The FlightAware AeroAPI key (report j, 2026-10-16).
+  /// Optional: with it, the finder fills board windows that
+  /// failed or look incomplete from the licensed API;
+  /// without it, the Fraport board is the only source. The
+  /// key is never required -- it is a fallback, not a
+  /// dependency.
+  final String flightAwareApiKey;
+
   const TursoConfig({
     required this.url,
     required this.token,
@@ -85,12 +93,16 @@ class TursoConfig {
     this.flightRoutesCache = '',
     this.geocodeCache = '',
     this.stateDir = '',
+    this.flightAwareApiKey = '',
   });
 
   bool get isConfigured => url.trim().isNotEmpty && token.trim().isNotEmpty;
 
   bool get benefitsConfigured =>
       benefitsUrl.trim().isNotEmpty && benefitsToken.trim().isNotEmpty;
+
+  bool get fallbackFlightsConfigured =>
+      flightAwareApiKey.trim().isNotEmpty;
 
   static const defaultUrl = 'https://travel-tz123.aws-eu-north-1.turso.io';
 
@@ -122,6 +134,8 @@ class TursoConfig {
         geocodeCache:
             (map['geocode_cache'] as String?)?.trim() ?? '',
         stateDir: (map['state_dir'] as String?)?.trim() ?? '',
+        flightAwareApiKey:
+            (map['flightaware_api_key'] as String?)?.trim() ?? '',
       );
     } catch (_) {
       return const TursoConfig(

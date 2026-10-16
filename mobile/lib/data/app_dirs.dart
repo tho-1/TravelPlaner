@@ -11,6 +11,7 @@
 /// the app does not create.
 library;
 
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 /// The app's documents directory, resolved once at
@@ -44,3 +45,16 @@ Future<String> perDeviceCacheDir(String configured) async {
 /// per-device home* and have no configured path use
 /// this, with '' meaning "no home" to the caller.
 String documentsDir() => _documentsDir ?? '';
+
+/// The per-device state directory: the configured path
+/// wins, but only when it is absolute on *this* platform
+/// (the bundled config carries the PC path, which is
+/// unwritable on the phone); otherwise the app's documents
+/// directory. Both `app_settings.json` and
+/// `error_log.jsonl` live here.
+String stateDirFor(String configured) {
+  final trimmed = configured.trim();
+  return trimmed.isNotEmpty && p.isAbsolute(trimmed)
+      ? trimmed
+      : documentsDir();
+}

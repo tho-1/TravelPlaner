@@ -1,17 +1,17 @@
-/// The weekend finder: Fri→Mon possibilities from FRA.
+/// The weekend finder: free-form travel days from FRA.
 ///
-/// The Flutter port of `pages/weekend_finder.py`. The
-/// flight source is decided at runtime and shown in the
-/// "Flight data source" card: the live Fraport board is
-/// the primary source, and a pasted CSV (departures and
-/// arrivals) is the escape hatch that overrides it — an
-/// explicit CSV always wins, so the finder stays usable
-/// with no network or when the board changes under us.
-/// The rules and the data flow are the legacy ones: the
-/// six time bounds narrow five board queries, the
-/// matcher requires both legs, and the report explains
-/// what it dropped and why -- an empty answer is never
-/// ambiguous.
+/// The Flutter port of `pages/weekend_finder.py`, with the
+/// day model the user asked for (report b, 2026-10-16): a
+/// travel *period* on the calendar populates candidate days
+/// (the period plus the day before and after), each side
+/// ("out on"/"back on") selects its days freely, and every
+/// selected day carries its own any/after/before time bound.
+/// The rules and the data flow stay the legacy ones: the
+/// bounds narrow the board queries, the matcher requires
+/// both legs, and the report explains what it dropped and
+/// why -- an empty answer is never ambiguous. The Fraport
+/// board is the only flight source (the CSV override is
+/// gone, report c).
 library;
 
 import 'package:flutter/material.dart';
@@ -21,20 +21,14 @@ import 'package:flutter/services.dart'
 import '../data/benefits_repository.dart';
 import '../data/catalogue_match.dart';
 import '../data/destination_repository.dart';
+import '../data/error_log.dart';
 import '../data/weekend_repository.dart';
 import '../models/airline_benefits.dart';
 import '../models/destination.dart';
 import '../models/timetable.dart';
+import '../models/travel_days.dart';
 import '../models/weekend_match.dart';
 import 'destination_page.dart';
-
-/// The working example the legacy shows next to the
-/// upload: a Friday out and a Monday back, in the
-/// canonical column spelling.
-const csvTemplate = '''flight_no,airline,origin,destination,departure,arrival
-LH1000,Lufthansa,FRA,BCN,09.10.2026 15:05,09.10.2026 17:05
-LH1002,Lufthansa,BCN,FRA,11.10.2026 16:40,11.10.2026 18:35
-''';
 
 class WeekendFinderPage extends StatefulWidget {
   final BenefitsRepository benefits;
@@ -44,6 +38,11 @@ class WeekendFinderPage extends StatefulWidget {
   /// nothing (the live Fraport board); tests inject a fake
   /// so a search runs without network.
   final FlightBoardProvider? board;
+
+  /// The optional fallback source (report j), consulted
+  /// only about board windows that failed or look
+  /// incomplete. Null when no key is configured.
+  final FlightBoardProvider? fallback;
 
   /// Called when a result opens a destination page, so the
   /// shell records the open-destination tab. Null when the
@@ -55,6 +54,7 @@ class WeekendFinderPage extends StatefulWidget {
     required this.benefits,
     required this.destinations,
     this.board,
+    this.fallback,
     this.onOpenDestination,
   });
 
@@ -73,22 +73,27 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   );
   var _loadingBenefits = true;
 
-  Weekend _weekend = Weekend(DateTime.now());
-  Windows _windows = const Windows();
+  /// The travel period and the days selected per side. A
+  /// day is selected exactly when it has a rule entry; the
+  /// entry also carries its any/after/before bound.
+  TravelPeriod _period = weekendPeriod(fridayOf(DateTime.now()));
+  final Map<DateTime, TravelDay> _outRules = {};
+  final Map<DateTime, TravelDay> _backRules = {};
+
+  /// Which preset (or "custom") produced the current
+  /// selection -- the chips show it as selected.
+  String _preset = 'this';
+
+  /// The airline filter (report d) and the stay-length
+  /// floor (report e, clarified 2026-10-16: a *visible*
+  /// control, default "at least 1 night").
+  AirlineScope _airlineScope = AirlineScope.lufthansaGroup;
+  var _minNights = 1;
+
+  /// Whether catalogue destinations are grouped first in
+  /// the result list.
   var _catalogueFirst = true;
 
-  /// The CSV override: either field non-empty wins over
-  /// the live board (the weekend-finder plan's decision
-  /// 1 — live board for the upcoming weekend, CSV as the
-  /// override and the no-network fallback).
-  final TextEditingController _departuresCsv =
-      TextEditingController();
-  final TextEditingController _arrivalsCsv =
-      TextEditingController();
-
-  /// The flight filters: benefit-only matching (on = the
-  /// legacy behaviour) and the longest leg the user accepts.
-  var _benefitsOnly = true;
   final TextEditingController _maxLegHours =
       TextEditingController(text: '6');
 
@@ -106,18 +111,17 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   /// the input cards above stay up, but the answer should
   /// come to you.
   final _resultsKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
-    _weekend = weekendContaining(DateTime.now());
+    _applyPreset('this');
     _loadBenefits();
     _loadCatalogue();
   }
 
   @override
   void dispose() {
-    _departuresCsv.dispose();
-    _arrivalsCsv.dispose();
     _maxLegHours.dispose();
     super.dispose();
   }
@@ -138,35 +142,38 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     setState(() => _catalogue = destinations);
   }
 
-  /// The provider the search runs on: an explicit CSV
-  /// always wins over the live board.
-  FlightBoardProvider _activeProvider() {
-    if (_departuresCsv.text.trim().isNotEmpty ||
-        _arrivalsCsv.text.trim().isNotEmpty) {
-      return CsvBoardProvider(
-        departuresCsv: _departuresCsv.text,
-        arrivalsCsv: _arrivalsCsv.text,
+  /// The plan the search runs with, built from the selected
+  /// days.
+  TravelPlan _plan() => TravelPlan(
+        outDays: _outRules.values.toList()
+          ..sort((a, b) => a.compareTo(b)),
+        backDays: _backRules.values.toList()
+          ..sort((a, b) => a.compareTo(b)),
+        label: _period.describe(),
       );
-    }
-    return _liveBoard;
-  }
 
   Future<void> _find() async {
+    if (_outRules.isEmpty || _backRules.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Select at least one out day and one back day.'),
+      ));
+      return;
+    }
     setState(() {
       _searching = true;
       _result = null;
     });
-    final repository = WeekendRepository(_activeProvider());
+    final repository = WeekendRepository(_liveBoard, fallback: widget.fallback);
     final hours = double.tryParse(_maxLegHours.text.trim());
     try {
       final search = await repository.search(
-        _weekend,
-        _windows,
+        _plan(),
         _benefits,
         options: WeekendSearchOptions(
-          benefitsOnly: _benefitsOnly,
+          airlineScope: _airlineScope,
           maxLegDuration:
               hours == null ? null : Duration(minutes: (hours * 60).round()),
+          minNights: _minNights,
         ),
       );
       if (!mounted) return;
@@ -190,9 +197,12 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     } catch (error) {
       // The provider errors surface as notes inside the
       // result; this is for anything else, so a failure
-      // never leaves the spinner up forever.
+      // never leaves the spinner up forever. It is logged
+      // too -- that is what the error log is for (report f).
       if (!mounted) return;
       setState(() => _searching = false);
+      ErrorLog.instance
+          .record('weekend-finder', 'search failed: $error');
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('The search failed: $error'),
       ));
@@ -213,9 +223,9 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
           ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _weekendCard(),
+                _periodCard(),
                 const SizedBox(height: 12),
-                _windowsCard(),
+                _daysCard(),
                 const SizedBox(height: 12),
                 _sourceCard(),
                 const SizedBox(height: 12),
@@ -247,9 +257,7 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                       children: [
                         const CircularProgressIndicator(),
                         const SizedBox(height: 16),
-                        Text(_activeProvider() is CsvBoardProvider
-                            ? 'Matching flights…'
-                            : 'Querying the flight board…'),
+                        const Text('Querying the flight board…'),
                       ],
                     ),
                   ),
@@ -261,38 +269,48 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     );
   }
 
-  Widget _weekendCard() {
+  /// The travel period: two presets and the calendar
+  /// range picker (report b). The period decides which
+  /// days the two pickers below offer.
+  Widget _periodCard() {
+    final theme = Theme.of(context);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Weekend', style: Theme.of(context).textTheme.titleSmall),
+            Text('Travel period', style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Text(_period.describe(), style: theme.textTheme.bodyMedium),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               children: [
                 ChoiceChip(
                   label: Text('This weekend '
-                      '(${_isoShort(weekendContaining(DateTime.now()).friday)})'),
-                  selected: _isSameWeekend(weekendContaining(DateTime.now())),
-                  onSelected: (_) => setState(
-                      () => _weekend = weekendContaining(DateTime.now())),
+                      '(${_isoShort(weekendPeriod(fridayOf(DateTime.now())).start)})'),
+                  selected: _preset == 'this',
+                  onSelected: (_) => setState(() => _applyPreset('this')),
                 ),
                 ChoiceChip(
-                  label: Text(
-                      'Next weekend (${_isoShort(_nextWeekend().friday)})'),
-                  selected: _isSameWeekend(_nextWeekend()),
-                  onSelected: (_) =>
-                      setState(() => _weekend = _nextWeekend()),
+                  label: Text('Next weekend '
+                      '(${_isoShort(weekendPeriod(nextFriday(DateTime.now(), minimumDaysAhead: 7)).start)})'),
+                  selected: _preset == 'next',
+                  onSelected: (_) => setState(() => _applyPreset('next')),
                 ),
                 ActionChip(
                   avatar: const Icon(Icons.calendar_month_outlined, size: 18),
-                  label: Text('Fri ${_isoShort(_weekend.friday)}'),
-                  onPressed: _pickFriday,
+                  label: Text(_period.describe()),
+                  onPressed: _pickPeriod,
                 ),
               ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'The pickers below offer every day of the period, plus the '
+              'day before and the day after (the flex days).',
+              style: theme.textTheme.bodySmall,
             ),
           ],
         ),
@@ -300,167 +318,88 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     );
   }
 
-  bool _isSameWeekend(Weekend other) =>
-      other.friday.year == _weekend.friday.year &&
-      other.friday.month == _weekend.friday.month &&
-      other.friday.day == _weekend.friday.day;
-
-  Weekend _nextWeekend() =>
-      Weekend(nextFriday(DateTime.now(), minimumDaysAhead: 7));
-
-  Future<void> _pickFriday() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _weekend.friday,
-      firstDate: DateTime.now().subtract(const Duration(days: 30)),
-      lastDate: DateTime.now().add(const Duration(days: 120)),
-      helpText: 'Pick the Friday',
-    );
-    if (picked == null) return;
+  /// "This"/"next weekend" preselect the legacy rules (out
+  /// Fri from 14:00 or Sat before 12:00, back Sun any time
+  /// or Mon before 09:00): the finder answers the classic
+  /// question exactly as it always did until the days are
+  /// touched.
+  void _applyPreset(String which) {
+    final friday = which == 'this'
+        ? fridayOf(DateTime.now())
+        : nextFriday(DateTime.now(), minimumDaysAhead: 7);
+    final period = weekendPeriod(friday);
+    final plan = legacyWeekendPlan(friday, label: period.describe());
     setState(() {
-      var friday = picked;
-      while (friday.weekday != 5) {
-        friday = friday.add(const Duration(days: 1));
-      }
-      _weekend = Weekend(friday);
+      _preset = which;
+      _period = period;
+      _setRules(_outRules, plan.outDays);
+      _setRules(_backRules, plan.backDays);
     });
   }
 
-  Widget _windowsCard() {
+  Future<void> _pickPeriod() async {
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime.now().subtract(const Duration(days: 30)),
+      lastDate: DateTime.now().add(const Duration(days: 300)),
+      initialDateRange: DateTimeRange(start: _period.start, end: _period.end),
+      helpText: 'When do you consider travel?',
+    );
+    if (picked == null) return;
+    setState(() {
+      _preset = 'custom';
+      _period = TravelPeriod(picked.start, picked.end);
+      // A custom period starts with its first day out and
+      // its last day back, both "any time" -- the days are
+      // then selected and bounded freely.
+      final plan = periodPlan(_period);
+      _setRules(_outRules, plan.outDays);
+      _setRules(_backRules, plan.backDays);
+    });
+  }
+
+  void _setRules(Map<DateTime, TravelDay> target, List<TravelDay> days) {
+    target
+      ..clear()
+      ..addEntries(days.map((day) => MapEntry(day.day, day)));
+  }
+
+  /// The free day selection: which candidate days count as
+  /// "out on" and "back on", and what time bound each
+  /// selected day carries (report b).
+  Widget _daysCard() {
+    final theme = Theme.of(context);
+    final candidates = candidateDays(_period);
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Windows', style: Theme.of(context).textTheme.titleSmall),
+            Text('Out on / Back on', style: theme.textTheme.titleSmall),
             const SizedBox(height: 4),
-            Text(_windows.describe(),
-                style: Theme.of(context).textTheme.bodySmall),
+            Text(_plan().describe(), style: theme.textTheme.bodySmall),
             const SizedBox(height: 10),
-            Text('Out on', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                _dayRule(
-                  day: 'Thu',
-                  enabled: _windows.thursdayFrom != null,
-                  boundLabel: _windows.thursdayFrom == null
-                      ? ''
-                      : 'from ${_hm(_windows.thursdayFrom!)}',
-                  onToggle: (on) => setState(() => _windows = _windowsWith(
-                      thursdayFrom: on ? 14 * 60 : null,
-                      clearThursday: !on)),
-                  onEditTime: _windows.thursdayFrom == null
-                      ? null
-                      : () => _pickBound(
-                          'Thursday departure from', _windows.thursdayFrom!,
-                          (value) => setState(() => _windows =
-                              _windowsWith(thursdayFrom: value))),
-                ),
-                _dayRule(
-                  day: 'Fri',
-                  enabled: _windows.fridayFrom != null,
-                  boundLabel: _windows.fridayFrom == null
-                      ? ''
-                      : 'from ${_hm(_windows.fridayFrom!)}',
-                  onToggle: (on) => setState(() => _windows = _windowsWith(
-                      fridayFrom: on ? 14 * 60 : null)),
-                  onEditTime: _windows.fridayFrom == null
-                      ? null
-                      : () => _pickBound('Friday departure from',
-                          _windows.fridayFrom!,
-                          (value) => setState(() =>
-                              _windows = _windowsWith(fridayFrom: value))),
-                ),
-                _dayRule(
-                  day: 'Sat',
-                  enabled: _windows.saturdayBefore != null,
-                  boundLabel: _windows.saturdayBefore == null
-                      ? ''
-                      : 'before ${_hm(_windows.saturdayBefore!)}',
-                  onToggle: (on) => setState(() => _windows = _windowsWith(
-                      saturdayBefore: on ? 12 * 60 : null)),
-                  onEditTime: _windows.saturdayBefore == null
-                      ? null
-                      : () => _pickBound(
-                          'Saturday departure before', _windows.saturdayBefore!,
-                          (value) => setState(() => _windows =
-                              _windowsWith(saturdayBefore: value))),
-                ),
-              ],
+            ..._daySide(
+              title: 'Out on',
+              rules: _outRules,
+              candidates: candidates,
+              outbound: true,
             ),
             const SizedBox(height: 10),
-            Text('Back on', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 4),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                _dayRule(
-                  day: 'Sat',
-                  enabled: _windows.saturdayReturnAfter != null,
-                  boundLabel: _windows.saturdayReturnAfter == null
-                      ? ''
-                      : 'after ${_hm(_windows.saturdayReturnAfter!)}',
-                  onToggle: (on) => setState(() => _windows = _windowsWith(
-                      saturdayReturnAfter: on ? 12 * 60 : null)),
-                  onEditTime: _windows.saturdayReturnAfter == null
-                      ? null
-                      : () => _pickBound('Saturday return after',
-                          _windows.saturdayReturnAfter!,
-                          (value) => setState(() => _windows =
-                              _windowsWith(saturdayReturnAfter: value))),
-                ),
-                _dayRule(
-                  day: 'Sun',
-                  enabled: _windows.sundayEnabled,
-                  boundLabel: 'any time',
-                  onToggle: (on) => setState(
-                      () => _windows = _windowsWith(sundayEnabled: on)),
-                  onEditTime: null,
-                ),
-                _dayRule(
-                  day: 'Mon',
-                  enabled: _windows.mondayReturnBefore != null,
-                  boundLabel: _windows.mondayReturnBefore == null
-                      ? ''
-                      : 'before ${_hm(_windows.mondayReturnBefore!)}',
-                  onToggle: (on) => setState(() => _windows = _windowsWith(
-                      mondayReturnBefore: on ? 9 * 60 : null)),
-                  onEditTime: _windows.mondayReturnBefore == null
-                      ? null
-                      : () => _pickBound('Monday return before',
-                          _windows.mondayReturnBefore!,
-                          (value) => setState(() => _windows =
-                              _windowsWith(mondayReturnBefore: value))),
-                ),
-                _dayRule(
-                  day: 'Tue',
-                  enabled: _windows.tuesdayReturnBefore != null,
-                  boundLabel: _windows.tuesdayReturnBefore == null
-                      ? ''
-                      : 'before ${_hm(_windows.tuesdayReturnBefore!)}',
-                  onToggle: (on) => setState(() => _windows = _windowsWith(
-                      tuesdayReturnBefore: on ? 9 * 60 : null,
-                      clearTuesday: !on)),
-                  onEditTime: _windows.tuesdayReturnBefore == null
-                      ? null
-                      : () => _pickBound(
-                          'Tuesday return before', _windows.tuesdayReturnBefore!,
-                          (value) => setState(() => _windows =
-                              _windowsWith(tuesdayReturnBefore: value))),
-                ),
-              ],
+            ..._daySide(
+              title: 'Back on',
+              rules: _backRules,
+              candidates: candidates,
+              outbound: false,
             ),
             const SizedBox(height: 8),
             Text(
-              'Thursday out and Tuesday back are the '
-              'holiday-bridge days — switch them on when a '
-              'public holiday extends the weekend.',
-              style: Theme.of(context).textTheme.bodySmall,
+              'Tap a day to select or deselect it. A day\'s time rule is '
+              'about the departure (out) or the landing (back). Days '
+              'outside your period are the flex days -- leave a day '
+              'early, come back a day late.',
+              style: theme.textTheme.bodySmall,
             ),
           ],
         ),
@@ -468,135 +407,179 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     );
   }
 
-  /// One out/back day: the toggle chip (on/off) plus, when
-  /// enabled, the time bound it opens a picker for. Sunday
-  /// has no bound ("any time").
-  Widget _dayRule({
-    required String day,
-    required bool enabled,
-    required String boundLabel,
-    required ValueChanged<bool> onToggle,
-    VoidCallback? onEditTime,
+  List<Widget> _daySide({
+    required String title,
+    required Map<DateTime, TravelDay> rules,
+    required List<DateTime> candidates,
+    required bool outbound,
   }) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        FilterChip(
-          label: Text(day),
-          selected: enabled,
-          onSelected: onToggle,
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          visualDensity: VisualDensity.compact,
-        ),
-        if (enabled && onEditTime != null) ...[
-          const SizedBox(width: 4),
-          ActionChip(
-            label: Text(boundLabel,
-                style: Theme.of(context).textTheme.labelSmall),
-            onPressed: onEditTime,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            visualDensity: VisualDensity.compact,
-          ),
-        ] else if (enabled) ...[
-          const SizedBox(width: 4),
-          Text(boundLabel, style: Theme.of(context).textTheme.labelSmall),
+    final theme = Theme.of(context);
+    final selected = rules.values.toList()
+      ..sort((a, b) => a.compareTo(b));
+    return [
+      Text(title, style: theme.textTheme.labelLarge),
+      const SizedBox(height: 4),
+      Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: [
+          for (final day in candidates)
+            FilterChip(
+              label: Text(_dayLabel(day)),
+              selected: rules.containsKey(day),
+              onSelected: (on) => setState(() {
+                if (on) {
+                  rules[day] = TravelDay(day);
+                } else {
+                  rules.remove(day);
+                }
+              }),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
         ],
+      ),
+      if (selected.isNotEmpty) ...[
+        const SizedBox(height: 6),
+        for (final rule in selected)
+          _ruleRow(rule, outbound: outbound, rules: rules),
       ],
+    ];
+  }
+
+  /// One selected day's rule row: the bound direction and
+  /// the time it applies to ("departs after 14:00" /
+  /// "lands before 09:00" / "any time").
+  Widget _ruleRow(TravelDay rule,
+      {required bool outbound, required Map<DateTime, TravelDay> rules}) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(_dayLabel(rule.day),
+                style: theme.textTheme.bodyMedium),
+          ),
+          DropdownButton<DayBound>(
+            value: rule.bound,
+            isDense: true,
+            items: const [
+              DropdownMenuItem(value: DayBound.any, child: Text('any time')),
+              DropdownMenuItem(value: DayBound.after, child: Text('after')),
+              DropdownMenuItem(value: DayBound.before, child: Text('before')),
+            ],
+            onChanged: (bound) {
+              if (bound == null) return;
+              setState(() {
+                rules[rule.day] = rule.withBound(
+                  bound,
+                  bound == DayBound.any
+                      ? null
+                      // Sensible starting bounds: leave
+                      // after work, be home before the
+                      // night.
+                      : (rule.minutes ??
+                          (bound == DayBound.after ? 14 * 60 : 9 * 60)),
+                );
+              });
+            },
+          ),
+          if (rule.bound == DayBound.any)
+            Text('any time', style: theme.textTheme.labelSmall)
+          else
+            ActionChip(
+              label: Text(rule.describe(outbound: outbound),
+                  style: theme.textTheme.labelSmall),
+              onPressed: () =>
+                  _pickRuleTime(rule, outbound: outbound, rules: rules),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
+        ],
+      ),
     );
   }
 
-  Future<void> _pickBound(
-      String field, int currentMinutes, ValueChanged<int> onChanged) async {
+  Future<void> _pickRuleTime(TravelDay rule,
+      {required bool outbound, required Map<DateTime, TravelDay> rules}) async {
+    final current = rule.minutes ?? 0;
     final picked = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay(
-          hour: currentMinutes ~/ 60, minute: currentMinutes % 60),
-      helpText: field,
+      initialTime:
+          TimeOfDay(hour: current ~/ 60, minute: current % 60),
+      helpText: outbound ? 'Departs (that day)' : 'Lands (that day)',
     );
     if (picked == null) return;
-    onChanged(picked.hour * 60 + picked.minute);
+    setState(() {
+      rules[rule.day] =
+          rule.withBound(rule.bound, picked.hour * 60 + picked.minute);
+    });
   }
 
-  /// A new Windows with the given bounds changed; the
-  /// clear flags exist because the default-keep pattern
-  /// cannot express "turn Thursday off".
-  Windows _windowsWith({
-    int? thursdayFrom,
-    bool clearThursday = false,
-    int? fridayFrom,
-    int? saturdayBefore,
-    int? saturdayReturnAfter,
-    bool? sundayEnabled,
-    int? mondayReturnBefore,
-    int? tuesdayReturnBefore,
-    bool clearTuesday = false,
-  }) =>
-      Windows(
-        thursdayFrom:
-            clearThursday ? null : (thursdayFrom ?? _windows.thursdayFrom),
-        fridayFrom: fridayFrom ?? _windows.fridayFrom,
-        saturdayBefore: saturdayBefore ?? _windows.saturdayBefore,
-        saturdayReturnAfter:
-            saturdayReturnAfter ?? _windows.saturdayReturnAfter,
-        sundayEnabled: sundayEnabled ?? _windows.sundayEnabled,
-        mondayReturnBefore:
-            mondayReturnBefore ?? _windows.mondayReturnBefore,
-        tuesdayReturnBefore: clearTuesday
-            ? null
-            : (tuesdayReturnBefore ?? _windows.tuesdayReturnBefore),
-      );
+  /// "Thu 10.12." -- with a flex marker outside the period.
+  String _dayLabel(DateTime day) {
+    const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final name = weekdays[day.weekday - 1];
+    final date = '${day.day}.${day.month}.';
+    return isFlexDay(_period, day) ? '$name $date flex' : '$name $date';
+  }
 
-  /// The flight source, as the legacy's "Flight data
-  /// source" expander: the live board is the primary
-  /// source, and a pasted CSV is the escape hatch that
-  /// overrides it. The legacy's file upload becomes two
-  /// paste fields here — the same CSV text, the same
-  /// override semantics, and no file-picker plugin
-  /// (the app stays plugin-free; see G4).
-  ///
-  /// The legacy's "data sources that are not available"
-  /// expander has nothing to list: the Dart port has
-  /// exactly one live provider and it is always
-  /// available, so the expander would always be empty.
+  /// The flight source and the flight filters: the live
+  /// Fraport board is the only source (the CSV override is
+  /// gone, report c), the dropdown decides which airlines
+  /// count (report d) and the stay floor is the visible
+  /// "Min. nights" control (report e).
   Widget _sourceCard() {
     final theme = Theme.of(context);
-    final overrideActive =
-        _departuresCsv.text.trim().isNotEmpty ||
-            _arrivalsCsv.text.trim().isNotEmpty;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Flight data source',
-                style: theme.textTheme.titleSmall),
+            Text('Flight data source', style: theme.textTheme.titleSmall),
             const SizedBox(height: 4),
             Text(
-              _benefitsOnly
-                  ? 'Only airlines you have marked as having '
-                      'benefits count. Source: Fraport'
-                      '${overrideActive ? '' : ' — paste CSV below to override it.'}'
-                  : 'Every airline on the board counts; the '
-                      'benefit airlines are still named per option. '
-                      'Source: Fraport'
-                      '${overrideActive ? '' : ' — paste CSV below to override it.'}',
+              'Source: the live Fraport departures/arrivals board.',
               style: theme.textTheme.bodySmall,
             ),
-            SwitchListTile(
-              title: const Text('Only airlines with benefits'),
-              subtitle: const Text(
-                  'Off: all airlines count, not only the ones '
-                  'marked in the benefits database.'),
-              value: _benefitsOnly,
-              onChanged: (value) =>
-                  setState(() => _benefitsOnly = value),
-              contentPadding: EdgeInsets.zero,
+            const SizedBox(height: 10),
+            Text('Airlines', style: theme.textTheme.labelLarge),
+            const SizedBox(height: 4),
+            DropdownButtonFormField<AirlineScope>(
+              initialValue: _airlineScope,
+              decoration: const InputDecoration(
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              isExpanded: true,
+              items: [
+                for (final scope in AirlineScope.values)
+                  DropdownMenuItem(
+                    value: scope,
+                    child: Text(airlineScopeLabels[scope]!,
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+              ],
+              onChanged: (scope) {
+                if (scope == null) return;
+                setState(() => _airlineScope = scope);
+              },
             ),
-            Row(
+            const SizedBox(height: 4),
+            Text(_scopeCaption(), style: theme.textTheme.bodySmall),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 12,
+              runSpacing: 8,
               children: [
                 SizedBox(
-                  width: 140,
+                  width: 150,
                   child: TextField(
                     controller: _maxLegHours,
                     keyboardType:
@@ -613,101 +596,65 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    'Flights longer than this produce no '
-                    'options, on either leg.',
-                    style: theme.textTheme.bodySmall,
+                SizedBox(
+                  width: 150,
+                  child: DropdownButtonFormField<int>(
+                    initialValue: _minNights,
+                    decoration: const InputDecoration(
+                      labelText: 'Min. nights',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    isExpanded: true,
+                    items: [
+                      for (final nights in [0, 1, 2, 3, 4])
+                        DropdownMenuItem(
+                          value: nights,
+                          child: Text(
+                            nights == 0
+                                ? 'Any'
+                                : '$nights night${nights == 1 ? '' : 's'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                    ],
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() => _minNights = value);
+                    },
                   ),
                 ),
               ],
             ),
-            if (overrideActive) ...[
-              const SizedBox(height: 4),
-              Text(
-                'CSV override active — the live board '
-                'is not queried.',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.primary),
-              ),
-            ],
-            const SizedBox(height: 8),
-            ExpansionTile(
-              title: Text(
-                overrideActive
-                    ? 'CSV override (active)'
-                    : 'CSV override (optional)',
-                style: theme.textTheme.bodyMedium,
-              ),
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                      16, 0, 16, 12),
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Two files, or leave one empty. '
-                        'Columns: flight_no, airline, '
-                        'origin, destination, departure, '
-                        'arrival — operated_by is used '
-                        'when present, because benefits '
-                        'follow the operating carrier. '
-                        'Times may be 15:05 or '
-                        '09.10.2026 15:05.',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _departuresCsv,
-                        maxLines: 4,
-                        minLines: 2,
-                        decoration: const InputDecoration(
-                          labelText:
-                              'Departures from FRA (CSV)',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _arrivalsCsv,
-                        maxLines: 4,
-                        minLines: 2,
-                        decoration: const InputDecoration(
-                          labelText: 'Arrivals into FRA (CSV)',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ExpansionTile(
-                        title: Text('CSV template',
-                            style: theme.textTheme.bodySmall),
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                                16, 0, 16, 12),
-                            child: SelectableText(
-                              csvTemplate,
-                              style: theme.textTheme.bodySmall
-                                  ?.copyWith(
-                                      fontFamily: 'monospace'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            const SizedBox(height: 6),
+            Text(
+              'Flights longer than the cap produce no options, on either '
+              'leg. Options with fewer nights than the minimum are dropped '
+              '-- the report says how many.',
+              style: theme.textTheme.bodySmall,
             ),
           ],
         ),
       ),
     );
+  }
+
+  /// What the airline scope means, in one line.
+  String _scopeCaption() {
+    switch (_airlineScope) {
+      case AirlineScope.lufthansaGroup:
+        return 'Lufthansa Group carriers: Lufthansa, Lufthansa City, '
+            'Eurowings, SWISS, Austrian, Brussels Airlines, Air Dolomiti, '
+            'ITA Airways.';
+      case AirlineScope.lufthansa:
+        return 'Every airline with "Lufthansa" in its name.';
+      case AirlineScope.allWithBenefits:
+        return 'Only airlines flagged as having benefits in the benefits '
+            'database.';
+      case AirlineScope.all:
+        return 'Every airline on the board.';
+    }
   }
 
   Widget _benefitsCard() {
@@ -758,7 +705,8 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Weekend ${report.weekend.describe()} · ${report.outboundTotal} '
+          'Travel ${report.plan.label.isEmpty ? '' : '${report.plan.label} · '}'
+          '${report.outboundTotal} '
           'outbound, ${report.returnTotal} return flights read',
           style: theme.textTheme.bodySmall,
         ),
@@ -1050,12 +998,8 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Out', style: theme.textTheme.labelSmall),
-                Text('${out.flightNo} · ${out.operatorAirline}',
+                Text('${out.flightNo} · ${_carrierLabel(out)}',
                     style: theme.textTheme.bodyMedium),
-                if (out.marketingAirline.isNotEmpty &&
-                    out.marketingAirline != out.operatorAirline)
-                  Text('marketed as ${out.marketingAirline}',
-                      style: theme.textTheme.bodySmall),
                 Text(
                     '${_stamp(out.departure)} → ${_stamp(out.arrival)}'
                     '${out.terminal.isEmpty ? '' : ' · T${out.terminal}'}',
@@ -1068,7 +1012,7 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Back', style: theme.textTheme.labelSmall),
-                Text('${back.flightNo} · ${back.operatorAirline}',
+                Text('${back.flightNo} · ${_carrierLabel(back)}',
                     style: theme.textTheme.bodyMedium),
                 Text('${_stamp(back.departure)} → ${_stamp(back.arrival)}',
                     style: theme.textTheme.bodySmall),
@@ -1095,9 +1039,12 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     return unmatchedAirlines(names, flags);
   }
 
-  static String _hm(int minutes) =>
-      '${(minutes ~/ 60).toString().padLeft(2, '0')}:'
-      '${(minutes % 60).toString().padLeft(2, '0')}';
+  /// The carrier as a reader says it: the board's name when
+  /// the record carried one, else the code.
+  static String _carrierLabel(Flight flight) {
+    final name = flight.airlineName.trim();
+    return name.isNotEmpty ? name : flight.operatorAirline;
+  }
 
   static String _stamp(DateTime moment) =>
       '${_weekdayName(moment.weekday)} ${moment.hour.toString().padLeft(2, '0')}:'

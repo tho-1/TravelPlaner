@@ -1,12 +1,20 @@
-/// The open-destination tabs UI: a side panel on the
-/// desktop (the legacy Streamlit sidebar's list, ported)
-/// and a chip strip above the content on the phone.
+/// The open-destination tabs UI: a floating button that
+/// holds the open items (report i, 2026-10-16).
 ///
-/// Both surfaces are view-only widgets: the shell owns the
-/// list and its persistence, exactly the way the pages
-/// own none of the data they render. Every row states what
-/// it is -- name, favourite star when known -- and every
-/// row closes (the ✖), like the legacy sidebar's rows.
+/// The old surfaces -- a 200 px side panel on the desktop
+/// and a 44 px chip strip on the phone -- spent permanent
+/// screen space on a list that is consulted occasionally.
+/// The replacement is one floating button showing the open
+/// count (the card-stack motif: the items are a stack you
+/// pick up when you need it). Tapping opens the list in a
+/// bottom sheet with the same rows as the legacy sidebar:
+/// name, favourite star, the per-row close (the own),
+/// plus "Close all".
+///
+/// The shell still owns the list and its persistence; these
+/// are view-only widgets. `problems` non-empty means the
+/// persisted list could not be read -- shown as a warning,
+/// never presented as "no tabs open".
 library;
 
 import 'package:flutter/material.dart';
@@ -18,83 +26,36 @@ import '../models/destination.dart';
 /// push sites skip the recording entirely.
 typedef OpenDestinationCallback = void Function(String name);
 
-/// The desktop side panel: the legacy sidebar's
-/// "Open destinations" block. `problems` non-empty means
-/// the persisted list could not be read -- shown as a
-/// warning on the header (a failed read is never
-/// silently presented as "no tabs open").
-class OpenTabsPanel extends StatelessWidget {
-  final List<String> tabs;
-  final Map<String, Destination> destinations;
-  final String? active;
-  final List<String> problems;
-  final void Function(String name) onOpen;
-  final void Function(String name) onClose;
+/// The floating button: the stack icon with the open count.
+/// Shown whenever there is something to show -- tabs, or a
+/// read problem the user must see.
+class OpenTabsFab extends StatelessWidget {
+  final int count;
+  final bool hasProblems;
+  final VoidCallback onPressed;
 
-  const OpenTabsPanel({
+  const OpenTabsFab({
     super.key,
-    required this.tabs,
-    required this.destinations,
-    required this.active,
-    required this.problems,
-    required this.onOpen,
-    required this.onClose,
+    required this.count,
+    required this.hasProblems,
+    required this.onPressed,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: 200,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 4, 4),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Open destinations',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                          color: scheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w700,
-                        ),
-                  ),
-                ),
-                if (problems.isNotEmpty)
-                  Tooltip(
-                    message: problems.join('\n'),
-                    child: Icon(Icons.cloud_off,
-                        size: 16, color: scheme.error),
-                  ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: tabs.isEmpty
-                ? Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text(
-                      'Destinations you open collect here.',
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    children: [
-                      for (final name in tabs)
-                        _TabRow(
-                          name: name,
-                          destination: destinations[name],
-                          active: name == active,
-                          onOpen: () => onOpen(name),
-                          onClose: () => onClose(name),
-                        ),
-                    ],
-                  ),
-          ),
-        ],
+    return FloatingActionButton(
+      onPressed: onPressed,
+      tooltip: count == 0
+          ? 'Open destinations (read problem)'
+          : 'Open destinations ($count)',
+      child: Badge(
+        isLabelVisible: count > 0 || hasProblems,
+        label: hasProblems && count == 0
+            ? const Icon(Icons.cloud_off, size: 12, color: Colors.white)
+            : Text('$count'),
+        backgroundColor: hasProblems ? scheme.error : scheme.primaryContainer,
+        child: const Icon(Icons.layers_outlined),
       ),
     );
   }
@@ -166,54 +127,106 @@ class _TabRow extends StatelessWidget {
   }
 }
 
-/// The phone strip: one closeable chip per open tab,
-/// horizontally scrollable, pinned above the tab pages.
-class OpenTabsStrip extends StatelessWidget {
+/// The phone sheet's replacement and the desktop panel's:
+/// the open rows in a bottom sheet, with the close-all
+/// action. A failed read is a warning row at the top --
+/// invariant: never silently "no tabs".
+class OpenTabsSheet extends StatelessWidget {
   final List<String> tabs;
+  final Map<String, Destination> destinations;
   final String? active;
+  final List<String> problems;
   final void Function(String name) onOpen;
   final void Function(String name) onClose;
+  final VoidCallback onCloseAll;
 
-  const OpenTabsStrip({
+  const OpenTabsSheet({
     super.key,
     required this.tabs,
+    required this.destinations,
     required this.active,
+    required this.problems,
     required this.onOpen,
     required this.onClose,
+    required this.onCloseAll,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      height: 44,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        child: Row(
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            for (final name in tabs)
-              Padding(
-                padding: const EdgeInsets.only(right: 6),
-                child: InputChip(
-                  label: Text(name),
-                  avatar: Icon(
-                    Icons.location_on_outlined,
-                    size: 15,
-                    color: name == active
-                        ? scheme.onSecondaryContainer
-                        : scheme.onSurfaceVariant,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Open destinations',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                    ),
                   ),
-                  selected: name == active,
-                  // The same ✖ the desktop panel's rows use.
-                  deleteIcon: const Icon(Icons.close, size: 15),
-                  visualDensity: VisualDensity.compact,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onPressed: () => onOpen(name),
-                  onDeleted: () => onClose(name),
-                  deleteButtonTooltipMessage: 'Close $name',
+                  if (tabs.isNotEmpty)
+                    TextButton(
+                      onPressed: onCloseAll,
+                      child: const Text('Close all'),
+                    ),
+                  IconButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+            if (problems.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Row(
+                  children: [
+                    Icon(Icons.cloud_off, size: 16, color: scheme.error),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        problems.join(' '),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(color: scheme.error),
+                      ),
+                    ),
+                  ],
                 ),
               ),
+            Flexible(
+              child: tabs.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(16),
+                      child:
+                          Text('Destinations you open collect here.'),
+                    )
+                  : ListView(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.only(bottom: 8),
+                      children: [
+                        for (final name in tabs)
+                          _TabRow(
+                            name: name,
+                            destination: destinations[name],
+                            active: name == active,
+                            onOpen: () => onOpen(name),
+                            onClose: () => onClose(name),
+                          ),
+                      ],
+                    ),
+            ),
           ],
         ),
       ),

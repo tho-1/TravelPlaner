@@ -35,7 +35,8 @@ Credentials come from `mobile/assets/turso_config.json` (git-ignored;
 template `turso_config.example.json`, values from
 `.streamlit/secrets.toml`). Without it the app runs unconfigured and
 explains itself instead of crashing — a fresh clone needs the file copied
-in before data shows up.
+in before data shows up. An optional `flightaware_api_key` adds the
+FlightAware AeroAPI fallback for the finder (see "Known limitations").
 
 The app runs in **light mode** — the map tiles and charts are imagery
 designed for light surfaces. Four tabs, each with its own colour icon
@@ -43,20 +44,24 @@ designed for light surfaces. Four tabs, each with its own colour icon
 the rail pill, not a drained icon):
 
 * **Catalogue** — search, filters, country groups under shaded header
-  bands with count pills, a per-card line with safety · cost/day ·
-  flight hours, yellow favourite stars, add destination, AI populate.
-* **Trips** — the itinerary editor: trip/variant switchers with their
-  actions in per-row ⋯ menus, stops as a timeline (each stop one line that
-  opens its date/time editor), transport legs between them, a side panel
-  with route summary/rating/best months, Plan / Map / Compare as segmented
-  buttons, and a compare table that activates a variant on tap.
+  bands with count pills, a per-card line with review rating · prio (when
+  set) · population — wrapped, never truncated — yellow favourite stars,
+  add destination, AI populate.
+* **Planner** — the itinerary editor (nav label "Planner", was "Trips"):
+  trip/variant switchers with their actions in per-row ⋯ menus, stops as a
+  timeline (each stop one line that opens its date/time editor), transport
+  legs between them, a side panel with route summary/rating/best months,
+  Plan / Map / Compare as segmented buttons, and a compare table that
+  activates a variant on tap.
 * **Finder** — the weekend finder from FRA: the Fraport board plus the
-  benefits database, a CSV override, an "only airlines with benefits"
-  switch, a max-flight-time cap (default 6 h per leg), and out/back day
-  switches — Thursday out and Tuesday back are the holiday-bridge days for
-  a long weekend, each day's time bound editable. One expandable row per
-  city; result cities open their destination page and return to intact
-  results.
+  benefits database, an airlines dropdown (Only Lufthansa Group /
+  Only Lufthansa / All with benefits / All), a max-flight-time cap
+  (default 6 h per leg) and a visible "Min. nights" filter (default
+  1 night). Out/back days come from a travel-period picker: pick the
+  period, then freely select/deselect each candidate day (period ± 1) and
+  give each a time bound ("departs after 14:00" / "lands before 09:00" /
+  any time). One expandable row per city; result cities open their
+  destination page and return to intact results.
 * **Map** — the month choropleth on English-labelled tiles: pick a month
   and every country fills with its best condition, country borders and a
   hover name tooltip, wheel/pinch zoom and drag panning, a fly-to search,
@@ -64,13 +69,14 @@ the rail pill, not a drained icon):
   list its cities.
 
 **Open-destination tabs** (⚙ Settings in the catalogue's app bar turns
-them off and on): destinations you open collect into a closeable list —
-a side panel beside the rail on the desktop, a chip strip above the
-pages on the phone. The list lives in Turso (`open_tabs`, full-replace
-writes — the legacy sidebar's exact contract) and survives a restart;
-the switch itself is per-device state in `app_settings.json`, stored in
-the `state_dir` the config names (the repo root on the PC; the phone
-uses its documents directory).
+them off and on): destinations you open collect into a closeable list,
+held behind a **floating button** with a count badge (bottom-right on the
+phone, beside the rail on the desktop) that opens the list as a bottom
+sheet — the old side panel and chip strip are gone. The list lives in
+Turso (`open_tabs`, full-replace writes — the legacy sidebar's exact
+contract) and survives a restart; the switch itself is per-device state in
+`app_settings.json`, stored in the `state_dir` the config names (the repo
+root on the PC; the phone uses its documents directory).
 
 A destination's detail page opens with compact **coloured stat tiles**
 (safety / cost per day / FRA flight / population — one row, icon beside
@@ -137,7 +143,7 @@ contract and fallback ladder: `TURSO_PLAN.md`. The reader lives in
 cd mobile
 & "C:\src\flutter\bin\flutter.bat" pub get
 & "C:\src\flutter\bin\flutter.bat" analyze   # must be clean
-& "C:\src\flutter\bin\flutter.bat" test      # 395 tests, no credentials
+& "C:\src\flutter\bin\flutter.bat" test      # 417 tests, no credentials
 ```
 
 The suite uses a scripted Turso fake (`mobile/test/fake_turso.dart`) — no
@@ -182,5 +188,14 @@ correction reaches both eras of the app.
 * Trips → Map: the "Focus country" dropdown spans the full width (minor
   polish, tracked in `AGENTS.md` §5).
 * The weekend finder fetches flights from Fraport's own JSON endpoint
-  (verified 2026-10-07; a pasted CSV is the offline override). Board
-  fixtures cover the tests — no network per run.
+  (verified 2026-10-07). Bad board windows exist (2026-10-25 arrivals held
+  one flight where sibling days hold 233–366) — the finder now warns on
+  thin/failed windows and logs every incident, instead of silently
+  returning fewer results. An optional second source (FlightAware AeroAPI,
+  `flightaware_api_key` in the config) is consulted only for those bad
+  windows; without a key nothing changes. Board fixtures cover the tests —
+  no network per run.
+* Everything that goes wrong at runtime lands in **`error_log.jsonl`**
+  (per-device, next to `app_settings.json`): search/provider failures,
+  implausible board windows, unknown airport/station codes, uncaught
+  errors. ⚙ Settings → Error log shows and clears it.

@@ -1,4 +1,4 @@
-/// The pure matcher: the weekend rules, the pairing, the
+/// The pure matcher: the free day rules, the pairing, the
 /// ranking, and the "why did it drop that" reporting. All
 /// fixtures are naive wall-clocks, the same convention the
 /// board parser keeps.
@@ -6,7 +6,7 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:travel_planner/models/timetable.dart' show fetchWindow;
+import 'package:travel_planner/models/travel_days.dart';
 import 'package:travel_planner/models/weekend_match.dart';
 
 /// Friday 2026-10-16 (a real Friday in the fixtures' week).
@@ -15,19 +15,24 @@ final saturday = DateTime(2026, 10, 17);
 final sunday = DateTime(2026, 10, 18);
 final monday = DateTime(2026, 10, 19);
 
-final weekend = Weekend(friday);
+/// The legacy weekend rules, expressed in the free day
+/// model: out Fri from 14:00 or Sat before 12:00, back Sat
+/// after 12:00, Sun any time or Mon before 09:00.
+final plan = legacyWeekendPlan(friday);
 
 Flight out({
   String flightNo = 'LH1000',
   String airline = 'LH',
   String destination = 'LHR',
   DateTime? departure,
+  String airportName = '',
 }) {
   return Flight(
     flightNo: flightNo,
     airline: airline,
     origin: 'FRA',
     destination: destination,
+    airportName: airportName,
     departure: departure ?? friday.add(const Duration(hours: 15)),
     arrival: (departure ?? friday.add(const Duration(hours: 15)))
         .add(const Duration(hours: 2)),
@@ -39,6 +44,7 @@ Flight back({
   String airline = 'LH',
   String origin = 'LHR',
   DateTime? departure,
+  String airportName = '',
 }) {
   final dep = departure ?? saturday.add(const Duration(hours: 18));
   return Flight(
@@ -46,164 +52,73 @@ Flight back({
     airline: airline,
     origin: origin,
     destination: 'FRA',
+    airportName: airportName,
     departure: dep,
     arrival: dep.add(const Duration(hours: 2)),
   );
 }
 
 void main() {
-  group('holiday bridge days', () {
-    final thursday = DateTime(2026, 10, 15);
-    final tuesday = DateTime(2026, 10, 20);
-
-    test('Thursday out is off by default and off the matcher', () {
-      const windows = Windows();
-      expect(windows.thursdayFrom, isNull);
+  group('the free day rules', () {
+    test('a deselected day is not a candidate at all', () {
+      // The legacy plan has no Thursday out.
       expect(
         isOutboundCandidate(
-            out(departure: thursday.add(const Duration(hours: 15))),
-            weekend,
-            windows),
+            out(departure: DateTime(2026, 10, 15, 15)), plan),
         isFalse,
       );
     });
 
-    test('switching Thursday on accepts a Thursday departure', () {
-      const windows = Windows(thursdayFrom: 14 * 60);
+    test('a day can be added and bounded freely (the holiday bridge)', () {
+      final thursday = DateTime(2026, 10, 15);
+      final bridge = TravelPlan(
+        outDays: [
+          TravelDay(thursday, bound: DayBound.after, minutes: 14 * 60),
+          ...plan.outDays,
+        ],
+        backDays: plan.backDays,
+      );
       expect(
         isOutboundCandidate(
             out(departure: thursday.add(const Duration(hours: 13, minutes: 59))),
-            weekend,
-            windows),
+            bridge),
         isFalse,
       );
       expect(
         isOutboundCandidate(
             out(departure: thursday.add(const Duration(hours: 14))),
-            weekend,
-            windows),
+            bridge),
         isTrue,
       );
     });
 
-    test('Tuesday back is off by default and on when set', () {
-      const off = Windows();
-      expect(
-        isReturnCandidate(
-            back(departure: tuesday.add(const Duration(hours: 6))),
-            weekend,
-            off),
-        isFalse,
-      );
-
-      const on = Windows(tuesdayReturnBefore: 9 * 60);
-      // back() lands two hours after departure: 06:30 lands
-      // 08:30 (before 09:00), 08:00 lands 10:00 (after).
-      expect(
-        isReturnCandidate(
-            back(departure: tuesday.add(const Duration(hours: 6, minutes: 30))),
-            weekend,
-            on),
-        isTrue,
-      );
-      expect(
-        isReturnCandidate(
-            back(departure: tuesday.add(const Duration(hours: 8))),
-            weekend,
-            on),
-        isFalse,
-      );
+    test('every selected day owns its fetch window', () {
+      final windows = [
+        for (final day in plan.outDays) day.fetchWindow(),
+        for (final day in plan.backDays) day.fetchWindow(),
+      ];
+      expect(windows.length, 5);
+      expect(windows.first.$1, friday.add(const Duration(hours: 14)));
     });
 
-    test('a day switched off fetches no board window', () {
-      const windows = Windows(
-        thursdayFrom: 14 * 60,
-        tuesdayReturnBefore: 9 * 60,
-      );
-      final (since, until) =
-          fetchWindow(weekend, windows, thursday, 'departures');
-      expect(since, thursday.add(const Duration(hours: 14)));
-      expect(until, weekend.friday);
-
-      final (tueSince, tueUntil) =
-          fetchWindow(weekend, windows, tuesday, 'arrivals');
-      expect(tueSince, tuesday);
-      expect(tueUntil, tuesday.add(const Duration(hours: 9)));
-
-      // Saturday-out disabled: no window at all.
-      const satOff = Windows(saturdayBefore: null);
-      expect(
-        fetchWindow(weekend, satOff, saturday, 'departures'),
-        (null, null),
-      );
-    });
-
-    test('Sunday can be switched off entirely', () {
-      const windows = Windows(sundayEnabled: false);
-      expect(
-        isReturnCandidate(
-            back(departure: sunday.add(const Duration(hours: 18))),
-            weekend,
-            windows),
-        isFalse,
-      );
-      expect(
-        fetchWindow(weekend, windows, sunday, 'arrivals'),
-        (null, null),
-      );
-    });
-
-    test('a disabled day is not described as an option', () {
-      const windows = Windows(thursdayFrom: null, tuesdayReturnBefore: null);
-      expect(windows.describe(), startsWith('out:'));
-      expect(windows.describe(), isNot(contains('Thu')));
-      expect(windows.describe(), isNot(contains('Tue')));
-      // The enabled legacy days are still spelled out.
-      expect(windows.describe(), contains('Fri from 14:00'));
-      expect(windows.describe(), contains('Mon before 09:00'));
+    test('the plan describes only the days it has', () {
+      expect(plan.describe(), startsWith('out:'));
+      expect(plan.describe(), contains('departs after 14:00'));
+      expect(plan.describe(), contains('lands before 09:00'));
     });
   });
 
-  group('weekendContaining', () {
-    test('a Monday plans the coming weekend', () {
-      final result = weekendContaining(DateTime(2026, 10, 12)); // Monday
-      expect(result.friday, friday);
-    });
-
-    test('a Saturday and Sunday belong to the Friday that started them', () {
-      expect(weekendContaining(saturday).friday, friday);
-      expect(weekendContaining(sunday).friday, friday);
-    });
-
-    test('a Friday is its own weekend', () {
-      expect(weekendContaining(friday).friday, friday);
-    });
-
-    test('Tue-Thu reach forward to the next Friday', () {
-      expect(weekendContaining(DateTime(2026, 10, 13)).friday, friday);
-      expect(weekendContaining(DateTime(2026, 10, 14)).friday, friday);
-      expect(weekendContaining(DateTime(2026, 10, 15)).friday, friday);
-    });
-  });
-
-  test('nextFriday honours the lead time', () {
-    final today = DateTime(2026, 10, 11); // Sunday
-    expect(nextFriday(today), friday);
-    // Less than a week of lead time is pushed to the Friday after.
-    expect(nextFriday(today, minimumDaysAhead: 7), DateTime(2026, 10, 23));
-    expect(nextFriday(today, minimumDaysAhead: 8), DateTime(2026, 10, 23));
-  });
-
-  group('candidate windows', () {
-    final windows = const Windows();
-
+  group('candidate days', () {
     test('outbound Friday needs 14:00 or later', () {
       expect(
-        isOutboundCandidate(out(departure: friday.add(const Duration(hours: 13, minutes: 59))), weekend, windows),
+        isOutboundCandidate(
+            out(departure: friday.add(const Duration(hours: 13, minutes: 59))),
+            plan),
         isFalse,
       );
       expect(
-        isOutboundCandidate(out(departure: friday.add(const Duration(hours: 14))), weekend, windows),
+        isOutboundCandidate(
+            out(departure: friday.add(const Duration(hours: 14))), plan),
         isTrue,
       );
     });
@@ -212,58 +127,52 @@ void main() {
       expect(
         isOutboundCandidate(
             out(departure: saturday.add(const Duration(hours: 11, minutes: 59))),
-            weekend,
-            windows),
+            plan),
         isTrue,
       );
       expect(
-        isOutboundCandidate(out(departure: saturday.add(const Duration(hours: 12))), weekend, windows),
+        isOutboundCandidate(
+            out(departure: saturday.add(const Duration(hours: 12))), plan),
         isFalse,
       );
     });
 
-    test('a Sunday outbound is never a candidate', () {
+    test('a day the plan does not select is never a candidate', () {
       expect(
-        isOutboundCandidate(out(departure: sunday.add(const Duration(hours: 10))), weekend, windows),
+        isOutboundCandidate(
+            out(departure: sunday.add(const Duration(hours: 10))), plan),
         isFalse,
       );
     });
 
-    test('return Saturday lands after noon, Sunday always, Monday before 09:00', () {
-      // The rule is on the *arrival* (which flight lands
-      // when), the same leg the legacy page checks.
+    test('the return rules apply to the landing', () {
       expect(
         isReturnCandidate(
-            back(departure: saturday.add(const Duration(hours: 9))),
-            weekend,
-            windows),
-        isFalse,
+            back(departure: saturday.add(const Duration(hours: 9))), plan),
+        isFalse, // lands 11:00 -- before the Saturday bound
       );
+      // Saturday: lands 12:00 or later (the bound is
+      // inclusive).
       expect(
         isReturnCandidate(
-            back(departure: saturday.add(const Duration(hours: 12))),
-            weekend,
-            windows),
+            back(departure: saturday.add(const Duration(hours: 12))), plan),
         isTrue,
       );
       expect(
         isReturnCandidate(
-            back(departure: sunday.add(const Duration(hours: 23))),
-            weekend,
-            windows),
+            back(departure: sunday.add(const Duration(hours: 10))), plan),
         isTrue,
       );
+      // Monday: lands before 09:00 (the fixture lands two
+      // hours after departure).
       expect(
         isReturnCandidate(
-            back(departure: monday.subtract(const Duration(hours: 2))),
-            weekend,
-            windows),
+            back(departure: monday.subtract(const Duration(hours: 2))), plan),
         isTrue,
       );
       expect(
         isReturnCandidate(back(departure: monday.add(const Duration(hours: 7))),
-            weekend,
-            windows),
+            plan),
         isFalse,
       );
     });
@@ -273,42 +182,22 @@ void main() {
         isOutboundCandidate(
           out(departure: friday.add(const Duration(hours: 16)))
               .copyWithForTest(origin: 'MUC'),
-          weekend,
-          windows,
+          plan,
         ),
         isFalse,
       );
     });
 
-    test('the Sunday bound applies only when it is set', () {
-      // Off (the default): any Sunday return counts.
+    test('any time is a first-class state (Sunday, no bound)', () {
       expect(
         isReturnCandidate(
-            back(departure: sunday.add(const Duration(hours: 23))),
-            weekend,
-            windows),
-        isTrue,
-      );
-      // On: the return must land by the bound. The
-      // `back()` fixture lands two hours after it
-      // departs, so the departure times below land at
-      // 19:00 and 21:00.
-      final limited =
-          const Windows(sundayReturnUntil: 20 * 60);
-      expect(limited.describe(), contains('Sun before 20:00'));
-      expect(
-        isReturnCandidate(
-            back(departure: sunday.add(const Duration(hours: 17))),
-            weekend,
-            limited),
+            back(departure: sunday.add(const Duration(hours: 1))), plan),
         isTrue,
       );
       expect(
         isReturnCandidate(
-            back(departure: sunday.add(const Duration(hours: 19))),
-            weekend,
-            limited),
-        isFalse,
+            back(departure: sunday.add(const Duration(hours: 22))), plan),
+        isTrue,
       );
     });
   });
@@ -322,7 +211,8 @@ void main() {
       expect(option, 2);
     });
 
-    test('an overnight return that lands the morning it left is zero, not negative', () {
+    test('an overnight return that lands the morning it left is zero, not negative',
+        () {
       final late = Flight(
         flightNo: 'LH1',
         airline: 'LH',
@@ -344,16 +234,15 @@ void main() {
   });
 
   group('findWeekends', () {
-    bool benefitAll(String airline) => true;
+    bool allowAll(String code, String name) => true;
     (String, String)? lookupAll(String airport) => const ('Somewhere', 'XX');
 
     test('a city needs both legs and is ranked and labelled', () {
       final report = findWeekends(
         outbound: [out()],
         returns: [back()],
-        weekend: weekend,
-        windows: const Windows(),
-        benefitCheck: benefitAll,
+        plan: plan,
+        airlineCheck: allowAll,
         cityLookup: lookupAll,
       );
       expect(report.cityCount, 1);
@@ -366,27 +255,25 @@ void main() {
       final report = findWeekends(
         outbound: [out()],
         returns: const [],
-        weekend: weekend,
-        windows: const Windows(),
-        benefitCheck: benefitAll,
+        plan: plan,
+        airlineCheck: allowAll,
         cityLookup: lookupAll,
       );
       expect(report.cities, isEmpty);
       expect(report.oneWayOnly.single.city, 'Somewhere');
     });
 
-    test('an airline without benefits is counted and explained', () {
+    test('an airline the filter drops is counted and explained', () {
       final report = findWeekends(
         outbound: [out(), out(flightNo: 'BA1', airline: 'BA')],
         returns: [back()],
-        weekend: weekend,
-        windows: const Windows(),
-        benefitCheck: (airline) => airline == 'LH',
+        plan: plan,
+        airlineCheck: (code, name) => code == 'LH',
         cityLookup: lookupAll,
       );
       expect(report.outboundRejectedAirlines, {'BA': 1});
-      expect(describeRule(report.outboundRejectedAirlines),
-          contains('BA (1)'));
+      expect(
+          describeRule(report.outboundRejectedAirlines), contains('BA (1)'));
       expect(report.cities.single.count, 1);
     });
 
@@ -394,12 +281,25 @@ void main() {
       final report = findWeekends(
         outbound: [out()],
         returns: [back()],
-        weekend: weekend,
-        windows: const Windows(),
-        benefitCheck: benefitAll,
+        plan: plan,
+        airlineCheck: allowAll,
         cityLookup: (_) => null,
       );
-      expect(report.cities.single.city, '?LHR');
+      // No board name, no city table entry: the code is the
+      // label (report f: never a mystery placeholder).
+      expect(report.cities.single.city, 'LHR');
+      expect(report.cities.single.unmappedAirports, {'LHR'});
+    });
+
+    test('an unmapped airport falls back to the board name', () {
+      final report = findWeekends(
+        outbound: [out(airportName: 'Cologne Main Station')],
+        returns: [back()],
+        plan: plan,
+        airlineCheck: allowAll,
+        cityLookup: (_) => null,
+      );
+      expect(report.cities.single.city, 'Cologne Main Station');
       expect(report.cities.single.unmappedAirports, {'LHR'});
     });
 
@@ -407,9 +307,8 @@ void main() {
       final report = findWeekends(
         outbound: [out(departure: saturday.add(const Duration(hours: 11)))],
         returns: [back(departure: saturday.add(const Duration(hours: 12)))],
-        weekend: weekend,
-        windows: const Windows(),
-        benefitCheck: benefitAll,
+        plan: plan,
+        airlineCheck: allowAll,
         cityLookup: lookupAll,
       );
       // Out departs Sat 11:00, lands Sat 13:00; the return
@@ -427,9 +326,8 @@ void main() {
           back(flightNo: 'LH8', departure: sunday.add(const Duration(hours: 19))),
           back(flightNo: 'LH7', departure: sunday.add(const Duration(hours: 12))),
         ],
-        weekend: weekend,
-        windows: const Windows(),
-        benefitCheck: benefitAll,
+        plan: plan,
+        airlineCheck: allowAll,
         cityLookup: lookupAll,
       );
       final options = report.cities.single.options;
@@ -437,17 +335,57 @@ void main() {
       // At most two ways home per outbound flight.
       expect(options.length, 2);
     });
+
+    test('the minimum-stay filter drops short stays and says so', () {
+      final report = findWeekends(
+        outbound: [out(departure: friday.add(const Duration(hours: 16)))],
+        returns: [
+          back(flightNo: 'LH7', departure: saturday.add(const Duration(hours: 18))),
+        ],
+        plan: plan,
+        airlineCheck: allowAll,
+        cityLookup: lookupAll,
+        minNights: 2,
+      );
+      expect(report.shortStaysDropped, 1);
+      expect(report.shortStayCities, 1);
+      expect(report.cities, isEmpty);
+      // The city must not sneak back in as a "one leg only"
+      // near miss: both legs qualified, the stay was short.
+      expect(report.oneWayOnly, isEmpty);
+    });
+
+    test('the default floor is one night: same-day trips drop', () {
+      final report = findWeekends(
+        outbound: [out(departure: sunday.add(const Duration(hours: 8)))],
+        returns: [
+          back(
+              flightNo: 'LH7',
+              departure: sunday.add(const Duration(hours: 20))),
+        ],
+        plan: TravelPlan(
+          outDays: [TravelDay(sunday)],
+          backDays: [TravelDay(sunday)],
+        ),
+        airlineCheck: allowAll,
+        cityLookup: lookupAll,
+      );
+      expect(report.shortStaysDropped, 1);
+      expect(report.cities, isEmpty);
+    });
   });
 }
 
 /// A tiny seam so the origin can be changed in one test
-/// without widening `Flight`'s constructor.
+/// without widening Flight's constructor.
 extension _CopyWithForTest on Flight {
   Flight copyWithForTest({String? origin}) => Flight(
         flightNo: flightNo,
         airline: airline,
+        airlineName: airlineName,
         origin: origin ?? this.origin,
         destination: destination,
+        airportName: airportName,
         departure: departure,
         arrival: arrival,
         terminal: terminal,
