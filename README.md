@@ -182,11 +182,8 @@ correction reaches both eras of the app.
 * Seven destinations hold `{Mon} Rainy Days` values counting **trace**
   precipitation instead of the project's ≥ 1 mm definition (Thessaloniki,
   Ubud, Ulaanbaatar, Valencia, Valparaiso, Vientiane, Vung Tau).
-  Deliberately not re-fetched (API cost). The regeneration tool is
-  archived: restore via the tag and run
-  `python write_climate_data.py --list-legacy-rainy-days`.
-* Trips → Map: the "Focus country" dropdown spans the full width (minor
-  polish, tracked in `AGENTS.md` §5).
+  **Retired 2026-10-16:** these rows stay as they are — a frozen quirk of
+  the migrated workbook; no regeneration is planned.
 * The weekend finder fetches flights from Fraport's own JSON endpoint
   (verified 2026-10-07). Bad board windows exist (2026-10-25 arrivals held
   one flight where sibling days hold 233–366) — the finder now warns on

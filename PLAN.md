@@ -1681,6 +1681,27 @@ per window. `flutter analyze` clean, **417 tests pass**.
 
 ---
 
+## 0t. Session 2026-10-16 (2) — the open-items sweep
+
+**Item 2 retired: the seven trace-precipitation rainy-day rows stay as
+they are.** Thessaloniki, Ubud, Ulaanbaatar, Valencia, Valparaiso,
+Vientiane and Vung Tau keep their `{Mon} Rainy Days` values under the old
+(trace) definition — a frozen quirk of the migrated workbook, not a to-do.
+No regeneration (the API cost stays spent either way) and no further
+tracking; the archived regeneration procedure is no longer offered. The
+decision is recorded in AGENTS.md §5 and README's known limitations.
+
+**Item 3 done: the Planner → Map "Focus country" dropdown no longer spans
+the control card.** It sat `Expanded` in a Row beside the gateways switch,
+so it stretched the full card width and dominated the controls. It is a
+compact 240px `SizedBox` inside a `Wrap` now — a narrow window carries it
+to the next line instead of overflowing — with `isDense` and ellipsized
+item labels for long country names. Layout only, no behaviour change.
+
+`flutter analyze` clean, **417 tests pass**.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

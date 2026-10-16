@@ -168,28 +168,46 @@ class _ItineraryMapTabState extends State<ItineraryMapTab> {
                   ),
                   const SizedBox(height: 8),
                 ],
-                Row(
+                // The country picker used to sit Expanded in a Row, so it
+                // spanned the whole card and dominated the controls. It is
+                // a compact 240px control now; the Wrap carries it to a new
+                // line instead of overflowing on narrow windows.
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Switch(
-                      value: _showGateways,
-                      onChanged: (value) =>
-                          setState(() => _showGateways = value),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Switch(
+                          value: _showGateways,
+                          onChanged: (value) =>
+                              setState(() => _showGateways = value),
+                        ),
+                        const SizedBox(width: 4),
+                        const Text('Show gateways'),
+                      ],
                     ),
-                    const SizedBox(width: 4),
-                    const Text('Show gateways'),
-                    const SizedBox(width: 16),
-                    Expanded(
+                    SizedBox(
+                      width: 240,
                       child: DropdownButtonFormField<String>(
                         initialValue: _focusCountry,
                         isExpanded: true,
                         decoration: const InputDecoration(
                           labelText: 'Focus country',
                           border: OutlineInputBorder(),
+                          isDense: true,
                         ),
                         items: [
-                          for (final country in ['(whole route)', ...countries])
+                          for (final country
+                              in ['(whole route)', ...countries])
                             DropdownMenuItem(
-                                value: country, child: Text(country)),
+                              value: country,
+                              child: Text(country,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                            ),
                         ],
                         onChanged: (value) => setState(() {
                           if (value != null) _focusCountry = value;

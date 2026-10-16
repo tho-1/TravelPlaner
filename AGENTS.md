@@ -131,7 +131,7 @@ database is a flake waiting to happen. The app's unconfigured state (no
 ```
 mobile/                        the app (Flutter, desktop + Android)
   lib/ui/                      one file per screen + shared widgets
-    main.dart                  shell: 4 tabs (Catalogue/Trips/Finder/Map),
+    main.dart                  shell: 4 tabs (Catalogue/Planner/Finder/Map),
                                rail on desktop, bottom bar on phone,
                                the open-tabs panel/strip + their wiring
     catalogue_page.dart        search, filters, country groups, cards
@@ -180,9 +180,12 @@ must not be touched** — it carries the sync journals.
 | # | Item | State |
 |---|---|---|
 | 1 | **"Open destinations" tabs in the Flutter app** | **Done (2026-10-14, PLAN §0r).** Turso-backed (`open_tabs`, full-replace writes, the `storage_turso` contract), a side panel on the desktop / chip strip on the phone, and an on/off switch under ⚙ Settings in the catalogue's app bar (per-device `app_settings.json` via the config's `state_dir`). |
-| 2 | **7 rainy-day rows use the old definition** | They hold trace-precipitation values instead of the ≥ 1 mm definition (Thessaloniki, Ubud, Ulaanbaatar, Valencia, Valparaiso, Vientiane, Vung Tau). Deliberately not regenerated (costs API calls). The tool is archived: restore via the tag, run `python write_climate_data.py --list-legacy-rainy-days`, write the workbook rows, push to Turso. |
-| 3 | **Trips → Map: the "Focus country" dropdown** | Still spans the full width and dominates the control rows. Minor polish. |
+| 2 | **7 rainy-day rows use the old definition** | **Retired 2026-10-16 (PLAN §0t).** Thessaloniki, Ubud, Ulaanbaatar, Valencia, Valparaiso, Vientiane and Vung Tau keep their trace-precipitation values — a frozen quirk of the migrated workbook. No regeneration, no further tracking; do not re-open. |
+| 3 | **Planner → Map: the "Focus country" dropdown** | **Done 2026-10-16 (PLAN §0t).** Compact 240px control in a `Wrap` instead of a full-width Row cell. |
 | 4 | **Local commits not pushed** | Resolved 2026-10-14: everything through `085ec08` is on `origin/main`. |
+
+**Nothing is open as of 2026-10-16** — the table is kept as the history of
+what was tracked.
 
 Retired with the Streamlit Cloud app (2026-10-13): the "cloud persistence
 check" and the "open_destinations.json lost on redeploy" items — there is no
