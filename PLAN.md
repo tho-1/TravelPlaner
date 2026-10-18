@@ -1823,6 +1823,36 @@ it is genuinely complete, one `schedule_boards` +
 
 ---
 
+## 0x. Session 2026-10-18 (3) — offline-first Phase 5, Option A, commit 1
+
+The user's decision (2026-10-18): hand-rolled full local-first, no new
+dependencies — the plan lives in `OFFLINE_SYNC_PLAN.md` (new). Commit 1 is
+the **snapshot read layer** (`data/offline_cache.dart` + injections into
+`destination_repository.dart` / `trip_repository.dart` / `ui/main.dart`):
+
+- Every *full* read writes `/offline_snapshot/offline_<dataset>.json`
+  (atomically, minutes-precision save time) next to `app_settings.json` in
+  the per-device state dir. A one-row read never writes one (no fragments),
+  a single `getDestination` only *reads* the snapshot.
+- A failed live read serves the snapshot with an offline note that states
+  the live failure and the snapshot's age — "the live read failed (…
+  timeout …); showing the trip snapshot from 2026-10-18 21:14" — never a
+  bare empty list, so invariant 1 keeps its meaning offline. A missing or
+  corrupt snapshot is *no snapshot*: the original failure surfaces exactly
+  as before.
+- `getDestination` offline returns "not in the offline snapshot" for an
+  unknown name — distinguishable from a live `(null, [])` that really means
+  "does not exist".
+- The SDK record was corrected: `@tursodatabase/sync` is Node-only; there is
+  no Dart/Flutter Turso Sync SDK, hence Option A.
+
+Next commits (2): the write journal + drain (LWW/conflict-guarded replay);
+(3): guard refactor + a visible sync state. Tests: cache round-trip and
+corruption cases, snapshot fallbacks for both repositories, the labelled
+notes, the no-snapshot passthroughs.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

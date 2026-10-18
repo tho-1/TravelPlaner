@@ -9,9 +9,11 @@ library;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
 
 import '../data/app_dirs.dart';
 import '../data/app_settings.dart';
+import '../data/offline_cache.dart';
 import '../data/ai_config.dart';
 import '../data/benefits_repository.dart';
 import '../data/destination_repository.dart';
@@ -283,8 +285,13 @@ class _HomeShellState extends State<HomeShell> {
   void _rebuildClients() {
     final effective = _effectiveConfig();
     _client = TursoClient(effective);
-    destinations = DestinationRepository(_client!);
-    trips = TripRepository(_client!);
+    // The offline-first snapshot store (Phase 5, Option A):
+    // next to the settings file in the per-device state
+    // dir; null when there is no writable home (tests).
+    final home = stateDirFor(effective.stateDir).trim();
+    final offline = home.isEmpty ? null : OfflineCache(p.join(home, 'offline_snapshot'));
+    destinations = DestinationRepository(_client!, offline: offline);
+    trips = TripRepository(_client!, offline: offline);
     benefits = BenefitsRepository(effective);
     geocoder = GeocodeRepository(effective.geocodeCache);
     openTabs = OpenTabsRepository(_client!);

@@ -22,36 +22,82 @@ import 'dart:convert';
 
 import '../models/destination.dart';
 import '../turso/pipeline_client.dart';
+import 'offline_cache.dart';
 
 class DestinationRepository {
   final TursoClient client;
 
-  DestinationRepository(this.client);
+  /// The offline-first snapshot store (Phase 5, Option A);
+  /// null keeps the online-only contract (and the tests).
+  final OfflineCache? offline;
 
-  /// All destinations, ordered by name.
+  DestinationRepository(this.client, {this.offline});
+
+  /// All destinations, ordered by name. On a live-read
+  /// failure the last successful snapshot is served, with
+  /// its offline note -- never "no results" unexplained.
   Future<(List<Destination>, List<String>)> loadDestinations() async {
     final (results, problems) = await client
         .runPipeline(['SELECT * FROM destinations ORDER BY destination']);
-    if (problems.isNotEmpty) return (<Destination>[], problems);
+    if (problems.isNotEmpty) return _offlineOrFailure(problems);
     if (results.isEmpty) return (<Destination>[], const <String>['no result']);
+    final rows = results.first.asMaps;
+    // Only a full read may write the snapshot (a one-row
+    // read would overwrite the dataset with a fragment).
+    offline?.save('destinations', [rows]);
     return (
-      [for (final row in results.first.asMaps) Destination.fromRow(row)],
+      [for (final row in rows) Destination.fromRow(row)],
       const <String>[],
+    );
+  }
+
+  (List<Destination>, List<String>) _offlineOrFailure(
+    List<String> problems,
+  ) {
+    final snapshot = offline?.load('destinations');
+    if (snapshot == null) return (<Destination>[], problems);
+    return (
+      [
+        for (final row in snapshot.tables.single) Destination.fromRow(row),
+      ],
+      offlineNote('destination catalogue', problems.first, snapshot.savedAt),
     );
   }
 
   /// One destination by exact name. `(null, [])` means
   /// "no such destination", `(null, problems)` means the
-  /// read failed -- never conflate the two.
+  /// read failed -- never conflate the two. Offline, the
+  /// snapshot answers what it holds and clearly labels
+  /// everything else as "unknown offline", never as "does
+  /// not exist".
   Future<(Destination?, List<String>)> getDestination(String name) async {
     final (List<Map<String, dynamic>> rows, List<String> problems) =
         await client.query(
       'SELECT * FROM destinations WHERE destination = '
       "'${_escape(name)}'",
     );
-    if (problems.isNotEmpty) return (null, problems);
+    if (problems.isNotEmpty) return _offlineOne(name, problems);
     if (rows.isEmpty) return (null, const <String>[]);
     return (Destination.fromRow(rows.first), const <String>[]);
+  }
+
+  Future<(Destination?, List<String>)> _offlineOne(
+    String name,
+    List<String> problems,
+  ) async {
+    final snapshot = offline?.load('destinations');
+    if (snapshot == null) return (null, problems);
+    final rows = [
+      for (final row in snapshot.tables.single)
+        if (row['destination'] == name) row,
+    ];
+    final note = offlineNote('destination catalogue', problems.first,
+        snapshot.savedAt);
+    return rows.isEmpty
+        // "Unknown offline" -- distinguishable from the live
+        // "(null, [])" that genuinely means "does not exist".
+        ? (null, [...note, '$name is not in the offline snapshot'])
+        : (Destination.fromRow(rows.first), note);
   }
 
   /// Read-modify-write one field of one destination

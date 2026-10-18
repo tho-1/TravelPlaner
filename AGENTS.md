@@ -17,6 +17,7 @@ maintained here any more. Decided 2026-10-10 (move off Streamlit), archived
 | `PLAN.md` | the full history: every review finding, every fix, every decision, with dates and commit hashes |
 | `WEEKEND_FINDER_PLAN.md` | the weekend trip finder: spec, status, what is blocked and why |
 | `TURSO_PLAN.md` | the airline-benefits Turso database: access contract, fallback ladder, open items |
+| `OFFLINE_SYNC_PLAN.md` | offline-first Phase 5 (Option A): snapshot reads, the write journal, the drain contract |
 | `NATIVE_HTML_PLAN.md` | the architecture decision: off Streamlit, onto native desktop + Android on Turso — phases and status |
 | `archive/README.md` | what is archived, why, and how to restore it |
 
@@ -85,7 +86,8 @@ git switch legacy-streamlit    # the full old world, runnable as documented
   (gallery photos, read by the app), `flight_routes_cache/` and
   `iqair_cache/` (read by the app), `trips.json`, `sync_journals/`,
   `itinerary_cache/`, `weekend_cache/`, `aqi_cache/`, `workbook_backups/`,
-  `trips_backups/` (legacy runtime state, kept for the fall-back).
+  `trips_backups/` (legacy runtime state, kept for the fall-back),
+  `offline_snapshot/` (the offline-first read layer, written by the app).
 * **Secrets:** `mobile/assets/turso_config.json` (Turso tokens, DeepSeek key)
   and `.streamlit/secrets.toml` (legacy, still live tokens) are git-ignored;
   never commit them. The retired API-key modules

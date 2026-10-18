@@ -43,7 +43,10 @@ them is decision-shaped, not volume-shaped:
 3. **Decide the offline-first story.** Staying online-only is defensible
    for one user with two devices and a free-tier database; if offline
    matters, sec. 10's local file + `push()`/`pull()` is the design to pick
-   up (in Flutter: `@tursodatabase/sync`, not `libsql_dart`).
+   up. **Decided 2026-10-18: Option A, hand-rolled local-first** (snapshot +
+   journal, no SDK) — see `OFFLINE_SYNC_PLAN.md`. (The "in Flutter use
+   `@tursodatabase/sync`" advice was wrong: that package is Node-only and no
+   Dart sync SDK exists.)
 4. **Phase 6 trigger — set (2026-10-11).** Full parity of the Flutter app
    (item 2) plus a period of daily native use without falling back. No
    further decision needed; revisit when item 2 completes.
@@ -195,8 +198,10 @@ Turso Sync is now the preferred path, not a deferred option.
    and full features today.
 2. **Move the PC native too** (Flutter desktop + Android from one codebase --
    your choice). Truly "Android app based on the desktop version", and
-   Streamlit Cloud can be dropped. Makes the libsql_dart quote relevant (use
-   `@tursodatabase/sync` push/pull, not a native libsql bridge).
+   Streamlit Cloud can be dropped. Sync in Flutter: hand-rolled
+   snapshot/journal over the pipeline client (2026-10-18 correction -- the
+   `@tursodatabase/sync` package named here is Node-only; no Dart SDK
+   exists).
 
 Your decision: **go native on the PC (Flutter), but retain the Streamlit
 version as a fallback** while you compare. That means: Phase 1 (data on
@@ -225,7 +230,7 @@ Flutter app, then build the Flutter UI alongside it and switch over.
 | 4 | **(answered -- keep export) Must the Excel workbook survive as an openable/exportable artifact?** | Yes: export from Turso back to .xlsx; Turso is the source of truth, workbook is a convenience |
 | 5 | Must the **phone** work off-LAN/on cellular? | Relevant to Phase 5 packaging only (offline-first handles it) |
 | 6 | Which server-side features survive on Streamlit Cloud? (Fraport fetch, AQI/IQAir, DeepSeek populate, Unsplash/DDG galleries) | Moot under native: all keys live in the app (Q8 answered yes) |
-| 7 | **(answered -- native PC, keep Streamlit fallback) If Android is native: does the PC stay Streamlit, or move to a shared native stack (e.g. Flutter desktop) too?** | **Go native on PC** (Flutter desktop + Android, one codebase); **retain the Streamlit version** as a fallback during transition. Makes the libsql_dart quote relevant -> use `@tursodatabase/sync` push/pull, not a native libsql bridge |
+| 7 | **(answered -- native PC, keep Streamlit fallback) If Android is native: does the PC stay Streamlit, or move to a shared native stack (e.g. Flutter desktop) too?** | **Go native on PC** (Flutter desktop + Android, one codebase); **retain the Streamlit version** as a fallback during transition. Makes the libsql_dart quote relevant -> avoid the native bridge (2026-10-18 correction: the `@tursodatabase/sync` name given here is Node-only; the answer became the hand-rolled local-first layer) |
 | 8 | **(resolved -- yes) Are API keys embeddable in a personal, single-user APK?** | Yes. DeepSeek/Unsplash/AQI/IQAir all work on a native phone |
 
 ## 7. Implementation plan
@@ -295,8 +300,10 @@ A native Android app with a local Turso file + `push()`/`pull()`. Offline
 first; sideloaded APK (no Play Store). With keys allowed in the APK, every
 feature works on the phone. Choose the PC side per Q7: if the PC stays
 Streamlit, the Android app shares only the data layer; if the PC goes native
-(Flutter), share the UI too. In Flutter use `@tursodatabase/sync` push/pull,
-not a native libsql bridge (Q8 answered: keys in APK are fine).
+(Flutter), share the UI too. Sync in Flutter: hand-rolled local-first
+(snapshot + journal, `OFFLINE_SYNC_PLAN.md`) — the previously cited
+`@tursodatabase/sync` is Node-only (2026-10-18 correction); keys in APK are
+fine (Q8 answered).
 
 **Phase 6 -- Cutover and cleanup. — DEFERRED, with a trigger.**
 Do not run while the Streamlit version is the fallback: deleting the
@@ -382,8 +389,9 @@ The remaining costs of "native vs PWA":
    Android app *is* based on the desktop version, and there is no Streamlit
    anywhere -- freeing you from Streamlit Cloud entirely. This is the only
    path that is fully faithful to "Android version based on the desktop
-   version". Note the libsql_dart quote (sec. 8) becomes relevant here: in
-   Flutter use `@tursodatabase/sync` (push/pull), not `libsql_dart`.
+   version". (2026-10-18 correction: the section above names
+   `@tursodatabase/sync` for Flutter — Node-only, no Dart SDK; the shipped
+   answer is the hand-rolled local-first layer, `OFFLINE_SYNC_PLAN.md`.)
 
 
 

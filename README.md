@@ -121,6 +121,15 @@ failed write returns `false` and is surfaced; a filter only ever removes a
 row whose field is populated; `unknown` in the benefits database never
 counts as a yes.
 
+**Offline reads** (Phase 5, Option A — `OFFLINE_SYNC_PLAN.md`): the catalogue
+and the trips are snapshotted on every successful full read into the
+per-device `state_dir` (`offline_snapshot/`). When the live read fails — no
+network, no token — those snapshots answer instead, with a note that says so
+and shows the snapshot's save time; a one-row read never writes a snapshot,
+and a missing or corrupt snapshot file leaves the plain failure message in
+place. Writes still return `false` offline (the write journal is the next
+strand).
+
 ## The airline-benefits database
 
 The weekend finder needs to know which airlines have benefits, and the

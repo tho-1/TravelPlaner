@@ -24,6 +24,7 @@ import '../turso/pipeline_client.dart';
 // storage_turso.py keeps one _utcnow for both the trip and
 // the destination writers; the Dart mirror does the same.
 import 'destination_repository.dart' show utcNow;
+import 'offline_cache.dart';
 
 /// The outcome of one trip save.
 ///
@@ -38,28 +39,72 @@ enum TripSaveStatus { saved, failed, conflict }
 class TripRepository {
   final TursoClient client;
 
+  /// The offline-first snapshot store (Phase 5, Option A);
+  /// null keeps the online-only contract (and the tests).
+  final OfflineCache? offline;
+
   final Random _random = Random();
 
-  TripRepository(this.client);
+  TripRepository(this.client, {this.offline});
 
-  /// All trips with their variants, stops and legs.
+  /// All trips with their variants, stops and legs. On a
+  /// live-read failure the last successful snapshot is
+  /// served, labelled, never silently.
   Future<(List<Trip>, List<String>)> loadTrips() async {
-    final (results, List<String> problems) = await client.runPipeline([
+    final (List<StatementResult> results, List<String> problems) =
+        await client.runPipeline([
       'SELECT * FROM trips ORDER BY created',
       'SELECT * FROM variants ORDER BY trip_id, rowid',
       'SELECT * FROM stops ORDER BY variant_id, position',
       'SELECT * FROM legs ORDER BY variant_id, position',
     ]);
-    if (problems.isNotEmpty) return (<Trip>[], problems);
+    if (problems.isNotEmpty) return _offlineOrFailure(problems);
     if (results.length < 4) {
       return (<Trip>[], const <String>['incomplete pipeline result']);
     }
-    final variantsByTrip = _groupBy(results[1].asMaps, 'trip_id');
-    final stopsByVariant = _groupBy(results[2].asMaps, 'variant_id');
-    final legsByVariant = _groupBy(results[3].asMaps, 'variant_id');
+    // Only a full read may write the snapshot.
+    offline?.save('trips', [
+      results[0].asMaps,
+      results[1].asMaps,
+      results[2].asMaps,
+      results[3].asMaps,
+    ]);
+    return (
+      tripsFromTables([
+        results[0].asMaps,
+        results[1].asMaps,
+        results[2].asMaps,
+        results[3].asMaps,
+      ]),
+      const <String>[],
+    );
+  }
+
+  (List<Trip>, List<String>) _offlineOrFailure(
+    List<String> problems,
+  ) {
+    final snapshot = offline?.load('trips');
+    if (snapshot == null || snapshot.tables.length < 4) {
+      return (<Trip>[], problems);
+    }
+    return (
+      tripsFromTables(snapshot.tables.take(4).toList()),
+      offlineNote('trips', problems.first, snapshot.savedAt),
+    );
+  }
+
+  /// The read's second half, shared by the live path and
+  /// the snapshot path so both can never drift apart: four
+  /// row lists (trips, variants, stops, legs) in one model.
+  static List<Trip> tripsFromTables(
+    List<List<Map<String, Object?>>> tables,
+  ) {
+    final variantsByTrip = _groupBy(tables[1], 'trip_id');
+    final stopsByVariant = _groupBy(tables[2], 'variant_id');
+    final legsByVariant = _groupBy(tables[3], 'variant_id');
 
     final trips = <Trip>[];
-    for (final row in results[0].asMaps) {
+    for (final row in tables[0]) {
       final tripId = row['id'] as String? ?? '';
       final variants = <Variant>[];
       for (final variantRow in variantsByTrip[tripId] ?? const []) {
@@ -83,7 +128,7 @@ class TripRepository {
         variants: variants,
       ));
     }
-    return (trips, const <String>[]);
+    return trips;
   }
 
   static Map<String, List<Map<String, Object?>>> _groupBy(
