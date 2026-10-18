@@ -205,7 +205,7 @@ fallback. See `PROPOSAL_PICTURES.md` for provider/rights and cache details.
 cd mobile
 & "C:\src\flutter\bin\flutter.bat" pub get
 & "C:\src\flutter\bin\flutter.bat" analyze   # must be clean
-& "C:\src\flutter\bin\flutter.bat" test      # 430 tests, no credentials
+& "C:\src\flutter\bin\flutter.bat" test      # 476 tests, no credentials
 ```
 
 The suite uses a scripted Turso fake (`mobile/test/fake_turso.dart`) — no

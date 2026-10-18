@@ -56,13 +56,12 @@ class FlightRoutesScheduleWriter {
   /// dressed up as a complete board (the one thing that could
   /// poison the readers on both sides).
   ///
-  /// The live pipeline does not report `rows_affected` for
-  /// DML (verified 2026-10-18), so "the remote is newer"
-  /// cannot be inferred from the upsert result. The write
-  /// decision follows their own sync protocol instead: read
-  /// the remote board's stamp first, and only write when this
-  /// stamp is at least as new. The conditional upserts stay
-  /// for the race the read cannot close.
+  /// The live pipeline reports `affected_row_count` (not
+  /// `rows_affected`), but the write decision follows their
+  /// own sync protocol instead: read the remote board's
+  /// stamp first, and only write when this stamp is at least
+  /// as new. The conditional upserts stay for the race the
+  /// read cannot close.
   ///
   /// Returns the problems (empty = the request ran), plus
   /// `wrote`: false when the remote kept its newer row or the

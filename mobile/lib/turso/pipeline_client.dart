@@ -207,7 +207,8 @@ class TursoClient {
         }
       }
       results.add(StatementResult(columns, rows,
-          rowsAffected: _affected(result?['rows_affected'])));
+          rowsAffected: _affected(result?['rows_affected'] ??
+              result?['affected_row_count'])));
     }
     return (results, problems);
   }

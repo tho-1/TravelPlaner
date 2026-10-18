@@ -77,26 +77,6 @@ class AppSettings {
     this.deepseekModel,
   });
 
-  /// A copy with the named field replaced (null clears it),
-  /// used when the user rotates a single key.
-  AppSettings copyWith({
-    bool? openTabsEnabled,
-    String? tursoToken,
-    String? benefitsToken,
-    String? deepseekApiKey,
-    String? flightAwareApiKey,
-    String? deepseekModel,
-  }) {
-    return AppSettings(
-      openTabsEnabled: openTabsEnabled ?? this.openTabsEnabled,
-      tursoToken: tursoToken,
-      benefitsToken: benefitsToken,
-      deepseekApiKey: deepseekApiKey,
-      flightAwareApiKey: flightAwareApiKey,
-      deepseekModel: deepseekModel,
-    );
-  }
-
   static const _fileName = 'app_settings.json';
 
   /// The file path for a resolved settings directory.

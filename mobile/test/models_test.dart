@@ -108,13 +108,17 @@ void main() {
     test('truthy mirrors the app convention', () {
       expect(Destination.truthy(true), isTrue);
       expect(Destination.truthy(1), isTrue);
+      // 'x' is the workbook's own marker, but a *substring*
+      // is not a marker: free text that merely contains an x
+      // ("extra", "extremely low") used to count as yes.
       expect(Destination.truthy('x'), isTrue);
       expect(Destination.truthy('X'), isTrue);
+      expect(Destination.truthy('extra'), isFalse);
+      expect(Destination.truthy('Malaria risk: extremely low'), isFalse);
       expect(Destination.truthy('yes'), isTrue);
       expect(Destination.truthy('ja'), isTrue);
       expect(Destination.truthy('true'), isTrue);
-      // Free text like the malaria column never counts as yes
-      // unless it contains an x.
+      // Free text like the malaria column never counts as yes.
       expect(Destination.truthy('no — no local transmission'), isFalse);
       expect(Destination.truthy('near zero'), isFalse);
       expect(Destination.truthy(0), isFalse);

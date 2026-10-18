@@ -317,11 +317,14 @@ class _HomeShellState extends State<HomeShell> {
               ? overrides!.benefitsToken
               : bundled.benefitsToken) ??
           '',
+      flightRoutesUrl: bundled.flightRoutesUrl,
+      flightRoutesToken: bundled.flightRoutesToken,
       iqairSnapshot: bundled.iqairSnapshot,
       picturesDir: bundled.picturesDir,
       flightRoutesCache: bundled.flightRoutesCache,
       geocodeCache: bundled.geocodeCache,
       stateDir: bundled.stateDir,
+      unsplashAccessKey: bundled.unsplashAccessKey,
       flightAwareApiKey: (overrides?.flightAwareApiKey?.isNotEmpty == true
               ? overrides!.flightAwareApiKey
               : bundled.flightAwareApiKey) ??

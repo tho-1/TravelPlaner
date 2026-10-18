@@ -15,6 +15,7 @@
 ///   last-write-wins, and the tab list is a whole-list value.
 library;
 
+import 'destination_repository.dart' show utcNow;
 import '../turso/pipeline_client.dart';
 
 class OpenTabsRepository {
@@ -56,7 +57,7 @@ class OpenTabsRepository {
   /// failed -- the caller must surface that, never show the
   /// list as saved.
   Future<bool> saveTabs(List<String> tabs) async {
-    final now = DateTime.now().toUtc().toIso8601String();
+    final now = utcNow();
     final statements = [
       'DELETE FROM open_tabs',
       for (final tab in tabs)

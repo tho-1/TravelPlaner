@@ -153,8 +153,7 @@ class Destination {
         raw == 'ja' ||
         raw == 'j' ||
         raw == 'true' ||
-        raw == '1' ||
-        raw.contains('x');
+        raw == '1';
   }
 
   /// The text convention: null when blank, otherwise

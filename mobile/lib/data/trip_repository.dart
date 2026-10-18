@@ -8,10 +8,13 @@
 ///   -> stops/legs); a failed read returns an empty list
 ///   *with* problems, never an ambiguous empty list.
 /// * `saveTrip` writes the whole trip in **one pipeline
-///   request** (atomic); a variant's stops and legs are
-///   deleted and re-inserted so the stored order always
-///   matches the in-memory order (`legs[i]` sits between
-///   `stops[i]` and `stops[i+1]`).
+///   request** (atomic at the request level; a mid-batch
+///   failure is surfaced as `failed` rather than silently
+///   ignored, and may leave a partially replaced variant
+///   list -- Turso has no cross-statement transaction here):
+///   a variant's stops and legs are deleted and re-inserted
+///   so the stored order always matches the in-memory order
+///   (`legs[i]` sits between `stops[i]` and `stops[i+1]`).
 /// * `false` means nothing was written -- surface it.
 library;
 

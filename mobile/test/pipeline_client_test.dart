@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -97,6 +98,65 @@ void main() {
       expect(results, hasLength(2));
       expect(fake.requests.single, ['SELECT 1', 'SELECT 2']);
       expect(fake.requestTypes.single, ['execute', 'execute', 'close']);
+    });
+  });
+
+  group('rowsAffected', () {
+    // The trip save's conflict guard is `rowsAffected == 0`,
+    // so a null here silently reports every stale save as
+    // saved. The live endpoint answers with
+    // `affected_row_count` (probed 2026-10-18) and never with
+    // `rows_affected` -- reading only the documented name is
+    // what made the guard a no-op in production.
+    test('reads the live field name, affected_row_count', () async {
+      final fake = FakeTurso((_) => okEmptyLive(1, 0));
+      final client = TursoClient(_config, httpClient: fake.client());
+      final (results, problems) = await client.runPipeline(['DELETE FROM x']);
+      expect(problems, isEmpty);
+      expect(results.single.rowsAffected, 0);
+    });
+
+    test('reads a string-encoded count', () async {
+      final fake = FakeTurso((_) => okWrites([3]));
+      final client = TursoClient(_config, httpClient: fake.client());
+      final (results, _) = await client.runPipeline(['DELETE FROM x']);
+      expect(results.single.rowsAffected, 3);
+    });
+
+    test('prefers rows_affected when both are present', () async {
+      final fake = FakeTurso((_) => http.Response.bytes(
+            utf8.encode(jsonEncode({
+              'results': [
+                {
+                  'type': 'ok',
+                  'response': {
+                    'result': {
+                      'cols': const [],
+                      'rows': const [],
+                      'rows_affected': 2,
+                      'affected_row_count': 7,
+                    },
+                  },
+                },
+              ],
+            })),
+            200,
+            headers: {'content-type': 'application/json; charset=utf-8'},
+          ));
+      final client = TursoClient(_config, httpClient: fake.client());
+      final (results, _) = await client.runPipeline(['DELETE FROM x']);
+      expect(results.single.rowsAffected, 2);
+    });
+
+    test('is null when the endpoint reports no count at all', () async {
+      // Pinned deliberately: null is "unknown", and the
+      // guard must not read it as zero (a false conflict) --
+      // but it also cannot read it as one. A future change to
+      // the response shape must fail this test, not the guard.
+      final fake = FakeTurso((_) => okEmpty(1));
+      final client = TursoClient(_config, httpClient: fake.client());
+      final (results, _) = await client.runPipeline(['DELETE FROM x']);
+      expect(results.single.rowsAffected, isNull);
     });
   });
 }

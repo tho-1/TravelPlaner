@@ -1853,6 +1853,53 @@ notes, the no-snapshot passthroughs.
 
 ---
 
+## 0y. Session 2026-10-18 (4) — the review batch: F1–F10
+
+`PROJECT_REVIEW.md` (2026-10-18) raised ten findings. All ten are closed;
+three of its premises were checked against the live database rather than
+assumed, and one did not survive.
+
+**Fixed:** F1 (the trip guard read `rows_affected`, which the live endpoint
+never sends), F3 (`Destination.truthy`'s `contains('x')` fallback), F4
+(`AppSettings.copyWith` silently cleared sibling keys -- removed rather than
+repaired; nothing used it), F5 (`_effectiveConfig` dropped the FlightRoutes
+and Unsplash credentials, so those keys could not be rotated per device),
+F6 (the documented test count), F10 (`saveTabs` stamped microseconds against
+everyone else's `utcNow()`).
+
+**F2 — documented, and the documentation corrected.** The trip save is
+still one pipeline request without `BEGIN`/`COMMIT`; a mid-batch failure is
+surfaced as `failed` and may leave a partially replaced variant list. The
+first attempt at that comment claimed "Turso has no cross-statement
+transaction"; that is false (probed below), and the real obstacle is
+different: **the pipeline keeps going after an error**, so a trailing
+`COMMIT` would make partial writes durable. Hrana's conditional `batch`
+request (`step_errors`, `on_error`) is the primitive that can close it --
+`mobile/` does not use it yet.
+
+**F7 re-classified.** (g) AeroAPI is *implemented* (provider, config field,
+editable settings row with a masked status, tests); only a key is missing,
+and the fallback is optional, so it is not coding work. (i)'s quick-win half
+-- the raw airport-code line in the expanded finder result -- was already
+removed; the visual redesign still awaits a description of what looks
+broken. (k)/(q)/(s) shipped in `90b9f41`/`ec8562f`.
+
+**Live probes (2026-10-18, zero-mutation, against `travel-tz123`):**
+
+| Probe | Result |
+|---|---|
+| `UPDATE trips SET name = name WHERE 1 = 0` | `affected_row_count: 0`, **no `rows_affected` key** -- F1's fix reads the field the endpoint really sends |
+| `BEGIN; UPDATE …WHERE 1=0; ROLLBACK` in one pipeline request | all three `ok` -- transactions *are* available |
+| `BEGIN; UPDATE bad_column; COMMIT` | `ok, error, ok` -- **the batch does not stop on an error**, which is why a naive transaction wrap is unsafe |
+| `{type: batch, steps:[…]}` | supported: `step_results` + `step_errors` come back per step |
+
+**Tests added:** `rowsAffected` parsing in four shapes (`affected_row_count`,
+string-encoded, both present, neither), the live-shape conflict/saved pair
+for `saveTrip` (`okEmptyLive` in `fake_turso.dart`), and `truthy` cases for
+text that merely contains an `x`.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

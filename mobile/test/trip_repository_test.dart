@@ -216,6 +216,22 @@ void main() {
     expect(fake.requests.single, hasLength(1));
   });
 
+  test('saveTrip reads the live affected_row_count shape', () async {
+    // The live endpoint reports DML counts as
+    // `affected_row_count` with no `rows_affected` key
+    // (probed 2026-10-18). If the guard only understood the
+    // latter, `rowsAffected` would be null, `null == 0`
+    // false, and every stale save would claim success.
+    final stale = FakeTurso((_) => okEmptyLive(1, 0));
+    const trip = Trip(id: 't-1', name: 'Japan');
+    expect(await _repo(stale).saveTrip(trip), TripSaveStatus.conflict);
+    expect(stale.requests, hasLength(1),
+        reason: 'the variant statements must not run on a conflict');
+
+    final fresh = FakeTurso((_) => okEmptyLive(1, 1));
+    expect(await _repo(fresh).saveTrip(trip), TripSaveStatus.saved);
+  });
+
   test('saveTrip reports a conflict when the pipeline fails '
       'on the upsert', () async {
     final fake = FakeTurso((_) => pipelineError('read-only'));

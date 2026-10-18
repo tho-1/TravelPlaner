@@ -124,6 +124,41 @@ http.Response okEmpty([int count = 1, int? rowsAffected]) =>
       headers: {'content-type': 'application/json; charset=utf-8'},
     );
 
+/// A 200 pipeline response in the shape the **live** endpoint
+/// actually returns for DML (probed 2026-10-18): the count
+/// arrives as `affected_row_count` and there is no
+/// `rows_affected` key at all. The trip save's concurrency
+/// guard reads this field, so a fake that only ever speaks
+/// `rows_affected` would hide a regression that breaks
+/// conflict detection in production.
+http.Response okEmptyLive([int count = 1, int? affectedRowCount]) =>
+    http.Response.bytes(
+      utf8.encode(
+        jsonEncode({
+          'results': [
+            for (var i = 0; i < count; i++)
+              {
+                'type': 'ok',
+                'response': {
+                  'result': {
+                    'cols': const [],
+                    'rows': const [],
+                    'affected_row_count': ?affectedRowCount,
+                    'last_insert_rowid': null,
+                    'replication_index': null,
+                    'rows_read': 0,
+                    'rows_written': 0,
+                    'query_duration_ms': 0.092,
+                  },
+                },
+              },
+          ],
+        }),
+      ),
+      200,
+      headers: {'content-type': 'application/json; charset=utf-8'},
+    );
+
 /// A 200 pipeline response carrying one SELECT result
 /// whose cells arrive the way the real pipeline sends
 /// them: typed (`{"type": "integer", "value": "1"}`).
