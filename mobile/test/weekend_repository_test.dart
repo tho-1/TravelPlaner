@@ -1,4 +1,4 @@
-/// The finder end to end with faked boards: one windowed
+﻿/// The finder end to end with faked boards: one windowed
 /// query per selected day in, one explainable report out.
 /// No network, no assets (the lookup and the flags are
 /// installed).
@@ -10,7 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:travel_planner/data/error_log.dart';
 import 'package:travel_planner/data/flight_routes_schedule_repository.dart';
+import 'package:travel_planner/data/flight_routes_schedule_writer.dart';
 import 'package:travel_planner/data/weekend_repository.dart';
 import 'package:travel_planner/models/airline_benefits.dart';
 import 'package:travel_planner/models/timetable.dart';
@@ -110,6 +112,42 @@ class _FakeBoard implements FlightBoardProvider {
     return FetchResult(
       flights: flightsByWindow[key] ?? const [],
       source: 'fake',
+      fetchedAt: DateTime.now().toIso8601String(),
+    );
+  }
+}
+
+    // A provider that answers *windowed* calls and *full-day*
+// calls differently and records every call, so a write-back
+// test can say which shape was asked for. Full-day means
+// both window bounds omitted -- the exact call the sharing
+// pass makes.
+class _SplitBoard implements FlightBoardProvider {
+  _SplitBoard({
+    this.windows = const {},
+    this.fullDay = const {},
+    this.fullDayWarning = '',
+  });
+
+  final Map<String, List<Flight>> windows;
+  final Map<String, List<Flight>> fullDay;
+  final String fullDayWarning;
+  final List<String> calls = [];
+
+  @override
+  Future<FetchResult> fetch(DateTime day, String kind,
+      {DateTime? since, DateTime? until}) async {
+    final label =
+        '${day.year}-${day.month.toString().padLeft(2, '0')}-'
+        '${day.day.toString().padLeft(2, '0')} $kind';
+    final full = since == null && until == null;
+    calls.add(full ? '$label (full day)' : label);
+    final flights =
+        (full ? fullDay[label] : windows[label]) ?? const <Flight>[];
+    return FetchResult(
+      flights: flights,
+      source: 'fraport',
+      warning: full ? fullDayWarning : '',
       fetchedAt: DateTime.now().toIso8601String(),
     );
   }
@@ -400,4 +438,440 @@ void main() {
       isTrue,
     );
   });
+
+  group('the FlightRoutes write-back (2026-10-18)', () {
+    FlightRoutesScheduleRepository sharedRepo(FakeTurso fakeTurso) =>
+        FlightRoutesScheduleRepository(
+          TursoClient(
+            const TursoConfig(
+                url: 'https://shared.test.turso.io', token: 'fake'),
+            httpClient: fakeTurso.client(),
+          ),
+        );
+
+    WeekendRepository repoFor(
+      _SplitBoard board, {
+      required FlightRoutesScheduleRepository shared,
+    }) =>
+        WeekendRepository(
+          board,
+          sharedSchedules: shared,
+          sharedBoardWriter: FlightRoutesScheduleWriter(
+            shared.client,
+            now: () => DateTime.utc(2026, 10, 18, 20, 9, 40),
+          ),
+          clock: () => DateTime(2026, 10, 18, 21, 9, 40),
+        );
+
+    // The write request's captured args, or a failing
+    // expectation when nothing was written.
+    List<Object?> writeArgs(FakeTurso fakeTurso, {int statement = 0}) {
+      final index = fakeTurso.requests
+          .indexWhere((s) => s.any((sql) => sql.startsWith('INSERT INTO')));
+      expect(index, isNonNegative, reason: 'the write never travelled');
+      final argsList = fakeTurso.requestArgs[index]!;
+      expect(argsList.length, greaterThanOrEqualTo(statement + 1),
+          reason: 'the write pipeline only carried '
+              '${argsList.length} arg lists');
+      return argsList[statement] as List<Object?>;
+    }
+
+    // One captured arg is the typed Hrana Value the wire
+    // carried; text args are read out through here.
+    String argText(Object? arg) => (arg as Map)['value'] as String;
+
+    test('a live search shares the full-day FRA board back', () async {
+      const day = '2026-10-16';
+      const otherOut = '2026-10-17';
+      final fakeTurso = FakeTurso((statements) {
+        if (statements.any((sql) => sql.startsWith('INSERT INTO'))) {
+          return okWrites(const [1, 1]);
+        }
+        // Cache miss everywhere: every window runs live.
+        return okRows(
+            ['iata', 'day', 'payload', 'updated_at'], const []);
+      });
+      final board = _SplitBoard(
+        windows: {
+          // The window the matcher asks about.
+          '$day departures': [
+            _flight(
+                no: 'LH1000',
+                from: 'FRA',
+                to: 'LHR',
+                departure: DateTime(2026, 10, 16, 15, 10)),
+          ],
+        },
+        fullDay: {
+          // The whole day the sharing pass walks: two more
+          // departures than the window's one.
+          '$day departures': [
+            _flight(
+                no: 'LH1000',
+                from: 'FRA',
+                to: 'LHR',
+                departure: DateTime(2026, 10, 16, 15, 10)),
+            _flight(
+                no: 'LH1010',
+                from: 'FRA',
+                to: 'MUC',
+                departure: DateTime(2026, 10, 16, 9, 30)),
+            _flight(
+                no: 'LH1014',
+                from: 'FRA',
+                to: 'LIS',
+                departure: DateTime(2026, 10, 16, 23, 05)),
+          ],
+        },
+      );
+      final shared = sharedRepo(fakeTurso);
+      final repository = repoFor(board, shared: shared);
+
+      final result = await repository.search(plan, _benefits);
+
+      // One share attempt per out day, spawned after the
+      // answer, in out-day order.
+      expect(result.pendingWrites, hasLength(2));
+      await Future.wait(result.pendingWrites);
+
+      // The windowed query came first, the full-day walk
+      // after the search had returned.
+      expect(board.calls, contains('$otherOut departures (full day)'));
+      final dayCalls = board.calls.where((c) => c.startsWith(day)).toList();
+      expect(dayCalls.first, '$day departures');
+      expect(dayCalls, contains('$day departures (full day)'));
+
+      final boardArgs = writeArgs(fakeTurso);
+      expect(argText(boardArgs[0]), 'FRA');
+      expect(argText(boardArgs[1]), day);
+      final payload = jsonDecode(argText(boardArgs[2]))
+          as Map<String, dynamic>;
+      final meta = payload['meta'] as Map<String, dynamic>;
+      expect(meta['schema_version'], 2);
+      expect(meta['source'], 'fraport');
+      expect(meta['n_flights'], 3);
+      expect(meta['obtained_at'], '2026-10-18T21:09:40');
+      expect(meta.containsKey('coverage'), false,
+          reason: 'a full day carries no coverage window');
+      final first = (payload['flights'] as List).first as Map<String, dynamic>;
+      // Berlin CEST: the wall-clock minus the real offset.
+      expect(first['dep_at_utc'], '2026-10-16T13:10:00Z');
+      expect(first['dep_at_local'], '2026-10-16T15:10:00+02:00');
+      // The far end's zone is unknown: AirLabs-style blanks.
+      expect(first['arr_at_local'], '2026-10-16T16:55:00');
+      expect(first['arr_at_utc'], '');
+      final prov = writeArgs(fakeTurso, statement: 1);
+      expect(argText(prov[0]), 'FRA|$day');
+      expect(argText(prov[1]), 'fraport');
+      expect(prov[3], {'type': 'integer', 'value': '3'});
+      // updated_at: the sibling's db.now_iso() format from
+      // the frozen writer clock.
+      expect(argText(boardArgs[3]), '2026-10-18T20:09:40+00:00');
+      expect(
+        ErrorLog.instance.entries
+            .where((entry) => entry.message.contains(
+                'board for $day was shared with FlightRoutes')),
+        isNotEmpty,
+      );
+      // The second out day answered nothing live and its
+      // full-day walk came back empty: a nothing answer is
+      // never shared.
+      final inserted = fakeTurso.requests
+          .where((s) => s.any((sql) => sql.startsWith('INSERT INTO')))
+          .length;
+      expect(inserted, 1);
+      expect(
+        ErrorLog.instance.entries.where((entry) => entry.message
+            .contains('board for $otherOut was not shared')),
+        isNotEmpty,
+      );
+    });
+
+    test('a complete cached board is never overwritten by a share', () async {
+      const day = '2026-10-16';
+      const returnDay = '2026-10-17';
+      final fakeTurso = FakeTurso((statements) {
+        final sql = statements.first;
+        if (sql.startsWith('INSERT INTO')) {
+          return okWrites(const [1, 1]);
+        }
+        // The cache already holds the complete AeroDataBox
+        // board for the outbound day (their own fixture).
+        if (sql.contains("day = '$day'")) {
+          return okRows([
+            'iata',
+            'day',
+            'payload',
+            'updated_at'
+          ], [
+            [
+              'FRA',
+              day,
+              jsonEncode({
+                'meta': {
+                  'schema_version': 2,
+                  'airport': 'FRA',
+                  'date': day,
+                  'source': 'aerodatabox',
+                  'obtained_at': '2026-10-15T12:00:00Z',
+                  'n_flights': 1,
+                },
+                'flights': [
+                  {
+                    'dep_time': '15:10',
+                    'arr_time': '15:55',
+                    'carrier_iata': 'LH',
+                    'carrier_name': 'Lufthansa',
+                    'flight_no': 'LH1000',
+                    'dest_iata': 'LHR',
+                    'dep_at_local': '2026-10-16T15:10:00+02:00',
+                    'arr_at_local': '2026-10-16T15:55:00+01:00',
+                    'dep_at_utc': '2026-10-16T13:10:00Z',
+                    'arr_at_utc': '2026-10-16T14:55:00Z',
+                  },
+                ],
+              }),
+              '2026-10-15T12:00:00Z',
+            ],
+          ]);
+        }
+        return okRows(
+            ['iata', 'day', 'payload', 'updated_at'], const []);
+      });
+      final board = _SplitBoard(
+        windows: {
+          '$returnDay arrivals': [
+            _flight(
+                no: 'LH2000',
+                from: 'LHR',
+                to: 'FRA',
+                departure: DateTime(2026, 10, 17, 17, 30)),
+          ],
+        },
+        fullDay: {
+          // A whole alternative board ready to go -- must
+          // never reach the wire, because the cache's row
+          // already covers this day.
+          '$day departures': const [],
+        },
+      );
+      final selectedDays = TravelPlan(
+        outDays: [TravelDay(DateTime(2026, 10, 16))],
+        backDays: [TravelDay(DateTime(2026, 10, 17))],
+      );
+      final shared = sharedRepo(fakeTurso);
+      final repository = repoFor(board, shared: shared);
+
+      final result = await repository.search(selectedDays, _benefits);
+      await Future.wait(result.pendingWrites);
+
+      // The outbound day ran from the cache: the provider
+      // was never asked for a departures window or a full
+      // day, and no board row was written.
+      expect(result.report.outboundTotal, 1);
+      expect(
+        board.calls.where((call) => call.contains('departures')),
+        isEmpty,
+        reason: 'a cached day needs no departure fetches at all',
+      );
+      expect(
+        fakeTurso.requests.where(
+            (s) => s.any((sql) => sql.startsWith('INSERT INTO'))),
+        isEmpty,
+      );
+      expect(
+        ErrorLog.instance.entries.where((entry) => entry.message
+            .contains('already holds a complete FRA board')),
+        isNotEmpty,
+      );
+    });
+
+    test('a truncated full-day walk is never shared', () async {
+      const day = '2026-10-16';
+      final fakeTurso = FakeTurso((statements) {
+        if (statements.any((sql) => sql.startsWith('INSERT INTO'))) {
+          return okWrites(const [1, 1]);
+        }
+        return okRows(
+            ['iata', 'day', 'payload', 'updated_at'], const []);
+      });
+      final board = _SplitBoard(
+        windows: {
+          '$day departures': [
+            _flight(
+                no: 'LH1000',
+                from: 'FRA',
+                to: 'LHR',
+                departure: DateTime(2026, 10, 16, 15, 10)),
+          ],
+        },
+        fullDay: {
+          '$day departures': [
+            _flight(
+                no: 'LH1000',
+                from: 'FRA',
+                to: 'LHR',
+                departure: DateTime(2026, 10, 16, 15, 10)),
+          ],
+        },
+        // The walk stopped without covering the day.
+        fullDayWarning:
+            'stopped after 64 pages without reaching the end of the window',
+      );
+      final selectedDays = TravelPlan(
+        outDays: [TravelDay(DateTime(2026, 10, 16))],
+        backDays: [TravelDay(DateTime(2026, 10, 17))],
+      );
+      final shared = sharedRepo(fakeTurso);
+      final repository = repoFor(board, shared: shared);
+
+      final result = await repository.search(selectedDays, _benefits);
+      await Future.wait(result.pendingWrites);
+
+      expect(
+        fakeTurso.requests.where(
+            (s) => s.any((sql) => sql.startsWith('INSERT INTO'))),
+        isEmpty,
+        reason: 'a truncated day is not a complete board',
+      );
+      expect(
+        ErrorLog.instance.entries
+            .where((entry) => entry.message.contains('$day was not shared')),
+        isNotEmpty,
+      );
+    });
+
+    test('a Travel Planner share round-trips through the shared cache',
+        () async {
+      const day = '2026-10-16';
+      const returnDay = '2026-10-17';
+      final fakeTurso = FakeTurso((statements) {
+        final sql = statements.first;
+        if (sql.contains("day = '$day'")) {
+          // Exactly what the writer sends for one FRA
+          // departure: departure stamps real, the arrival
+          // pair blanks (the far end's zone is unknown).
+          return okRows([
+            'iata',
+            'day',
+            'payload',
+            'updated_at'
+          ], [
+            [
+              'FRA',
+              day,
+              jsonEncode({
+                'meta': {
+                  'schema_version': 2,
+                  'airport': 'FRA',
+                  'date': day,
+                  'source': 'fraport',
+                  'obtained_at': '2026-10-18T21:09:40',
+                  'n_flights': 1,
+                },
+                'flights': [
+                  {
+                    'dep_time': '15:10',
+                    'arr_time': '15:55',
+                    'carrier_iata': 'LH',
+                    'carrier_name': 'Lufthansa',
+                    'flight_no': 'LH1000',
+                    'dest_iata': 'LHR',
+                    'price': null,
+                    'dep_at_local': '2026-10-16T15:10:00+02:00',
+                    'arr_at_local': '2026-10-16T15:55:00',
+                    'dep_at_utc': '2026-10-16T13:10:00Z',
+                    'arr_at_utc': '',
+                  },
+                ],
+              }),
+              '2026-10-18T20:09:40+00:00',
+            ],
+          ]);
+        }
+        if (sql.contains("day = '$returnDay'")) {
+          return okRows([
+            'iata',
+            'day',
+            'payload',
+            'updated_at'
+          ], [
+            [
+              'LHR',
+              returnDay,
+              jsonEncode({
+                'meta': {
+                  'schema_version': 2,
+                  'airport': 'LHR',
+                  'date': returnDay,
+                  'source': 'aerodatabox',
+                  'obtained_at': '2026-10-16T12:00:00Z',
+                  'n_flights': 1,
+                },
+                'flights': [
+                  {
+                    'dep_time': '17:30',
+                    'arr_time': '20:30',
+                    'carrier_iata': 'LH',
+                    'carrier_name': 'Lufthansa',
+                    'flight_no': 'LH2000',
+                    'dest_iata': 'FRA',
+                    'dep_at_local': '2026-10-17T17:30:00+01:00',
+                    'arr_at_local': '2026-10-17T20:30:00+02:00',
+                    'dep_at_utc': '2026-10-17T16:30:00Z',
+                    'arr_at_utc': '2026-10-17T18:30:00Z',
+                  },
+                ],
+              }),
+              '2026-10-16T12:00:00Z',
+            ],
+          ]);
+        }
+        return okRows(
+            ['iata', 'day', 'payload', 'updated_at'], const []);
+      });
+      final selectedDays = TravelPlan(
+        outDays: [TravelDay(DateTime(2026, 10, 16))],
+        backDays: [TravelDay(DateTime(2026, 10, 17))],
+      );
+      final shared = sharedRepo(fakeTurso);
+      final provider = _SplitBoard(fullDay: const {});
+      final repository = WeekendRepository(
+        provider,
+        sharedSchedules: shared,
+        sharedBoardWriter: FlightRoutesScheduleWriter(shared.client),
+        clock: () => DateTime(2026, 10, 18, 21, 9, 40),
+      );
+
+      final result = await repository.search(selectedDays, _benefits);
+      await Future.wait(result.pendingWrites);
+
+      // The dep-only board answers the outbound leg with no
+      // duration; the fully stamped sibling board keeps its
+      // exact leg length.
+      final london = result.report.cities.single;
+      expect(london.city, 'London');
+      expect(london.options.single.outFlight.flightNo, 'LH1000');
+      expect(london.options.single.outFlight.duration, isNull,
+          reason: 'without an arrival UTC there is no leg length');
+      expect(london.options.single.backFlight.duration,
+          const Duration(minutes: 120));
+      expect(result.report.notes, contains(contains('shared by FlightRoutes')));
+      // ... and the row it reads being complete, no share
+      // was attempted (no departure fetch at all).
+      expect(
+        provider.calls.where((call) => call.contains('departures')),
+        isEmpty,
+      );
+    });
+
+    test('without the shared cache wired, nothing is shared', () async {
+      final repository = WeekendRepository(
+          FraportBoardProvider(
+              httpClient: _board(), throttleSeconds: 0));
+      final result = await repository.search(plan, _benefits);
+      expect(result.pendingWrites, isEmpty);
+    });
+  });
 }
+

@@ -1746,6 +1746,83 @@ for setup details and remaining configuration requirements.
 
 ---
 
+## 0w. Session 2026-10-18 (2) — the shared cache becomes bidirectional
+
+**Live verification done.** The token copied from FlightRoutes' own config
+works against `flightconnections-tz123.aws-eu-north-1.turso.io` (HTTP 200): the
+tables `airlines`, `meta`, `schedule_boards`, and `schedule_provenance` exist,
+the payload shape is `{meta, flights}`, and all 7 boards on the remote are FRA,
+all v1 (no timezone stamps) — so every Finder window currently falls back to
+the live Fraport board. The token carries the `"a":"rw"` claim: it is the
+sibling's own read-write credential, and the snippet proposal's "distinct from
+both Travel Planner databases" was factually wrong — the schedule database is
+the *same* database that hosts the airline-benefits table.
+
+**Write-back shipped (the user's request: feed the Finder's pulled flights back
+so FlightRoutes can use them).** After a Finder search completes, each out day
+gets one *full-day* FRA departure fetch (the provider's whole-day walk) and, if
+it is genuinely complete, one `schedule_boards` +
+`schedule_provenance` write in the sibling's exact format:
+
+- The payload is built by `models/schedule_board_payload.dart` — the sibling's
+  `save_schedules` shape byte for byte: meta (`schema_version` 2, airport,
+  date, source `fraport`, naive-local `obtained_at` to seconds, `n_flights`),
+  and the ten flight-record keys. Departure stamps are real (FRA follows the
+  Berlin DST rule already in `timetable.dart`, so `dep_at_local` carries the
+  true offset and `dep_at_utc` the true UTC); arrival stamps follow the
+  sibling's own AirLabs precedent — the far end's wall-clock, `arr_at_utc`
+  blank — because Fraport's `schedArr` offsets are unreliable and Travel
+  Planner has no per-airport zone table. Never a fabricated value.
+- The writer (`data/flight_routes_schedule_writer.dart`) uses the sibling's
+  `utils/sync.py` upsert statements *with the conditional `WHERE
+  excluded.updated_at >` kept*: Travel Planner races their apps on live rows
+  and cannot know whose copy is newer, so a stale write loses instead of
+  winning. Because the live pipeline reports no `rows_affected` for DML
+  (verified in the probe below), the write decision follows their own sync
+  protocol — read the remote board's `updated_at` first, write only when this
+  fetch is strictly newer, keep the conditional upserts for the race the read
+  cannot close. Statements go through the newly parameterized pipeline client
+  (`?` args, integers string-encoded like Hrana requires — the JSON blob never
+  travels through string interpolation). Guards refuse to write anything
+  that is not a complete v2 board: no coverage window, non-empty, count
+  matching, meta agreeing with the key, and a well-formed IATA/ISO-date key.
+  A zero-flight "the board walked the whole day and answered nothing" answer
+  is never cached as truth; a truncated walk (the provider's page-limit
+  warning) is never shared; a stamp older than the remote's surfaces as "the
+  remote kept its newer row", not as an error.
+- The reader accepts the new board class: departure stamps required (local +
+  zoned UTC), arrival stamps optional. Cached Fraport-sourced flights read
+  with no leg duration — the same behavior live Fraport flights already have
+  (`Flight.duration` was already nullable and the cap uses the wall-clock
+  proxy) — so cached and live flights behave identically. AeroDataBox boards
+  (with full four-way stamps) keep their exact durations.
+- Sharing is per out day only — the sibling schema has no concept for
+  arrival boards, so the Finder's FRA *arrivals* data stays find-only (a new
+  table in their database would be a schema change on an app the user's other
+  project owns).
+- The share runs after the search (the futures ride in the new
+  `pendingWrites` field of `WeekendSearch`; the UI never waits on a share;
+  tests await them deterministically), chained sequentially for the shared
+  provider's throttle, and every failure/skip is an ErrorLog line, never a
+  silent swallow: a complete board already in the cache is skipped ("never
+  overwrite full-day data", their own rule, extended to Travel Planner), and
+  a failed read before sharing also skips.
+- **Live zero-mutation write probe** (temp script, not committed): `BEGIN` →
+  conditional board upsert + provenance upsert (typed args, integer
+  string-encoded) → `SELECT` (probe row visible) → `ROLLBACK` → `SELECT` × 2
+  (no rows remain on either table). The live endpoint answered every
+  statement — the write path works today — and reported `rows_affected: null`
+  for DML, which is why the writer consults the remote stamp instead of the
+  upsert's affected count.
+- Tests: payload format key-by-key (DST summer/winter, overnight legs,
+  coverage shape), the writer's exact SQL/args (typed integer encoding, the
+  `+00:00` stamp format, rows-affected semantics, unconfigured client, all
+  guards), the reader's dep-only acceptance, the end-to-end share/skip paths
+  through fake Turso and a split fake provider, and the unwired no-op. 465
+  tests green, `flutter analyze` clean.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)

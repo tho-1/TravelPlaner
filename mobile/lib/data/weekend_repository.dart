@@ -13,6 +13,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../models/airline_benefits.dart';
+import '../models/schedule_board_payload.dart';
 import '../models/timetable.dart';
 import '../models/travel_days.dart';
 import '../models/weekend_match.dart';
@@ -20,6 +21,7 @@ import 'benefits_repository.dart';
 import 'catalogue_match.dart';
 import 'error_log.dart';
 import 'flight_routes_schedule_repository.dart';
+import 'flight_routes_schedule_writer.dart';
 
 /// IATA code -> "City|Country" records from the generated
 /// `assets/airports.json` (built from the Python
@@ -100,9 +102,18 @@ class AirportLookup {
 
 /// The finder's outcome: the report plus the benefit source
 /// that produced it, so the UI can show both from one run.
+///
+/// `pendingWrites` holds the feed-back futures of the
+/// schedule-board sharing (2026-10-18): one per out day that
+/// gets its full-day FRA board written to the shared
+/// FlightRoutes cache. They resolve *after* the report is
+/// built and are awaited by tests only — the production UI
+/// lets them finish in the background, their errors surfacing
+/// in the ErrorLog, never a silent swallow.
 typedef WeekendSearch = ({
   MatchReport report,
   BenefitSource benefits,
+  List<Future<List<String>>> pendingWrites,
 });
 
 /// The flight filters the finder card exposes: which
@@ -136,7 +147,25 @@ class WeekendRepository {
   /// timestamps are usable here.
   final FlightRoutesScheduleRepository? sharedSchedules;
 
-  WeekendRepository(this.provider, {this.fallback, this.sharedSchedules});
+  /// The write side of the same cache: full-day FRA boards
+  /// the finder pulls through the live provider are fed back
+  /// after the search, so the sibling app's next sync
+  /// adopts them. The reader and the writer are wired
+  /// together or not at all -- one without the other has
+  /// their own (reader-only) behaviour.
+  final FlightRoutesScheduleWriter? sharedBoardWriter;
+
+  /// The payload clock for `obtained_at` stamps; injectable
+  /// so tests can freeze the format.
+  final DateTime Function() clock;
+
+  WeekendRepository(
+    this.provider, {
+    this.fallback,
+    this.sharedSchedules,
+    this.sharedBoardWriter,
+    DateTime Function()? clock,
+  }) : clock = clock ?? DateTime.now;
 
   /// Run one board query per selected day and match them.
   Future<WeekendSearch> search(
@@ -286,7 +315,113 @@ class WeekendRepository {
             });
       }
     }
-    return (report: withNotes(report, notes), benefits: benefits);
+
+    // The feed-back pass (2026-10-18): every out day this
+    // search touched gets its complete FRA departure board
+    // shared to the FlightRoutes cache, so the sibling app's
+    // next sync adopts it. Runs off the result path -- the
+    // futures land in `pendingWrites` for the tests to await;
+    // the production UI never waits on a share.
+    final pendingWrites = <Future<List<String>>>[];
+    if (sharedSchedules != null && sharedBoardWriter != null) {
+      var chain = Future<void>.value();
+      for (final rule in plan.outDays) {
+        pendingWrites.add(chain.then((_) => _shareFullDayBoard(rule)));
+        chain = pendingWrites.last;
+      }
+    }
+    return (
+      report: withNotes(report, notes),
+      benefits: benefits,
+      pendingWrites: pendingWrites,
+    );
+  }
+
+  /// Share one out day's full departure board with
+  /// FlightRoutes. Runs after the answer (never on the
+  /// result path), chains sequentially so the shared
+  /// provider's throttle stays polite, and turns every
+  /// failure into its problems list plus an ErrorLog line --
+  /// never an error thrown into the background.
+  Future<List<String>> _shareFullDayBoard(TravelDay rule) async {
+    final shared = sharedSchedules!;
+    final writer = sharedBoardWriter!;
+    final day = _isoDate(rule.day);
+    final problems = <String>[];
+    try {
+      // Their own rule, extended to this side of the
+      // handshake: a partial source never overwrites full-day
+      // data cached by another provider. A complete board in
+      // the cache is at least as good as anything this fetch
+      // could produce, so a share would be churn, not value.
+      final existing = await shared.loadBoards(day: day, airports: ['FRA']);
+      if (!existing.ok) {
+        problems.add('the shared-cache read failed before sharing '
+            '(${existing.problems.join('; ')})');
+        ErrorLog.instance.record('weekend-finder',
+            'the FRA board for $day was not shared: ${problems.first}');
+        return problems;
+      }
+      if (existing.boards.any(
+          (board) => board.airport == 'FRA' && board.isCompleteV2)) {
+        ErrorLog.instance.record(
+            'weekend-finder',
+            'the shared cache already holds a complete FRA board for '
+            '$day; nothing was shared.');
+        return problems;
+      }
+
+      // Only a whole day counts as a complete board: a full
+      // day's walk (the whole-day fetch is the provider's
+      // default) is the one shape that may be written. Stops
+      // on a truncation warning, on zero flights (a "nothing
+      // flies" answer is never cached as truth), and on any
+      // write problem.
+      final result = await provider.fetch(rule.day, 'departures');
+      if (result.warning.isNotEmpty) {
+        problems.add('the full-day walk stopped early (${result.warning})');
+      } else if (result.flights.isEmpty) {
+        problems.add('the board walked the whole day and answered '
+            'no flights');
+      } else {
+        final payload = scheduleBoardPayload(
+          airport: 'FRA',
+          day: day,
+          source: FraportBoardProvider.name,
+          // The sibling format's stamp: naive local, seconds.
+          obtainedAt: clock().toIso8601String().substring(0, 19),
+          flights: result.flights,
+        );
+        final (wrote, writeProblems) = await writer.writeBoard(
+          airport: 'FRA',
+          day: day,
+          payload: payload,
+        );
+        problems.addAll(writeProblems);
+        if (problems.isEmpty && wrote) {
+          ErrorLog.instance.record(
+              'weekend-finder',
+              'the complete FRA departure board for $day was shared with '
+              'FlightRoutes (source ${result.source}, '
+              '${result.flights.length} flight(s)).');
+          return problems;
+        } else if (problems.isEmpty) {
+          ErrorLog.instance.record(
+              'weekend-finder',
+              'the shared FRA row for $day was kept newer; this fetch '
+              'was not written.');
+          return problems;
+        }
+      }
+      ErrorLog.instance.record('weekend-finder',
+          'the FRA board for $day was not shared: ${problems.join('; ')}',
+          details: {'day': day, 'flights': result.flights.length});
+      return problems;
+    } catch (error) {
+      final message = 'sharing the FRA board for $day failed ($error)';
+      ErrorLog.instance.record('weekend-finder', message);
+      return [message];
+    }
   }
 
   Future<({List<Flight> flights, int windowCount})?> _cachedOutbound(
@@ -394,29 +529,46 @@ class WeekendRepository {
     }
   }
 
+  /// The board -> Flight list, or null. A board that is not
+  /// a full v2 board, or whose records cannot be placed on a
+  /// timeline, is a cache miss -- never "no flights".
+  ///
+  /// Departure stamps are required (wall-clock plus zoned
+  /// UTC); arrival stamps are optional, because Travel
+  /// Planner's own Fraport-sourced boards leave the arrival
+  /// UTC blank (the far end's zone is unknown). A record
+  /// without the arrival pair yields a flight with no
+  /// duration -- the leg-duration cap then reports it kept
+  /// rather than silently measuring wall-clocks against a
+  /// wrong zone.
   static List<Flight>? _flightsFromBoard(
     FlightRoutesScheduleBoard board,
   ) {
     if (!board.isCompleteV2) return null;
     final flights = <Flight>[];
     for (final record in board.flights) {
-      if (!record.hasTimestamps ||
+      if (!record.hasDepartureTimeline ||
           record.destIata.isEmpty ||
           record.flightNo.isEmpty) {
         return null;
       }
       final departure = wallClock(record.depAtLocal);
-      final arrival = wallClock(record.arrAtLocal);
       final departureUtc = DateTime.tryParse(record.depAtUtc);
-      final arrivalUtc = DateTime.tryParse(record.arrAtUtc);
-      if (departure == null ||
-          arrival == null ||
-          departureUtc == null ||
-          arrivalUtc == null) {
-        return null;
+      if (departure == null || departureUtc == null) return null;
+      final arrival = wallClock(record.arrAtLocal) ?? departure;
+      // A record with arrival stamps but unparseable ones is
+      // corrupt, not arrival-free -- corrupt data must never
+      // pass as an empty/tolerable gap.
+      DateTime? arrivalUtc;
+      if (record.hasArrivalTimeline) {
+        arrivalUtc = DateTime.tryParse(record.arrAtUtc);
+        if (arrivalUtc == null) return null;
       }
-      final duration = arrivalUtc.toUtc().difference(departureUtc.toUtc());
-      if (duration.isNegative) return null;
+      Duration? duration;
+      if (arrivalUtc != null) {
+        duration = arrivalUtc.toUtc().difference(departureUtc.toUtc());
+        if (duration.isNegative) return null;
+      }
       flights.add(Flight(
         flightNo: record.flightNo,
         airline: record.carrierIata,

@@ -23,6 +23,7 @@ import '../data/catalogue_match.dart';
 import '../data/destination_repository.dart';
 import '../data/error_log.dart';
 import '../data/flight_routes_schedule_repository.dart';
+import '../data/flight_routes_schedule_writer.dart';
 import '../data/weekend_repository.dart';
 import '../models/airline_benefits.dart';
 import '../models/destination.dart';
@@ -171,6 +172,11 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
       _liveBoard,
       fallback: widget.fallback,
       sharedSchedules: sharedSchedules,
+      // The write side shares the reader's client: one
+      // configured endpoint, one token, both directions.
+      sharedBoardWriter: sharedSchedules == null
+          ? null
+          : FlightRoutesScheduleWriter(sharedSchedules.client),
     );
     final hours = double.tryParse(_maxLegHours.text.trim());
     try {

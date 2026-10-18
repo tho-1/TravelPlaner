@@ -73,15 +73,32 @@ class TursoClient {
   /// statement is reported in `problems`, never thrown --
   /// the caller falls through or reports, exactly like
   /// the Python side.
+  ///
+  /// `args` holds the positional `?` values for each
+  /// statement, in the same order (one entry per statement,
+  /// `null` or empty when the statement has none). Values
+  /// must be encoded the way the protocol dictates -- see
+  /// `_typedArg` -- so JSON blobs (the schedule-board
+  /// payloads, full of quotes) never travel through string
+  /// interpolation.
   Future<(List<StatementResult>, List<String>)> runPipeline(
-    List<String> statements,
-  ) async {
+    List<String> statements, {
+    List<List<Object?>>? args,
+  }) async {
     if (!config.isConfigured) {
       return (<StatementResult>[], ['Turso URL or token is not set']);
     }
+    final argLists = args ?? const <List<Object?>>[];
     final requests = [
-      for (final sql in statements)
-        {'type': 'execute', 'stmt': {'sql': sql}},
+      for (final (i, sql) in statements.indexed)
+        {
+          'type': 'execute',
+          'stmt': {
+            'sql': sql,
+            if (i < argLists.length && argLists[i].isNotEmpty)
+              'args': [for (final value in argLists[i]) _typedArg(value)],
+          },
+        },
       {'type': 'close'},
     ];
     final http.Response response;
@@ -202,6 +219,24 @@ class TursoClient {
       : value is String
           ? int.tryParse(value)
           : null;
+
+  /// One positional `?` value as a typed Hrana Value.
+  ///
+  /// Integers are string-encoded: Turso Cloud's HTTP endpoint
+  /// rejects a bare JSON number in the integer variant
+  /// ("expected a borrowed string") -- Hrana transmits i64
+  /// values as strings to keep them exact. This mirrors the
+  /// sibling project's `utils/sync.py:_arg` byte for byte;
+  /// its form is proven against the live database every day.
+  static Map<String, dynamic> _typedArg(Object? value) {
+    if (value == null) return {'type': 'null'};
+    if (value is bool) {
+      return {'type': 'integer', 'value': value ? '1' : '0'};
+    }
+    if (value is int) return {'type': 'integer', 'value': '$value'};
+    if (value is double) return {'type': 'real', 'value': '$value'};
+    return {'type': 'text', 'value': value.toString()};
+  }
 
   /// Normalise one pipeline-API cell to a plain Dart value.
   /// Without this every read would hand the app

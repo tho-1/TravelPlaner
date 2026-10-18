@@ -37,8 +37,10 @@ unconfigured and explains itself instead of crashing — a fresh clone needs the
 file copied in before data shows up. Optional settings include
 `flightaware_api_key` for the Finder fallback, `flight_routes_url` and
 `flight_routes_token` for the shared departure cache, and `unsplash_access_key`
-for the user-triggered destination gallery. The FlightRoutes token should be
-read-only; never reuse the destinations or airline-benefits database token.
+for the user-triggered destination gallery. The FlightRoutes token is the
+sibling project's own read-write credential (the Finder reads complete boards
+and writes complete full-day boards back — README "Shared FlightRoutes
+departure boards"); never reuse the destinations database token.
 
 The app runs in **light mode** — the map tiles and charts are imagery
 designed for light surfaces. Four tabs, each with its own colour icon
@@ -142,23 +144,41 @@ contract and fallback ladder: `TURSO_PLAN.md`. The reader lives in
 
 ## Shared FlightRoutes departure boards
 
-The Finder can read exact-day, full-day **schema-v2** departure boards from the
-FlightRoutes Turso database (`schedule_boards`). FlightRoutes remains the
-producer, using its existing AeroDataBox/AirLabs setup and sync; Travel Planner
-uses separate `flight_routes_url` and `flight_routes_token` settings. Use a
-read-only token; do not reuse the destinations or benefits database credentials.
-The current ignored local config was populated from FlightRoutes at the user's
-request, but its token scope is unverified—replace it with a read-only token
-before distributing the app. No credentials are committed.
+The Finder reads *and writes* exact-day, full-day **schema-v2** departure
+boards in the FlightRoutes Turso database (`schedule_boards`). FlightRoutes
+remains the producer for its own AeroDataBox/AirLabs boards; Travel Planner
+reads complete boards for outbound (FRA) and, for suspicious return windows,
+candidate-airport days. The reader rejects legacy v1, partial AirLabs, corrupt,
+and timestamp-incomplete rows; those fall back to the existing
+Fraport/FlightAware path. It applies flight-day rules using airport-local
+timestamps and duration caps using UTC timestamps. A departure-stamped board
+without trustworthy arrival stamps (Fraport-sourced) still answers outbound
+queries; its flights carry no leg duration, like live Fraport flights.
 
-The reader uses a complete FRA board for outbound flights and can supplement
-suspicious return-arrival windows from complete candidate-airport boards. It
-rejects legacy v1, partial AirLabs, corrupt, and timestamp-incomplete rows; those
-fall back to the existing Fraport/FlightAware path. It applies flight-day rules
-using airport-local timestamps and duration caps using UTC timestamps. Travel
-Planner does not write its filtered Fraport windows as full airport-day boards.
+Travel Planner also feeds complete boards **back**: after a Finder search, each
+out day gets one full-day FRA departure fetch and a v2 board write in
+FlightRoutes' own format (`utils/sync.py` upserts — the remote board's stamp is
+read first and a write is only sent when this fetch is newer, with the
+conditional `updated_at` comparison kept in the SQL as race insurance) plus
+its `schedule_provenance` row, labelled `fraport`. Only genuinely complete
+whole-day fetches are written — a windowed or truncated fetch never masquerades
+as a full day, and a zero-flight answer is never cached. FRA *arrivals* are not
+written: the shared schema is departures-boards only. Sharing runs after the
+results are shown, and the skip/failure reasons land in the ErrorLog. The
+write path was verified against the live remote with a zero-mutation probe
+(`BEGIN` → upsert → `SELECT` → `ROLLBACK` → `SELECT`: accepted, no rows
+remain, 2026-10-18).
+
+`flight_routes_url` and `flight_routes_token` point at the sibling database
+(the same one hosting the `airlines` benefits table — separate credentials,
+never the destinations database). The token ships in the app bundle like the
+other credentials (the user's 2026-10-08 decision); the current one is the
+sibling's read-write token, copied per the user's request, so the write-back
+works out of the box. Leaks are revocable in the Turso console; for a wider
+distribution, mint a narrower token. No credentials are committed.
+
 If shared DB settings are missing or unreadable, the Finder still uses its
-existing providers and reports the read problem.
+existing providers and reports the read problem; nothing is shared.
 
 ## Destination photos
 

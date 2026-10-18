@@ -6,20 +6,23 @@ place. Per the user's request, the FlightRoutes endpoint/token were copied only
 to the git-ignored app config; no credential values are in tracked source and
 no remote data was modified.
 
-Travel Planner uses the FlightRoutes database as a **read-only cache**. The
-FlightRoutes app remains the producer and continues writing through its existing
-`schedule_boards` / `schedule_provenance` sync. This is deliberate: the Finder's
-Fraport queries are filtered windows, not complete airport/day boards, so writing
-them as full schedules would poison the shared cache. No parallel
-`flight_schedules` or `airports` table was added.
+Travel Planner uses the FlightRoutes database as a **read-only cache and,
+since 2026-10-18, as a write target for complete boards** (see the amendment
+below). The FlightRoutes app remains the producer of its own
+AeroDataBox/AirLabs boards and continues writing through its existing
+`schedule_boards` / `schedule_provenance` sync. The original reason not to
+write still holds: the Finder's Fraport queries are filtered windows, not
+complete airport/day boards, so writing *those* as full schedules would poison
+the shared cache. No parallel `flight_schedules` or `airports` table was added.
 
-The FlightRoutes URL is distinct from both Travel Planner databases: `travel-tz123`
-stores destinations/trips/open tabs and `flightconnections-tz123` stores airline
-benefits. The FlightRoutes schedule endpoint must therefore be supplied
-separately in the git-ignored `mobile/assets/turso_config.json` using
-`flight_routes_url` and a **read-only** `flight_routes_token`. The checked-in
-example contains placeholders. The implementation safely falls back to the
-Fraport/FlightAware path when these settings are absent or the shared read fails.
+The FlightRoutes endpoint is `flightconnections-tz123.aws-eu-north-1.turso.io`
+— the *same* database that hosts the `airlines` benefits table (an error in
+this proposal claimed otherwise; corrected 2026-10-18 after live
+verification). It must therefore be supplied separately in the git-ignored
+`mobile/assets/turso_config.json` using `flight_routes_url` and
+`flight_routes_token`. The checked-in example contains placeholders. The
+implementation safely falls back to the Fraport/FlightAware path when these
+settings are absent or the shared access fails.
 
 ## Verified existing contract
 
@@ -103,3 +106,26 @@ not become a key-sharing mechanism.
   reads, bad rows/dates/codes, overnight return lookup, and local-vs-UTC duration.
   FlightRoutes' Dart and Python tests verify timestamp persistence and v1
   compatibility without network or real credentials.
+
+## Amendment 2026-10-18 — feed-back of Finder-pulled complete boards
+
+Live verification with the sibling-provided credential answered all pending
+questions: the endpoint is the sibling's production database (the benefits
+host), all four tables exist, the payload shape matches, every remote board
+today is FRA-only and v1. The original item's "live remote verification
+remains pending" is closed.
+
+The user asked that the weekend finder's pulled flight data also feed the
+shared database for FlightRoutes to use, in the other project's format. That
+is implemented with the same *completeness* rule this proposal already set:
+not the Finder's filtered windows, but one dedicated **full-day** FRA
+departure fetch per out day after the search. Its payload is built to the
+sibling's `save_schedules` shape (`schema_version` 2, source `fraport`,
+timestamps per the Berlin rule for departures; arrival UTC is left blank like
+the sibling's own AirLabs records, since Fraport's `schedArr` offsets are
+unreliable). Writes reuse the sibling's `schedule_provenance` row and
+`utils/sync.py` upsert statements — with the conditional `updated_at`
+comparison kept, so a stale Travel Planner write can never replace a newer
+FlightRoutes row. Token policy changed by decision: the sibling's own
+read-write token now ships in the git-ignored config (the user's choice), so
+the earlier read-only-token advice is retired for this single-user app.

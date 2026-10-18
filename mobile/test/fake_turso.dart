@@ -22,6 +22,11 @@ class FakeTurso {
   /// is always sent last.
   final List<List<String>> requestTypes = [];
 
+  /// The typed `args` list of every *execute* statement, in
+  /// order, exactly as the request carried them (null when a
+  /// statement was sent without args). Parallel to `requests`.
+  final List<List<Object?>?> requestArgs = [];
+
   final http.Response Function(List<String> statements) handler;
 
   FakeTurso(this.handler);
@@ -33,16 +38,19 @@ class FakeTurso {
         final map = jsonDecode(body) as Map<String, dynamic>;
         final statements = <String>[];
         final types = <String>[];
+        final args = <List<Object?>?>[];
         for (final entry in map['requests'] as List) {
           final item = entry as Map<String, dynamic>;
           types.add(item['type'] as String);
           if (item['type'] == 'execute') {
-            statements.add(
-                ((item['stmt'] as Map<String, dynamic>)['sql']) as String);
+            final stmt = item['stmt'] as Map<String, dynamic>;
+            statements.add(stmt['sql'] as String);
+            args.add(stmt['args'] as List<Object?>?);
           }
         }
         requests.add(statements);
         requestTypes.add(types);
+        requestArgs.add(args);
         final response = handler(statements);
         return http.StreamedResponse(
           Stream.value(utf8.encode(response.body)),
@@ -154,6 +162,25 @@ http.Response okMultiTyped(
           ],
         }),
       ),
+      200,
+      headers: {'content-type': 'application/json; charset=utf-8'},
+    );
+
+/// A 200 pipeline response carrying `affected.length` write
+/// results, each reporting its `rows_affected` count -- the
+/// shape DML statements get (reads report rows instead).
+http.Response okWrites(List<int> affected) => http.Response.bytes(
+      utf8.encode(jsonEncode({
+        'results': [
+          for (final count in affected)
+            {
+              'type': 'ok',
+              'response': {
+                'result': {'cols': [], 'rows': [], 'rows_affected': '$count'},
+              },
+            },
+        ],
+      })),
       200,
       headers: {'content-type': 'application/json; charset=utf-8'},
     );

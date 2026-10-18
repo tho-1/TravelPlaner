@@ -36,8 +36,14 @@ class TursoConfig {
   final String benefitsUrl;
   final String benefitsToken;
 
-  /// Read-only FlightRoutes schedule database credentials. The main app's
-  /// destinations/trips database and airline-benefits database are separate.
+  /// The FlightRoutes schedule database credentials. The
+  /// endpoint is the sibling project's own database (the
+  /// same one hosting the `airlines` benefits table);
+  /// the token is the sibling's read-write token by
+  /// decision (2026-10-18, PLAN §0w): the Finder reads
+  /// complete boards *and* feeds complete full-day boards
+  /// back for their next sync. Never the destinations
+  /// database's credentials.
   final String flightRoutesUrl;
   final String flightRoutesToken;
 

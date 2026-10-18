@@ -53,11 +53,28 @@ class FlightRoutesScheduleFlight {
     );
   }
 
+  /// The strict class: a record only "has timestamps" when
+  /// both ends carry a wall-clock and, crucially, a zoned
+  /// UTC stamp for both departure and arrival.
   bool get hasTimestamps =>
       depAtLocal.isNotEmpty &&
       arrAtLocal.isNotEmpty &&
       _hasZone(depAtUtc) &&
       _hasZone(arrAtUtc);
+
+  /// The departure half alone: the wall-clock plus a zoned
+  /// UTC departure. Fraport-sourced full-day boards written
+  /// by Travel Planner carry this pair (FRA's zone follows
+  /// the Berlin rule) but leave the arrival UTC blank -- the
+  /// sibling's AirLabs records share the same gap. Outbound
+  /// matching needs exactly this; the arrival pair stays
+  /// optional and its absence only means "no leg duration".
+  bool get hasDepartureTimeline =>
+      depAtLocal.isNotEmpty && _hasZone(depAtUtc);
+
+  /// Whether the arrival UTC stamp exists and carries a
+  /// zone: the precondition for deriving a leg duration.
+  bool get hasArrivalTimeline => _hasZone(arrAtUtc);
 
   static bool _hasZone(String value) =>
       RegExp(r'(?:Z|[+-]\d{2}:?\d{2})$').hasMatch(value);

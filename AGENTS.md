@@ -153,9 +153,9 @@ mobile/                        the app (Flutter, desktop + Android)
     open_tabs.dart             the open-destination panel (desktop) /
                                chip strip (phone); settings_page.dart
                                holds the on/off switch
-  lib/data/                    repositories (Turso pipeline, read-only
-                               FlightRoutes schedule boards, photo metadata,
-                               open tabs, app settings)
+  lib/data/                    repositories (Turso pipeline, FlightRoutes
+                               schedule boards — read + full-day write-back,
+                               photo metadata, open tabs, app settings)
   lib/models/                  pure models (destination, trip, weekend
                                match, timetable, geo, filters)
   assets/                      turso_config.json (git-ignored), generated
@@ -189,10 +189,13 @@ must not be touched** — it carries the sync journals.
 | 2 | **7 rainy-day rows use the old definition** | **Retired 2026-10-16 (PLAN §0t).** Thessaloniki, Ubud, Ulaanbaatar, Valencia, Valparaiso, Vientiane and Vung Tau keep their trace-precipitation values — a frozen quirk of the migrated workbook. No regeneration, no further tracking; do not re-open. |
 | 3 | **Planner → Map: the "Focus country" dropdown** | **Done 2026-10-16 (PLAN §0t).** Compact 240px control in a `Wrap` instead of a full-width Row cell. |
 | 4 | **Local commits not pushed** | Resolved 2026-10-14: everything through `085ec08` is on `origin/main`. |
-| 5 | **FlightRoutes shared departure cache setup** | Code done (2026-10-18, PLAN §0v). URL/token copied into the git-ignored config at the user's request; token scope and live remote schema remain unverified. Replace with a read-only token before distributing the app. |
+| 5 | **FlightRoutes shared departure cache setup** | **Done (2026-10-18, PLAN §0w).** Live remote verified with the sibling's own token (schema + payload shape; all remote boards are FRA/v1). The Finder now *writes* complete full-day FRA v2 boards back after each search (`flight_routes_schedule_writer.dart`), in the sibling's exact format with conditional `updated_at` upserts; arrivals stay read-only (no arrivals concept in their schema). The bundled token is the sibling's RW token by decision — the "replace with a read-only token" advice is retired; rotation remains the distribution knob. |
 
-At 2026-10-18 the only pending item is verifying the shared FlightRoutes
-read-only access; the earlier rows are closed history.
+At 2026-10-18 there are no pending open items: the shared FlightRoutes cache
+is verified live and now bidirectional — the Finder reads complete boards and
+writes complete full-day boards back (PLAN §0w). The next strand of work is
+offline-first Phase 5 (Option A, full local-first). Earlier rows above are
+closed history.
 
 Retired with the Streamlit Cloud app (2026-10-13): the "cloud persistence
 check" and the "open_destinations.json lost on redeploy" items — there is no
