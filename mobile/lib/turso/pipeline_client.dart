@@ -52,6 +52,20 @@ class StatementResult {
       ];
 }
 
+/// True when a problem string is a *transport* failure: the
+/// request never got an answer the database could act on, so
+/// sending it again later may well work.
+///
+/// Only these are queued for replay (offline-first Phase 5,
+/// commit 2). A rejected token (401/403), a statement error or
+/// a malformed answer from a captive portal would fail again
+/// forever, and queueing them would hide a real problem
+/// behind a "waiting to sync" badge.
+bool offlineProblem(String problem) =>
+    problem.startsWith('could not reach Turso') ||
+    problem.startsWith('Turso is unavailable') ||
+    problem.startsWith('Turso returned a non-JSON response');
+
 class TursoClient {
   final TursoConfig config;
   final http.Client httpClient;

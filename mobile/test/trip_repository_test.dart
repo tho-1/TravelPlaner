@@ -245,12 +245,14 @@ void main() {
   test('the first save of a new trip inserts it', () async {
     // A row the store does not hold yet: the conditional
     // upsert takes the INSERT branch, which ignores the
-    // WHERE clause -- one affected row, saved.
+    // WHERE clause -- one affected row, saved. A trip with
+    // no variants has nothing else to send, so the second
+    // request is skipped rather than sent empty.
     final fake = FakeTurso((_) => okEmpty(1, 1));
     const trip = Trip(id: 't-new', name: 'New trip');
     final status = await _repo(fake).saveTrip(trip);
     expect(status, TripSaveStatus.saved);
-    expect(fake.requests, hasLength(2));
+    expect(fake.requests, hasLength(1));
     expect(fake.requests.first.single, contains('INSERT INTO trips'));
   });
 
@@ -266,7 +268,31 @@ void main() {
         contains('WHERE trips.updated_at IS NULL'));
   });
 
+  test('saveTrip never wraps the batch in a transaction', () async {
+    // Verified against the live endpoint on 2026-10-18: the
+    // pipeline keeps going after an error (`ok, error, ok`),
+    // so a trailing COMMIT would make a half-written trip
+    // durable. The conditional batch steps this would need
+    // are rejected (400, "missing field `stmt`") and
+    // `on_error: rollback` is ignored. A "tidier" save that
+    // adds BEGIN/COMMIT here would silently turn a surfaced
+    // partial failure into committed corruption.
+    final fake = FakeTurso((_) => okEmpty(3, 1));
+    final status = await _repo(fake).saveTrip(const Trip(
+      id: 't-1',
+      name: 'Japan',
+      variants: [Variant(id: 'v-1', name: 'Spring')],
+    ));
+    expect(status, TripSaveStatus.saved);
+    final all = [for (final request in fake.requests) ...request];
+    expect(all.where((sql) => sql.trim().toUpperCase() == 'BEGIN'),
+        isEmpty);
+    expect(all.where((sql) => sql.trim().toUpperCase().startsWith('COMMIT')),
+        isEmpty);
+  });
+
   test('saveTrip refuses a trip without an id', () async {
+
     final fake = FakeTurso((_) => okEmpty());
     const trip = Trip(id: '', name: 'No id');
     final status = await _repo(fake).saveTrip(trip);

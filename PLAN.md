@@ -41,8 +41,7 @@ Phase 1 done, Phases 2–6 not started).
 ## Native rebuild 2026-10-10 — Phases 2 to 5 in flight
 
 Work continues on `NATIVE_HTML_PLAN.md` §7 (the user asked for it
-autonomously; the full record lives in `HANDOFF.md` while the work is
-in flight).
+autonomously; the full record is the sections below).
 
 **Phase 2 — backend API** (`2a066fb`). `api.py`: a FastAPI app over the
 repository layer — destinations (list with the shared filters, detail with
@@ -1871,11 +1870,21 @@ everyone else's `utcNow()`).
 still one pipeline request without `BEGIN`/`COMMIT`; a mid-batch failure is
 surfaced as `failed` and may leave a partially replaced variant list. The
 first attempt at that comment claimed "Turso has no cross-statement
-transaction"; that is false (probed below), and the real obstacle is
-different: **the pipeline keeps going after an error**, so a trailing
-`COMMIT` would make partial writes durable. Hrana's conditional `batch`
-request (`step_errors`, `on_error`) is the primitive that can close it --
-`mobile/` does not use it yet.
+transaction"; that is false. The verified situation (probed 2026-10-18) is
+worse for a naive fix and rules out the tidy one:
+
+| Probe | Result |
+|---|---|
+| `BEGIN; UPDATE bad_column; COMMIT` | `ok, error, ok` -- the batch does **not** stop on an error |
+| `{type: batch, steps:[…]}` | supported, but steps are `stmt`-only: a `condition` step is rejected `400 missing field 'stmt'` |
+| `{batch:{…}, on_error:{type: rollback}}` | accepted and **ignored** -- the trailing `COMMIT` still executes |
+
+So a transaction wrap would commit partial work, and the conditional batch
+that would make it safe is not available on this endpoint. F2 therefore
+stays a surfaced, documented partial-failure mode, and a test pins that
+`saveTrip` never sends `BEGIN`/`COMMIT` -- a future "tidy-up" must not
+silently convert a reported failure into committed corruption.
+
 
 **F7 re-classified.** (g) AeroAPI is *implemented* (provider, config field,
 editable settings row with a masked status, tests); only a key is missing,
@@ -1897,6 +1906,59 @@ broken. (k)/(q)/(s) shipped in `90b9f41`/`ec8562f`.
 string-encoded, both present, neither), the live-shape conflict/saved pair
 for `saveTrip` (`okEmptyLive` in `fake_turso.dart`), and `truthy` cases for
 text that merely contains an `x`.
+
+---
+
+## 0z. Session 2026-10-18 (5) — offline-first Phase 5, commits 2–3
+
+The plan for this phase (`OFFLINE_SYNC_PLAN.md`) had "append an operation
+with the guard material they ran with" for commit 2 — a sentence, not a
+contract. It was rewritten **before** any code, because the under-specified
+part (which material, and what makes replay safe) is exactly where a queue
+silently corrupts data. See the spec section in that file; the decisions:
+
+- **The payload is the SQL**, not a re-encoding of the model: each
+  repository already renders its write with the LWW guard *in the
+  statement*, so replay is byte-identical to the write that failed and
+  "nothing may replay that the current guard would refuse" holds by
+  construction. No second serializer to drift.
+- **Only transport failures queue.** `offlineProblem` (in
+  `pipeline_client.dart`) recognises "could not reach Turso", 5xx and a
+  captive portal's non-JSON answer. A 401/403 or a statement error is
+  surfaced immediately — retrying those would hide a real problem behind a
+  "waiting to sync" badge.
+- **`queued` is a status, never a save.** `TripSaveStatus.queued`; the two
+  `bool` writers still return `false` (invariant 2 keeps its meaning, and
+  the pages say "queued"). A failure *after* the guard landed is never
+  queued: something was already written, so the caller reloads instead.
+- **Conflicts are kept, not retried.** A guard refusal moves the op to
+  `write_journal/conflicts.jsonl` with its reason and its statements, is
+  named in the sync line, and the rest of that op (the variant statements)
+  never runs — the same order the online save uses.
+- **Drain triggers are the only honest ones** available to an HTTP client:
+  app start after the first successful read, after any successful write,
+  and the manual **Sync now**. No polling (a non-goal), so the sync line
+  says "still offline" when a drain stops early.
+- **The gap commit 1 left:** `open_tabs` had no snapshot, so a queued tab
+  change could not be *seen* after a restart offline. Commit 2 adds it.
+
+Commit 3 is the visible half: `ui/sync_state_bar.dart` (one thin strip,
+only when it has something true to say) and an **Offline data** section in
+settings naming the state dir, the queue depth and where conflicts go.
+
+New files: `models/pending_write.dart`, `data/write_journal.dart`,
+`data/journal_drainer.dart`, `ui/sync_state_bar.dart`. New tests:
+`write_journal_test.dart`, `journal_drainer_test.dart`,
+`offline_writes_test.dart`, `sync_state_bar_test.dart`, plus the
+`offlineProblem` cases in `pipeline_client_test.dart`. 481 → 518.
+
+**Android release signing** was wired in the same session: `key.properties`
+(git-ignored, template `key.properties.example`) selects a real release key,
+and its absence keeps the old debug-signed default so a fresh clone still
+builds. It stopped being a nicety once offline data lived on the device —
+a signing-key change blocks an in-place upgrade and costs that device its
+snapshot and journal. `applicationId` is still `com.example.travel_planner`;
+that is a separate, one-way decision.
 
 ---
 

@@ -127,15 +127,7 @@ class _TripsPageState extends State<TripsPage> {
     if (trip == null) return;
     final status =
         await widget.repository.saveTrip(transform(trip));
-    if (status == TripSaveStatus.conflict) {
-      _showConflict();
-      return;
-    }
-    if (status != TripSaveStatus.saved) {
-      _showError('Nothing written — the save failed. '
-          'Check the token and the connection.');
-      return;
-    }
+    if (!_saved(status)) return;
     await _refresh();
   }
 
@@ -231,11 +223,7 @@ class _TripsPageState extends State<TripsPage> {
     }
     final trip = createTrip(name.trim().isEmpty ? 'New trip' : name.trim());
     final status = await widget.repository.saveTrip(trip);
-    if (status != TripSaveStatus.saved) {
-      _showError('Nothing written — the save failed. '
-          'Check the token and the connection.');
-      return;
-    }
+    if (!_saved(status)) return;
     await _refresh();
     if (mounted) setState(() => _activeTripId = trip.id);
   }
@@ -251,13 +239,30 @@ class _TripsPageState extends State<TripsPage> {
     if (src == null) return;
     final clone = duplicateTrip(src);
     final status = await widget.repository.saveTrip(clone);
-    if (status != TripSaveStatus.saved) {
-      _showError('Nothing written — the save failed. '
-          'Check the token and the connection.');
-      return;
-    }
+    if (!_saved(status)) return;
     await _refresh();
     if (mounted) setState(() => _activeTripId = clone.id);
+  }
+
+  /// Show the outcome of a save that did not land, and say
+  /// whether the caller may carry on. `queued` (offline) is
+  /// its own message: the change is not lost, but the trip is
+  /// *not* in the database yet, so nothing may reload as if it
+  /// were (AGENTS.md rule 2).
+  bool _saved(TripSaveStatus status) {
+    switch (status) {
+      case TripSaveStatus.saved:
+        return true;
+      case TripSaveStatus.conflict:
+        _showConflict();
+      case TripSaveStatus.queued:
+        _showError('Offline — the change is queued and will sync '
+            'when the connection is back.');
+      case TripSaveStatus.failed:
+        _showError('Nothing written — the save failed. '
+            'Check the token and the connection.');
+    }
+    return false;
   }
 
   Future<void> _deleteTrip(String tripId) async {

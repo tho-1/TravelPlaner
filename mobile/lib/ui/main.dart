@@ -6,6 +6,7 @@
 /// in without a token.
 library;
 
+import 'dart:async' show unawaited;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
@@ -19,8 +20,10 @@ import '../data/benefits_repository.dart';
 import '../data/destination_repository.dart';
 import '../data/error_log.dart';
 import '../data/geocode_repository.dart';
+import '../data/journal_drainer.dart';
 import '../data/open_tabs_repository.dart';
 import '../data/trip_repository.dart';
+import '../data/write_journal.dart';
 import '../models/destination.dart';
 import '../models/timetable.dart';
 import '../turso/config.dart';
@@ -30,6 +33,7 @@ import 'destination_page.dart';
 import 'nav_icons.dart';
 import 'open_tabs.dart';
 import 'settings_page.dart';
+import 'sync_state_bar.dart';
 import 'theme.dart';
 import 'trips_page.dart';
 import 'weekend_finder_page.dart';
@@ -186,6 +190,23 @@ class _HomeShellState extends State<HomeShell> {
   /// The resolved Turso client, recreated when a key is
   /// rotated so the new token takes effect immediately.
   TursoClient? _client;
+
+  /// The offline write queue (Phase 5, commit 2), null when
+  /// there is no writable home (tests, unconfigured).
+  WriteJournal? journal;
+
+  /// True while a drain runs, so a write the drain itself
+  /// performs cannot trigger another drain.
+  var _draining = false;
+
+  /// True while the sync line's button is working.
+  var _syncing = false;
+
+  /// What the sync-state line says, and how many writes are
+  /// still owed -- refreshed after every drain and every
+  /// write.
+  var _syncNotes = const <String>[];
+  var _pendingWrites = 0;
   var _tab = 0;
 
   /// The open-destination tabs (the legacy sidebar's
@@ -289,15 +310,21 @@ class _HomeShellState extends State<HomeShell> {
     // next to the settings file in the per-device state
     // dir; null when there is no writable home (tests).
     final home = stateDirFor(effective.stateDir).trim();
-    final offline = home.isEmpty ? null : OfflineCache(p.join(home, 'offline_snapshot'));
-    destinations = DestinationRepository(_client!, offline: offline);
-    trips = TripRepository(_client!, offline: offline);
+    final offline =
+        home.isEmpty ? null : OfflineCache(p.join(home, 'offline_snapshot'));
+    // The write queue lives beside it (Phase 5, commit 2).
+    journal = home.isEmpty ? null : WriteJournal(p.join(home, 'write_journal'));
+    destinations =
+        DestinationRepository(_client!, offline: offline, journal: journal);
+    trips = TripRepository(_client!, offline: offline, journal: journal);
     benefits = BenefitsRepository(effective);
     geocoder = GeocodeRepository(effective.geocodeCache);
-    openTabs = OpenTabsRepository(_client!);
+    openTabs =
+        OpenTabsRepository(_client!, offline: offline, journal: journal);
     flightFallback = effective.fallbackFlightsConfigured
         ? AeroApiBoardProvider(apiKey: effective.flightAwareApiKey)
         : null;
+    _pendingWrites = journal?.pendingCount ?? 0;
   }
 
   /// Bundled config with any per-device key overrides laid on
@@ -392,6 +419,12 @@ class _HomeShellState extends State<HomeShell> {
       _openTabs = tabs;
       _tabProblems = problems;
     });
+    // A successful read is the only honest signal that the
+    // database is reachable again -- there is no connectivity
+    // event on an HTTP client, and the plan's non-goal is no
+    // polling. This is where a queue left over from an
+    // offline session gets its chance.
+    if (problems.isEmpty) unawaited(_drain());
     if (tabs.isEmpty) return;
     // One read covers every tab's object (and its
     // favourite flag); the stars are cosmetic, so a failed
@@ -407,6 +440,48 @@ class _HomeShellState extends State<HomeShell> {
     });
   }
 
+  /// Replay whatever the write journal owes (Phase 5, commit
+  /// 2). Runs after a successful read or write, and from the
+  /// settings page's "Sync now". A conflict or a dropped op is
+  /// stated in the sync line, never swallowed.
+  Future<void> _drain() async {
+    final journal = this.journal;
+    final client = _client;
+    if (journal == null || client == null || _draining) return;
+    if (journal.pendingCount == 0) {
+      if (!mounted) return;
+      setState(() {
+        _pendingWrites = 0;
+        _syncNotes = const [];
+      });
+      return;
+    }
+    _draining = true;
+    final report = await JournalDrainer(client, journal).drain();
+    _draining = false;
+    if (!mounted) return;
+    setState(() {
+      _pendingWrites = journal.pendingCount;
+      _syncNotes = report.notes;
+    });
+    if (report.applied > 0) {
+      // What was replayed is now the newest truth: the tab
+      // list is re-read here; the catalogue and trips pages
+      // pick it up on their next load (a drain is not worth
+      // tearing a page's state down for).
+      await _loadTabs();
+    }
+  }
+
+  /// The sync line's button: drain now, with a busy state so
+  /// a slow replay cannot be started twice.
+  Future<void> _syncNow() async {
+    setState(() => _syncing = true);
+    await _drain();
+    if (!mounted) return;
+    setState(() => _syncing = false);
+  }
+
   /// Record a destination as opened. Called by the pages'
   /// open actions (null when the feature is off, so they
   /// skip it entirely); the push itself stays theirs.
@@ -420,12 +495,23 @@ class _HomeShellState extends State<HomeShell> {
     // Turso is last-write-wins and the tab list is a
     // whole-list value: every change replaces it all.
     final ok = await openTabs.saveTabs(_openTabs);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Could not save the open tabs -- '
-            'they will not survive a restart.'),
-      ));
+    final journal = this.journal;
+    final queued = !ok &&
+        journal != null &&
+        journal.pending().any((op) => op.key == 'open_tabs');
+    if (!mounted) return;
+    setState(() => _pendingWrites = journal?.pendingCount ?? 0);
+    if (ok) {
+      unawaited(_drain());
+      return;
     }
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(queued
+          ? 'Offline -- the open tabs are queued and will sync '
+              'when the connection is back.'
+          : 'Could not save the open tabs -- '
+              'they will not survive a restart.'),
+    ));
   }
 
   /// Close a tab: drop it from the list and persist. The
@@ -517,6 +603,9 @@ class _HomeShellState extends State<HomeShell> {
           ),
         },
         onRotateKey: _rotateKey,
+        stateDir: _settingsDir,
+        pendingWrites: _pendingWrites,
+        onSyncNow: _syncNow,
       ),
     ));
   }
@@ -590,29 +679,40 @@ class _HomeShellState extends State<HomeShell> {
        ],
     );
     return Scaffold(
-      body: wide
-          ? Row(
-              children: [
-                NavigationRail(
-                  selectedIndex: _tab,
-                  onDestinationSelected: (index) =>
-                      setState(() => _tab = index),
-                  destinations: _railDestinations,
-                  labelType: NavigationRailLabelType.all,
-                ),
-                const VerticalDivider(thickness: 1, width: 1),
-                Expanded(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                          maxWidth: _contentMaxWidth),
-                      child: pages,
-                    ),
-                  ),
-                ),
-              ],
-            )
-          : pages,
+      body: Column(
+        children: [
+          SyncStateBar(
+            pending: _pendingWrites,
+            notes: _syncNotes,
+            onSyncNow: _syncing ? null : _syncNow,
+          ),
+          Expanded(
+            child: wide
+                ? Row(
+                    children: [
+                      NavigationRail(
+                        selectedIndex: _tab,
+                        onDestinationSelected: (index) =>
+                            setState(() => _tab = index),
+                        destinations: _railDestinations,
+                        labelType: NavigationRailLabelType.all,
+                      ),
+                      const VerticalDivider(thickness: 1, width: 1),
+                      Expanded(
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                                maxWidth: _contentMaxWidth),
+                            child: pages,
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : pages,
+          ),
+        ],
+      ),
       // The open destinations are one floating button now
       // (report i): the desktop panel and the phone strip
       // are gone, and the button appears only when there is

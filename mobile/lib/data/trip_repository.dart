@@ -8,10 +8,17 @@
 ///   -> stops/legs); a failed read returns an empty list
 ///   *with* problems, never an ambiguous empty list.
 /// * `saveTrip` writes the whole trip in **one pipeline
-///   request** (atomic at the request level; a mid-batch
-///   failure is surfaced as `failed` rather than silently
-///   ignored, and may leave a partially replaced variant
-///   list -- Turso has no cross-statement transaction here):
+///   request**. A mid-batch failure is surfaced as `failed`
+///   and may leave a partially replaced variant list, stops
+///   or legs. That is a known limit, not an oversight --
+///   verified against the live endpoint 2026-10-18:
+///   `BEGIN`/`COMMIT` do run, but the server keeps going
+///   after an error (`ok, error, ok`), so a trailing `COMMIT`
+///   would make the partial write *durable*; the conditional
+///   `batch` steps are rejected (400, "missing field `stmt`")
+///   and `on_error: rollback` is accepted but ignored (the
+///   `COMMIT` still executes). A test pins that this method
+///   never sends a transaction -- re-probe before adding one.
 ///   a variant's stops and legs are deleted and re-inserted
 ///   so the stored order always matches the in-memory order
 ///   (`legs[i]` sits between `stops[i]` and `stops[i+1]`).
@@ -21,6 +28,7 @@ library;
 import 'dart:convert';
 import 'dart:math';
 
+import '../models/pending_write.dart';
 import '../models/trip.dart';
 import '../turso/pipeline_client.dart';
 
@@ -28,6 +36,7 @@ import '../turso/pipeline_client.dart';
 // the destination writers; the Dart mirror does the same.
 import 'destination_repository.dart' show utcNow;
 import 'offline_cache.dart';
+import 'write_journal.dart';
 
 /// The outcome of one trip save.
 ///
@@ -37,7 +46,12 @@ import 'offline_cache.dart';
 /// was refused instead of silently discarding the
 /// other edit (AGENTS.md rule 3 -- a failed
 /// write is never reported as success).
-enum TripSaveStatus { saved, failed, conflict }
+///
+/// `queued` is offline-first Phase 5: nothing reached
+/// the database and the write is in the journal,
+/// waiting. It is *not* `saved` -- the caller must not
+/// say the trip was saved, only that it will be.
+enum TripSaveStatus { saved, failed, conflict, queued }
 
 class TripRepository {
   final TursoClient client;
@@ -46,9 +60,14 @@ class TripRepository {
   /// null keeps the online-only contract (and the tests).
   final OfflineCache? offline;
 
+  /// The offline write queue (Phase 5, commit 2); null keeps
+  /// the online-only contract (and the tests).
+  final WriteJournal? journal;
+
   final Random _random = Random();
 
-  TripRepository(this.client, {this.offline});
+  TripRepository(this.client, {this.offline, this.journal});
+
 
   /// All trips with their variants, stops and legs. On a
   /// live-read failure the last successful snapshot is
@@ -180,21 +199,28 @@ class TripRepository {
     final expectedStamp = trip.updatedAt == null
         ? 'WHERE trips.updated_at IS NULL'
         : 'WHERE trips.updated_at = ${_sqlValue(trip.updatedAt)}';
-    final (upserts, upsertProblems) = await client.runPipeline([
-      'INSERT INTO trips (id, name, created, active_variant_id, '
-          'updated_at) VALUES ('
-          '${_sqlValue(tripId)}, ${_sqlValue(trip.name)}, '
-          '${_sqlValue(trip.created)}, '
-          '${_sqlValue(trip.activeVariantId)}, ${_sqlValue(now)}) '
-          'ON CONFLICT(id) DO UPDATE SET name = excluded.name, '
-          'active_variant_id = excluded.active_variant_id, '
-          'updated_at = excluded.updated_at '
-          // The creation date is never rewritten: a copy
-          // without one (an older export) must not NULL
-          // the stored date.
-          '$expectedStamp',
-    ]);
-    if (upsertProblems.isNotEmpty) return TripSaveStatus.failed;
+    final upsert = 'INSERT INTO trips (id, name, created, active_variant_id, '
+        'updated_at) VALUES ('
+        '${_sqlValue(tripId)}, ${_sqlValue(trip.name)}, '
+        '${_sqlValue(trip.created)}, '
+        '${_sqlValue(trip.activeVariantId)}, ${_sqlValue(now)}) '
+        'ON CONFLICT(id) DO UPDATE SET name = excluded.name, '
+        'active_variant_id = excluded.active_variant_id, '
+        'updated_at = excluded.updated_at '
+        // The creation date is never rewritten: a copy
+        // without one (an older export) must not NULL
+        // the stored date.
+        '$expectedStamp';
+    final statements = _variantStatements(trip, tripId, now);
+    final (upserts, upsertProblems) = await client.runPipeline([upsert]);
+    if (upsertProblems.isNotEmpty) {
+      // Offline: nothing reached the database, so the whole
+      // write -- guard and all -- can be replayed later.
+      if (_queue(upsert, statements, trip, upsertProblems)) {
+        return TripSaveStatus.queued;
+      }
+      return TripSaveStatus.failed;
+    }
     // Zero affected rows: the trip changed since this copy
     // was loaded (or the stored updated_at is unknown to
     // this copy) -- another device's write wins and the
@@ -202,6 +228,37 @@ class TripRepository {
     if (upserts.first.rowsAffected == 0) {
       return TripSaveStatus.conflict;
     }
+    if (statements.isEmpty) return TripSaveStatus.saved;
+    final (_, problems) = await client.runPipeline(statements);
+    // Not queued: the trip row already landed, so replaying
+    // would either fight its own new stamp (a false conflict)
+    // or duplicate half a variant list. A failure here is
+    // surfaced so the caller reloads before retrying.
+    return problems.isNotEmpty ? TripSaveStatus.failed : TripSaveStatus.saved;
+  }
+
+  /// Queue the whole trip write when the upsert failed for
+  /// transport reasons only. Returns whether it is queued;
+  /// false means the caller must report the failure.
+  bool _queue(
+    String upsert,
+    List<String> statements,
+    Trip trip,
+    List<String> problems,
+  ) {
+    final journal = this.journal;
+    if (journal == null || !problems.every(offlineProblem)) return false;
+    return journal.enqueue(PendingWrite(
+      key: 'trip:${trip.id}',
+      label: 'trip “${trip.name}”',
+      statements: [upsert, ...statements],
+      guardFirst: true,
+      at: utcNow(),
+    ));
+  }
+
+  /// The variant, stop and leg statements of one trip save.
+  List<String> _variantStatements(Trip trip, String tripId, String now) {
     final statements = <String>[];
     for (final variant in trip.variants) {
       final variantId = variant.id;
@@ -257,8 +314,7 @@ class TripRepository {
         position++;
       }
     }
-    final (_, problems) = await client.runPipeline(statements);
-    return problems.isNotEmpty ? TripSaveStatus.failed : TripSaveStatus.saved;
+    return statements;
   }
 
   /// Delete a trip and its variants, stops and legs

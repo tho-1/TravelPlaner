@@ -31,12 +31,24 @@ class SettingsPage extends StatefulWidget {
   /// clients is the shell's job.
   final Future<bool> Function(String name, String value) onRotateKey;
 
+  /// The per-device state directory the offline snapshot and
+  /// the write queue live in, and how many writes are owed
+  /// (offline-first Phase 5). Null/0 leave the section out.
+  final String? stateDir;
+  final int pendingWrites;
+
+  /// Replay the queued writes now.
+  final VoidCallback? onSyncNow;
+
   const SettingsPage({
     super.key,
     required this.openTabsEnabled,
     required this.onToggleTabs,
     required this.apiKeys,
     required this.onRotateKey,
+    this.stateDir,
+    this.pendingWrites = 0,
+    this.onSyncNow,
   });
 
   @override
@@ -74,6 +86,7 @@ class _SettingsPageState extends State<SettingsPage> {
           const Divider(),
           ..._apiKeys(),
           const Divider(),
+          ..._offline(),
           ListTile(
             leading: const Icon(Icons.bug_report_outlined),
             title: const Text('Error log'),
@@ -90,6 +103,56 @@ class _SettingsPageState extends State<SettingsPage> {
         ],
       ),
     );
+  }
+
+  /// The offline-first section: where the device keeps the
+  /// data it can still answer from, and what it still owes.
+  /// Nothing here is a setting -- it is the state the user
+  /// needs when the app behaves differently without a network
+  /// (Phase 5, commit 3).
+  List<Widget> _offline() {
+    final dir = widget.stateDir?.trim() ?? '';
+    if (dir.isEmpty) return const [];
+    final pending = widget.pendingWrites;
+    return [
+      const Padding(
+        padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: Text('Offline data',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+      ),
+      ListTile(
+        leading: Icon(pending > 0
+            ? Icons.cloud_sync_outlined
+            : Icons.cloud_done_outlined),
+        title: Text(pending > 0
+            ? '$pending change${pending == 1 ? '' : 's'} waiting to sync'
+            : 'Everything is synced'),
+        subtitle: Text(
+          pending > 0
+              ? 'They replay as soon as a request succeeds again — '
+                  'or tap Sync now.'
+              : 'Writes go straight to Turso; reads fall back to '
+                  'the last full copy on this device when the '
+                  'network is down.',
+        ),
+        trailing: pending > 0
+            ? TextButton(
+                onPressed: widget.onSyncNow, child: const Text('Sync now'))
+            : null,
+        dense: true,
+      ),
+      ListTile(
+        leading: const Icon(Icons.folder_outlined),
+        title: const Text('State directory'),
+        subtitle: Text(
+          '$dir\n'
+          'offline_snapshot/ holds the last full catalogue, trips and '
+          'tab list; write_journal/ holds queued writes and their '
+          'conflicts. Deleting either costs only the offline copy.',
+        ),
+        dense: true,
+      ),
+    ];
   }
 
   /// One row per API key: label, configured status, masked

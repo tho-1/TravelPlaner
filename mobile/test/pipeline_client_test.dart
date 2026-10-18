@@ -101,6 +101,30 @@ void main() {
     });
   });
 
+  group('offlineProblem', () {
+    // Only transport failures are worth replaying. The
+    // distinction decides whether a failed write is queued
+    // (and will succeed later) or surfaced immediately.
+    test('transport failures count as offline', () {
+      expect(offlineProblem('could not reach Turso: TimeoutException'),
+          isTrue);
+      expect(offlineProblem('could not reach Turso: SocketException'),
+          isTrue);
+      expect(offlineProblem('Turso is unavailable (503)'), isTrue);
+      expect(offlineProblem('Turso returned a non-JSON response'), isTrue);
+    });
+
+    test('a rejected token or a statement error is not offline', () {
+      expect(offlineProblem('Turso rejected the token (401)'), isFalse);
+      expect(
+          offlineProblem('Turso denied access (403) -- the token may be '
+              'read-only for this database'),
+          isFalse);
+      expect(offlineProblem('SQLite error: no such column: nope'), isFalse);
+      expect(offlineProblem('Turso URL or token is not set'), isFalse);
+    });
+  });
+
   group('rowsAffected', () {
     // The trip save's conflict guard is `rowsAffected == 0`,
     // so a null here silently reports every stale save as

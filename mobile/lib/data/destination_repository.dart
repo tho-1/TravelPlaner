@@ -21,8 +21,10 @@ library;
 import 'dart:convert';
 
 import '../models/destination.dart';
+import '../models/pending_write.dart';
 import '../turso/pipeline_client.dart';
 import 'offline_cache.dart';
+import 'write_journal.dart';
 
 class DestinationRepository {
   final TursoClient client;
@@ -31,7 +33,12 @@ class DestinationRepository {
   /// null keeps the online-only contract (and the tests).
   final OfflineCache? offline;
 
-  DestinationRepository(this.client, {this.offline});
+  /// The offline write queue (Phase 5, commit 2); null keeps
+  /// the online-only contract (and the tests).
+  final WriteJournal? journal;
+
+  DestinationRepository(this.client, {this.offline, this.journal});
+
 
   /// All destinations, ordered by name. On a live-read
   /// failure the last successful snapshot is served, with
@@ -104,11 +111,23 @@ class DestinationRepository {
   /// (`repository._modify_destination`). `false` means
   /// nothing was written: the destination is unknown or
   /// the write failed.
+  ///
+  /// Offline the read is answered from the snapshot, so the
+  /// edit can still be applied to the copy the app is
+  /// showing -- and then queued. The offline note is not a
+  /// reason to refuse: it is the same row, one train ride
+  /// old, and refusing would leave the page read-only exactly
+  /// when offline-first is supposed to help.
   Future<bool> updateField(String name, String field, Object? value) async {
     final (dest, problems) = await getDestination(name);
-    if (problems.isNotEmpty || dest == null) return false;
+    if (dest == null) return false;
+    if (problems.isNotEmpty && !problems.every(_snapshotNote)) return false;
     return saveDestination(dest.withField(field, value));
   }
+
+  /// The snapshot store's own label -- see `offlineNote`.
+  static bool _snapshotNote(String problem) =>
+      problem.startsWith('offline: the live read failed');
 
   /// Append a new placeholder destination
   /// (`repository.add_new_destination`'s Turso branch):
@@ -154,9 +173,25 @@ class DestinationRepository {
   /// Upsert one destination (`storage_turso.save_destination`):
   /// the typed core, the JSON tail and `updated_at` in one
   /// statement, so a save round-trips losslessly.
+  ///
+  /// Offline, the statement is queued in the journal and
+  /// `false` still comes back: the write is owed, not done,
+  /// and invariant 2 (a failed write is surfaced) keeps its
+  /// meaning -- "waiting to sync" is the surfacing.
   Future<bool> saveDestination(Destination dest) async {
-    final problems = await client.execute(_upsertSql(dest));
-    return problems.isEmpty;
+    final sql = _upsertSql(dest);
+    final problems = await client.execute(sql);
+    if (problems.isEmpty) return true;
+    final journal = this.journal;
+    if (journal != null && problems.every(offlineProblem)) {
+      journal.enqueue(PendingWrite(
+        key: 'destination:${dest.name}',
+        label: 'destination ${dest.name}',
+        statements: [sql],
+        at: utcNow(),
+      ));
+    }
+    return false;
   }
 
   String _upsertSql(Destination dest) {
