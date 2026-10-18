@@ -12,8 +12,7 @@ maintained here any more. Decided 2026-10-10 (move off Streamlit), archived
 | Document | What it is for |
 |---|---|
 | **`AGENTS.md`** (this file) | orientation, invariants, open items |
-| `HANDOFF.md` | in-flight native-rebuild work and next steps (delete when the native phases are done) |
-| `README.md` | how to run it, data locations, the Turso contract, data-safety rules |
+| `README.md` | how to run it, data locations, the Turso contract, offline-first, release signing |
 | `PLAN.md` | the full history: every review finding, every fix, every decision, with dates and commit hashes |
 | `WEEKEND_FINDER_PLAN.md` | the weekend trip finder: spec, status, what is blocked and why |
 | `TURSO_PLAN.md` | the airline-benefits Turso database: access contract, fallback ladder, open items |
@@ -47,7 +46,7 @@ cd mobile
 ```powershell
 cd mobile
 & "C:\src\flutter\bin\flutter.bat" analyze   # must be clean
-& "C:\src\flutter\bin\flutter.bat" test      # 476 tests, no credentials needed
+& "C:\src\flutter\bin\flutter.bat" test      # 518 tests, no credentials needed
 ```
 
 CI (`.github/workflows/ci.yml`) runs exactly these two on every push to
@@ -154,10 +153,14 @@ mobile/                        the app (Flutter, desktop + Android)
     nav_icons.dart             the hand-drawn colour tab icons
     open_tabs.dart             the open-destination panel (desktop) /
                                chip strip (phone); settings_page.dart
-                               holds the on/off switch
+                               holds the on/off switch; sync_state_bar.dart
+                               is the offline/sync-state line
   lib/data/                    repositories (Turso pipeline, FlightRoutes
                                schedule boards — read + full-day write-back,
-                               photo metadata, open tabs, app settings)
+                               photo metadata, open tabs, app settings) and
+                               the offline layer: offline_cache.dart
+                               (snapshots), write_journal.dart (the queue),
+                               journal_drainer.dart (the replay)
   lib/models/                  pure models (destination, trip, weekend
                                match, timetable, geo, filters)
   assets/                      turso_config.json (git-ignored), generated
@@ -192,12 +195,14 @@ must not be touched** — it carries the sync journals.
 | 3 | **Planner → Map: the "Focus country" dropdown** | **Done 2026-10-16 (PLAN §0t).** Compact 240px control in a `Wrap` instead of a full-width Row cell. |
 | 4 | **Local commits not pushed** | Resolved 2026-10-14: everything through `085ec08` is on `origin/main`. |
 | 5 | **FlightRoutes shared departure cache setup** | **Done (2026-10-18, PLAN §0w).** Live remote verified with the sibling's own token (schema + payload shape; all remote boards are FRA/v1). The Finder now *writes* complete full-day FRA v2 boards back after each search (`flight_routes_schedule_writer.dart`), in the sibling's exact format with conditional `updated_at` upserts; arrivals stay read-only (no arrivals concept in their schema). The bundled token is the sibling's RW token by decision — the "replace with a read-only token" advice is retired; rotation remains the distribution knob. |
+| 6 | **Offline-first Phase 5 (Option A)** | **Done 2026-10-18, all three commits** (PLAN §0x, §0z; contract in `OFFLINE_SYNC_PLAN.md`). Snapshot reads, the write journal + drain, and the sync-state line are in `mobile/`. |
+| 7 | **Project review F1–F10** | **Closed 2026-10-18** (PLAN §0y). F2 stays a documented, surfaced partial-failure mode: the endpoint offers no usable transaction (probed — `BEGIN`/`COMMIT` run but errors do not halt the batch, conditional steps are rejected, `on_error` is ignored), and a test pins that `saveTrip` never sends a transaction. |
+| 8 | **Android release signing** | **Wired 2026-10-18.** `mobile/android/key.properties` (git-ignored, template `key.properties.example`) drives a real release key; without it the build stays debug-signed, exactly as before. *Still yours to do:* create the keystore, and decide the `applicationId` (still `com.example.travel_planner`). |
+| 9 | **F7 (i) finder expanded-result redesign** | **Open, blocked on input.** The raw airport-code line is already gone; nobody has described what "looks broken", and this model cannot read a screenshot. |
+| 10 | **F7 (g) AeroAPI key** | **Open, optional.** The fallback is implemented, wired into settings and tested; only a key is missing. Nothing to build. |
 
-At 2026-10-18 there are no pending open items: the shared FlightRoutes cache
-is verified live and now bidirectional — the Finder reads complete boards and
-writes complete full-day boards back (PLAN §0w). The next strand of work is
-offline-first Phase 5 (Option A, full local-first). Earlier rows above are
-closed history.
+The only genuinely open items are 9 and 10, and both wait on a person rather
+than on code. Earlier rows are closed history.
 
 Retired with the Streamlit Cloud app (2026-10-13): the "cloud persistence
 check" and the "open_destinations.json lost on redeploy" items — there is no

@@ -1,7 +1,29 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Release signing. The keystore is never in git: `key.properties` is
+// git-ignored (see android/.gitignore), and when it is absent the release
+// build stays debug-signed exactly as before, so `flutter run --release`
+// keeps working on a fresh clone.
+//
+// Why this matters more than it used to: the offline snapshots and the
+// write journal live in the app's per-device state dir, and Android
+// refuses to upgrade an installed app whose signing key changed -- so a
+// late keystore switch costs the device its offline copy. Create the key
+// once, before the first release install on a device; see README.md and
+// key.properties.example.
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hasReleaseKey = keystorePropertiesFile.exists()
+val keystoreProperties = Properties().apply {
+    if (hasReleaseKey) {
+        FileInputStream(keystorePropertiesFile).use { load(it) }
+    }
 }
 
 android {
@@ -29,11 +51,26 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (hasReleaseKey) {
+                signingConfigs.getByName("release")
+            } else {
+                // Debug keys, kept so a clone without the keystore can
+                // still build a runnable release APK.
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

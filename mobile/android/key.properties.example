@@ -1,0 +1,20 @@
+# Release signing for the Android build -- copy to key.properties.
+#
+# key.properties and the keystore itself are git-ignored; commit neither.
+# Generate the key ONCE, before the first release install on a device
+# (Android will not upgrade an app whose signing key changed, and the
+# offline snapshot + write journal live in the app's state dir):
+#
+#   keytool -genkey -v -keystore travel-planner.jks -keyalg RSA \
+#           -keysize 2048 -validity 10000 -alias travel-planner
+#
+# Then put the absolute path to the keystore in storeFile.
+#
+# Without this file the release build stays debug-signed (and says so
+# only in the build log) -- that is the pre-existing behaviour, kept so a
+# fresh clone can still `flutter run --release`.
+
+storePassword=CHANGE_ME
+keyPassword=CHANGE_ME
+keyAlias=travel-planner
+storeFile=C:\\path\\to\\travel-planner.jks

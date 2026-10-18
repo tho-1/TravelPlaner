@@ -25,12 +25,13 @@ The app was green and pushed at the time (`00cb16f`, CI run
 | 1 — data layer on Turso | done 2026-10-08, verified live (above). The "delete the sync stack" step was **superseded**: the stack stays as the legacy fallback per the 2026-10-10 decision |
 | 2 — backend API | done 2026-10-10 (`2a066fb`): `api.py`, Streamlit-free, 23 tests; runs locally via uvicorn — no external host needed for this use |
 | 3 — native HTML frontend | done 2026-10-10 (`2a066fb`): `web/` PWA served by the API on the PC; "[needs a host]" became moot because the phone went native instead |
-| 4 — sync on Turso | **half-done, by a different route**: every surface (Streamlit, API, Flutter) talks to the same database directly, last-write-wins via `updated_at` (the trips runtime cutover is `7fadbbc`). The offline-first push/pull layer was consciously traded away and is this plan's biggest open gap |
+| 4 — sync on Turso | **half-done, by a different route**: every surface (Streamlit, API, Flutter) talks to the same database directly, last-write-wins via `updated_at` (the trips runtime cutover is `7fadbbc`). The offline-first push/pull layer was consciously traded away — and then delivered in safe form (2026-10-18): snapshot reads plus a guarded write journal and drain, no SDK (`OFFLINE_SYNC_PLAN.md`, PLAN §0x/§0z) |
 | 5 — Android/desktop native | **RUNNABLE AND LIVE-VERIFIED on both targets (2026-10-11).** Android: platform folders, JDK 21 on `E:\tools` (flutter config --jdk-dir), release APK builds (`kotlin.incremental=false` + a 4G heap cap — Kotlin's incremental caches fail on this machine's spaced path), `INTERNET` permission in the main manifest (release builds are network-less without it); **live round-trip on the Redmi Note 9S: install → catalogue from Turso → detail page → favourite toggle → `favourite=1` + fresh `updated_at` in Turso → restored.** Windows: VS Build Tools 2022 installed on `E:\tools\vs-buildtools` (C: freed first — the legacy 10 GB `.gradle` moved to `E:\tools\gradle-legacy-home`), Developer Mode enabled, `shared_preferences` removed (the one native plugin; unused — native plugins force the symlink/Developer-Mode requirement); `travel_planner.exe` builds and loads the catalogue from Turso (verified: process alive, text rendered, zero error-state pixels). Next: parity features, detail richness first | `mobile/` |
 | 6 — cutover/cleanup | **deferred with a trigger** (decision 2026-10-10, trigger set 2026-10-11): retire the Streamlit fallback when the Flutter app reaches **full parity** and has been used daily without falling back |
 
-The immediate next steps live in `HANDOFF.md`. The remaining work beyond
-them is decision-shaped, not volume-shaped:
+The phases are done (see §0x/§0z of `PLAN.md` for the last two: offline
+reads and the write journal). What remains is decision-shaped, not
+volume-shaped:
 
 1. **Make Phase 5 runnable.** Platform folders, JDK, `flutter run -d
    windows`, one live edit round-trip against Turso, then the sideloaded APK.

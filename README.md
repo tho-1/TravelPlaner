@@ -199,13 +199,75 @@ enable searches; opening destinations does not search. Existing legacy
 curated desktop photo, then a credited gallery photo, then the typography
 fallback. See `PROPOSAL_PICTURES.md` for provider/rights and cache details.
 
+## Offline-first (Phase 5, Option A)
+
+The Turso pipeline is HTTP-only, so with no network every read fails and
+every write returns false. That stays honest — a failed read is a *stated*
+failure — but the app now also works on a train:
+
+* **Snapshot reads.** Every successful *full* read of the catalogue, the
+  trips and the open-tab list is saved to
+  `<state dir>/offline_snapshot/offline_<dataset>.json`. When a live read
+  fails, the snapshot answers, labelled with its save time and the reason
+  the live read failed ("offline: the live read failed (…); showing the
+  destination catalogue snapshot from 2026-10-18 21:14"). A missing or
+  corrupt snapshot is *no snapshot*: the original failure surfaces exactly
+  as before. Only full reads write snapshots — a one-row read never
+  overwrites a dataset with a fragment.
+* **Write journal.** A write that fails for *transport* reasons (no
+  connection, 5xx, a captive portal) is queued in
+  `<state dir>/write_journal/pending.jsonl` — the exact SQL the repository
+  would have sent, with its last-write-wins guard baked in. A rejected
+  token (401/403) or a statement error is never queued: retrying those
+  would hide a real problem. A newer write for the same value supersedes an
+  older one; the queue is capped at 500 ops.
+* **Drain.** The queue replays on app start after the first successful
+  read, after any successful write, and from **Sync now** in settings or
+  the sync line. Sequential, in order. A transport failure stops the drain
+  and keeps the rest queued; a statement error drops the op (logged); a
+  refused guard — a trip whose `updated_at` moved underneath — moves the
+  op to `write_journal/conflicts.jsonl` and is never auto-retried.
+* **What the user sees.** A thin bar above the content when there are owed
+  writes ("2 changes waiting to sync — Sync now") or a change that could
+  not sync. A queued write never looks saved: `saveTrip` reports `queued`,
+  and the pages say so.
+
+Nothing here polls. There is no connectivity event on an HTTP client, so a
+successful request is the signal that the database is reachable again.
+Full contract: `OFFLINE_SYNC_PLAN.md`.
+
+## Release build and signing (Android)
+
+```powershell
+cd mobile
+& "C:\src\flutter\bin\flutter.bat" build apk --release
+```
+
+Without a keystore the release build is **debug-signed** — that is the
+long-standing default, kept so a fresh clone can still run. To sign for
+real, create the key **once** and wire it in:
+
+```powershell
+keytool -genkey -v -keystore C:\path\to\travel-planner.jks -keyalg RSA `
+        -keysize 2048 -validity 10000 -alias travel-planner
+copy mobile\android\key.properties.example mobile\android\key.properties
+# then fill in the four values in key.properties
+```
+
+`key.properties` and the keystore are git-ignored — commit neither. Do this
+before the first release install on a device: Android refuses to upgrade an
+app whose signing key changed, and the offline snapshot plus the write
+journal live in the app's state dir, so a late key change costs that device
+its offline copy. `applicationId` is still the Flutter default
+(`com.example.travel_planner`); changing it is a separate, one-way decision.
+
 ## Tests, analyze, build
 
 ```powershell
 cd mobile
 & "C:\src\flutter\bin\flutter.bat" pub get
 & "C:\src\flutter\bin\flutter.bat" analyze   # must be clean
-& "C:\src\flutter\bin\flutter.bat" test      # 476 tests, no credentials
+& "C:\src\flutter\bin\flutter.bat" test      # 518 tests, no credentials
 ```
 
 The suite uses a scripted Turso fake (`mobile/test/fake_turso.dart`) — no
