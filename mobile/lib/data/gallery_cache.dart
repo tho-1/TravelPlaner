@@ -25,23 +25,39 @@ import 'dart:convert';
 
 import 'text_norm.dart';
 
-/// One cached gallery photo.
+/// One gallery photo. Unsplash entries keep only the API's hotlinked URL;
+/// legacy entries continue to use their local image path.
 class GalleryEntry {
-  /// The image file, as recorded in the sidecar.
   final String imagePath;
-
-  /// The caption: the photographer (Unsplash) or
-  /// the search title (DuckDuckGo).
+  final String imageUrl;
+  final String photoId;
   final String caption;
-
-  /// The provider that cached the photo.
   final String source;
+  final String photographerUrl;
+  final String photoPageUrl;
+  final String sourceUrl;
 
   const GalleryEntry({
-    required this.imagePath,
+    this.imagePath = '',
+    this.imageUrl = '',
+    this.photoId = '',
     required this.caption,
     required this.source,
+    this.photographerUrl = '',
+    this.photoPageUrl = '',
+    this.sourceUrl = '',
   });
+
+  bool get isUnsplash => source.toLowerCase() == 'unsplash';
+
+  bool get hasRemoteImage {
+    final uri = Uri.tryParse(imageUrl);
+    return uri != null &&
+        uri.scheme == 'https' &&
+        uri.host == 'images.unsplash.com';
+  }
+
+  bool get hasCredit => isUnsplash && caption.trim().isNotEmpty;
 }
 
 /// Slugify a destination name for the cache folder
@@ -49,10 +65,7 @@ class GalleryEntry {
 String slugify(String value) {
   final ascii = stripDiacritics(value.trim().toLowerCase());
   final slug = ascii.replaceAll(RegExp(r'[^a-z0-9]+'), '-');
-  return slug.replaceAll(RegExp(r'^-+'), '').replaceAll(
-        RegExp(r'-+$'),
-        '',
-      );
+  return slug.replaceAll(RegExp(r'^-+'), '').replaceAll(RegExp(r'-+$'), '');
 }
 
 /// The Unsplash gallery cache folder for a destination.
@@ -63,38 +76,79 @@ String galleryDir(String destinationName, String picturesDir) =>
 String ddgGalleryDir(String destinationName, String picturesDir) =>
     '$picturesDir/gallery_ddg/${slugify(destinationName)}';
 
-/// Parse a `metadata.json` sidecar, in either
-/// provider's format, into gallery entries.
-///
-/// Unsplash records `photographer_name` and no
-/// `provider`; DuckDuckGo records a `title` and
-/// `provider: "DuckDuckGo"`. The caption follows
-/// the provider, so the grid can credit the photo.
-/// A malformed sidecar parses to an empty list —
-/// the caller treats that as "no cache", never a
-/// crash.
+/// Parse a legacy provider sidecar or a portable metadata cache.
+/// DuckDuckGo entries remain local-file readers; new Unsplash entries
+/// contain a hotlinked URL and attribution, never downloaded bytes.
 List<GalleryEntry> parseGalleryMetadata(String jsonText) {
   final decoded = _decode(jsonText);
   if (decoded is! List) return const [];
   final entries = <GalleryEntry>[];
   for (final entry in decoded) {
     if (entry is! Map<String, dynamic>) continue;
-    final imagePath = entry['image_path'] as String? ?? '';
-    if (imagePath.isEmpty) continue;
-    final provider = entry['provider'] as String? ?? '';
-    final isDdg = provider.isNotEmpty;
+    final imagePath = _string(entry['image_path']);
+    final imageUrl = _string(entry['image_url']);
+    if (imagePath.isEmpty && !_validRemoteImage(imageUrl)) continue;
+    final provider = _string(entry['provider']).isNotEmpty
+        ? _string(entry['provider'])
+        : _string(entry['source']);
+    final isDdg =
+        provider.toLowerCase().contains('duckduckgo') ||
+        provider.toLowerCase() == 'ddg';
+    final source = provider.isEmpty ? 'Unsplash' : provider;
     final caption = isDdg
-        ? (entry['title'] as String? ?? '')
-        : (entry['photographer_name'] as String? ?? '');
+        ? _string(entry['title'])
+        : _firstString(entry, ['photographer_name', 'caption', 'title']);
     entries.add(
       GalleryEntry(
         imagePath: imagePath,
+        imageUrl: imageUrl,
+        photoId: _string(entry['photo_id']),
         caption: caption,
-        source: isDdg ? provider : 'Unsplash',
+        source: source,
+        photographerUrl: _string(entry['photographer_url']),
+        photoPageUrl: _firstString(entry, ['photo_page_url', 'photo_url']),
+        sourceUrl: _firstString(entry, [
+          'source_url',
+          'source_page_url',
+          'url',
+        ]),
       ),
     );
   }
   return entries;
+}
+
+/// Encode metadata only. In particular, the Unsplash image URL is retained
+/// verbatim and no image bytes are copied into the portable cache.
+String encodeGalleryMetadata(Iterable<GalleryEntry> entries) => jsonEncode([
+  for (final entry in entries)
+    {
+      'image_path': entry.imagePath,
+      'image_url': entry.imageUrl,
+      'photo_id': entry.photoId,
+      'photographer_name': entry.caption,
+      'photographer_url': entry.photographerUrl,
+      'photo_page_url': entry.photoPageUrl,
+      'source_url': entry.sourceUrl,
+      'provider': entry.source,
+    },
+]);
+
+String _string(Object? value) => value is String ? value : '';
+
+String _firstString(Map<String, dynamic> entry, List<String> keys) {
+  for (final key in keys) {
+    final value = _string(entry[key]);
+    if (value.isNotEmpty) return value;
+  }
+  return '';
+}
+
+bool _validRemoteImage(String value) {
+  final uri = Uri.tryParse(value);
+  return uri != null &&
+      uri.scheme == 'https' &&
+      uri.host == 'images.unsplash.com';
 }
 
 /// Decode the sidecar, or null when it is not

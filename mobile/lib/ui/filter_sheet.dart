@@ -172,18 +172,18 @@ class _CatalogueFilterSheetState extends State<CatalogueFilterSheet> {
                     _draft.copyWith(clearWeatherMonth: true, weatherMonth: value)),
               ),
               const SizedBox(height: 12),
-              _SliderRow(
-                label: 'Minimum safety rating',
-                value: _draft.minSafety,
-                bounds: safety,
-                onChanged: (value) => _update(_draft.copyWith(minSafety: value)),
-              ),
-              _SliderRow(
-                label: 'Minimum review score',
-                value: _draft.minReviews,
-                bounds: reviews,
-                onChanged: (value) => _update(_draft.copyWith(minReviews: value)),
-              ),
+               _SliderRow(
+                 label: 'Minimum safety rating',
+                 value: _draft.minSafety,
+                 bounds: (0.0, safety.$2),
+                 onChanged: (value) => _update(_draft.copyWith(minSafety: value)),
+               ),
+               _SliderRow(
+                 label: 'Minimum review score',
+                 value: _draft.minReviews,
+                 bounds: (0.0, reviews.$2),
+                 onChanged: (value) => _update(_draft.copyWith(minReviews: value)),
+               ),
               DropdownButtonFormField<bool>(
                 initialValue: _draft.requiresResearch,
                 decoration: const InputDecoration(labelText: 'Requires research?'),

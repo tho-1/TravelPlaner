@@ -459,7 +459,7 @@ class _TripsPageState extends State<TripsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Planner'),
+        title: const Text('Trip Planner'),
         actions: [
           IconButton(
             icon: const Icon(Icons.download),
@@ -912,6 +912,10 @@ class _ItineraryViewState extends State<_ItineraryView> {
                           selected: {controller.index},
                           onSelectionChanged: (selection) =>
                               controller.animateTo(selection.first),
+                          style: SegmentedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            textStyle: const TextStyle(fontSize: 12),
+                          ),
                         ),
                       ),
                     );

@@ -28,10 +28,7 @@ void main() {
 
   group('cache folders', () {
     test('the two providers live in separate trees', () {
-      expect(
-        galleryDir('San José', '/pictures'),
-        '/pictures/gallery/san-jose',
-      );
+      expect(galleryDir('San José', '/pictures'), '/pictures/gallery/san-jose');
       expect(
         ddgGalleryDir('San José', '/pictures'),
         '/pictures/gallery_ddg/san-jose',
@@ -46,14 +43,17 @@ void main() {
           {
             "image_path": "/pictures/gallery/san-jose/1.jpg",
             "photo_id": "abc",
-            "photographer_name": "John Doe"
+            "photographer_name": "John Doe",
+            "photographer_url": "https://unsplash.com/@john",
+            "photo_url": "https://unsplash.com/photos/abc"
           }
         ]
       ''');
       expect(entries, hasLength(1));
-      expect(entries.single.imagePath,
-          '/pictures/gallery/san-jose/1.jpg');
+      expect(entries.single.imagePath, '/pictures/gallery/san-jose/1.jpg');
       expect(entries.single.caption, 'John Doe');
+      expect(entries.single.photographerUrl, 'https://unsplash.com/@john');
+      expect(entries.single.photoPageUrl, 'https://unsplash.com/photos/abc');
       expect(entries.single.source, 'Unsplash');
     });
 
@@ -77,10 +77,7 @@ void main() {
       expect(parseGalleryMetadata('{"a": 1}'), isEmpty);
       expect(parseGalleryMetadata('[]'), isEmpty);
       // An entry with no image path is skipped.
-      expect(
-        parseGalleryMetadata('[{"photographer_name": "X"}]'),
-        isEmpty,
-      );
+      expect(parseGalleryMetadata('[{"photographer_name": "X"}]'), isEmpty);
     });
   });
 }

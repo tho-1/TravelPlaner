@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:travel_planner/data/app_settings.dart';
+import 'package:travel_planner/data/catalogue_match.dart';
 import 'package:travel_planner/data/open_tabs_repository.dart';
 import 'package:travel_planner/models/destination.dart';
 import 'package:travel_planner/turso/config.dart';
@@ -23,9 +24,14 @@ OpenTabsRepository _repo(FakeTurso fake) => OpenTabsRepository(TursoClient(
       httpClient: fake.client(),
     ));
 
-Destination _destination(String name, {bool favourite = false}) =>
+Destination _destination(String name,
+        {bool favourite = false, String? country}) =>
     Destination(
-      core: {'destination': name, if (favourite) 'favourite': true},
+      core: {
+        'destination': name,
+        if (favourite) 'favourite': true,
+        'country': ?country,
+      },
       columns: const [],
     );
 
@@ -144,6 +150,37 @@ void main() {
       expect(AppSettings.load(dir.path).openTabsEnabled, isTrue);
     });
 
+    test('override fields round-trip through save/load', () {
+      const settings = AppSettings(
+        openTabsEnabled: false,
+        tursoToken: 'turso-override',
+        benefitsToken: 'benefits-override',
+        deepseekApiKey: 'deepseek-override',
+        deepseekModel: 'deepseek-reasoner',
+        flightAwareApiKey: 'fa-override',
+      );
+      expect(settings.save(dir.path), isTrue);
+      final loaded = AppSettings.load(dir.path);
+      expect(loaded.openTabsEnabled, isFalse);
+      expect(loaded.tursoToken, 'turso-override');
+      expect(loaded.benefitsToken, 'benefits-override');
+      expect(loaded.deepseekApiKey, 'deepseek-override');
+      expect(loaded.deepseekModel, 'deepseek-reasoner');
+      expect(loaded.flightAwareApiKey, 'fa-override');
+    });
+
+    test('configOverrides reflects the loaded settings', () {
+      setConfigOverrides(null);
+      expect(configOverrides, isNull);
+      final loaded = AppSettings(
+        openTabsEnabled: true,
+        tursoToken: 't',
+      );
+      setConfigOverrides(loaded);
+      expect(configOverrides?.tursoToken, 't');
+      setConfigOverrides(null);
+    });
+
     test('a corrupt file is the defaults, not a crash', () {
       File(AppSettings.filePath(dir.path))
           .writeAsStringSync('{not json');
@@ -197,12 +234,14 @@ void main() {
         (tester) async {
       var opened = '';
       var closed = '';
+      CountryNames.installForTesting({'BA': 'Bosnia and Herzegovina'});
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: OpenTabsSheet(
             tabs: const ['Kyoto', 'Sarajevo'],
             destinations: {
               'Kyoto': _destination('Kyoto', favourite: true),
+              'Sarajevo': _destination('Sarajevo', country: 'Bosnia and Herzegovina'),
             },
             active: 'Kyoto',
             problems: const [],
@@ -217,7 +256,8 @@ void main() {
       expect(find.text('Sarajevo'), findsOneWidget);
       // The favourite star rides the row that has one.
       expect(find.byIcon(Icons.star), findsOneWidget);
-      expect(find.byIcon(Icons.location_on_outlined), findsOneWidget);
+      // Non-favourite rows use the country flag emoji.
+      expect(find.text('🇧🇦'), findsOneWidget);
 
       await tester.tap(find.text('Sarajevo'));
       expect(opened, 'Sarajevo');
@@ -249,8 +289,8 @@ void main() {
       expect(find.text('Close all'), findsNothing);
     });
 
-    testWidgets('close all is wired when tabs are open', (tester) async {
-      var closedAll = false;
+    testWidgets('there is no close-all action (removed to avoid accidents)',
+        (tester) async {
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: OpenTabsSheet(
@@ -260,12 +300,11 @@ void main() {
             problems: const [],
             onOpen: (_) {},
             onClose: (_) {},
-            onCloseAll: () => closedAll = true,
+            onCloseAll: () {},
           ),
         ),
       ));
-      await tester.tap(find.text('Close all'));
-      expect(closedAll, isTrue);
+      expect(find.text('Close all'), findsNothing);
     });
   });
 
@@ -277,10 +316,12 @@ void main() {
       await tester.pumpWidget(MaterialApp(
         home: SettingsPage(
           openTabsEnabled: true,
+          apiKeys: const {},
           onToggleTabs: (value) async {
             reported = value;
             return saved;
           },
+          onRotateKey: (name, value) async => true,
         ),
       ));
 

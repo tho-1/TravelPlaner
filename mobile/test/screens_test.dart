@@ -47,81 +47,107 @@ void main() {
   /// exception, not a silent clip).
   Future<void> render(WidgetTester tester, Widget screen) async {
     _setSurface(tester, _phone);
-    await tester.pumpWidget(MaterialApp(
-      theme: _themeFor(),
-      darkTheme: _themeFor(brightness: Brightness.dark),
-      home: screen,
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: _themeFor(),
+        darkTheme: _themeFor(brightness: Brightness.dark),
+        home: screen,
+      ),
+    );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   }
 
   testWidgets('the catalogue renders', (tester) async {
-    final fake = FakeTurso((_) => okRows(
-          ['destination', 'country', 'data'],
-          [
-            for (final row in [
-              ['Alexandria', 'Egypt', jsonEncode([['Why to Go There', 'x']])],
-              ['Kyoto', 'Japan', jsonEncode(const [])],
-              ['Kyiv', 'Ukraine', jsonEncode(const [])],
-              ['Lisbon', 'Portugal', jsonEncode(const [])],
-              ['Madrid', 'Spain', jsonEncode(const [])],
-              ['Rome', 'Italy', jsonEncode(const [])],
-            ])
-              row,
-          ],
-        ));
+    final fake = FakeTurso(
+      (_) => okRows(
+        ['destination', 'country', 'data'],
+        [
+          for (final row in [
+            [
+              'Alexandria',
+              'Egypt',
+              jsonEncode([
+                ['Why to Go There', 'x'],
+              ]),
+            ],
+            ['Kyoto', 'Japan', jsonEncode(const [])],
+            ['Kyiv', 'Ukraine', jsonEncode(const [])],
+            ['Lisbon', 'Portugal', jsonEncode(const [])],
+            ['Madrid', 'Spain', jsonEncode(const [])],
+            ['Rome', 'Italy', jsonEncode(const [])],
+          ])
+            row,
+        ],
+      ),
+    );
     await render(
-        tester,
-        CataloguePage(
-          repository: DestinationRepository(
-            TursoClient(_config, httpClient: fake.client()),
-          ),
-        ));
+      tester,
+      CataloguePage(
+        repository: DestinationRepository(
+          TursoClient(_config, httpClient: fake.client()),
+        ),
+      ),
+    );
   });
 
   testWidgets('the catalogue renders its problem view', (tester) async {
     // The problem card is where a long title used to
     // overflow; the card must wrap it instead.
-    final fake = FakeTurso((_) => pipelineError(
+    final fake = FakeTurso(
+      (_) => pipelineError(
         'the benefits database could not be reached over a long stretch of '
-        'text that does not fit on one line of a phone-width card'));
+        'text that does not fit on one line of a phone-width card',
+      ),
+    );
     await render(
-        tester,
-        CataloguePage(
-          repository: DestinationRepository(
-            TursoClient(_config, httpClient: fake.client()),
-          ),
-        ));
+      tester,
+      CataloguePage(
+        repository: DestinationRepository(
+          TursoClient(_config, httpClient: fake.client()),
+        ),
+      ),
+    );
   });
 
-  testWidgets('the catalogue renders its country groups on a wide window',
-      (tester) async {
+  testWidgets('the catalogue renders its country groups on a wide window', (
+    tester,
+  ) async {
     // The legacy overview's structure: country
     // sections with counts, the destinations in
     // a multi-column grid. Rendered wide so the
     // grid path (not just the phone's single
     // column) is exercised.
     _setSurface(tester, const Size(1200, 900));
-    final fake = FakeTurso((_) => okRows(
-          ['destination', 'country', 'data'],
-          [
-            for (final row in [
-              ['Alexandria', 'Egypt', jsonEncode([['Why to Go There', 'x']])],
-              ['Rome', 'Italy', jsonEncode(const [])],
-              ['Milan', 'Italy', jsonEncode(const [])],
-            ])
-              row,
-          ],
-        ));
-    await tester.pumpWidget(MaterialApp(
-      theme: _themeFor(),
-      home: CataloguePage(
-        repository: DestinationRepository(
-          TursoClient(_config, httpClient: fake.client()),
+    final fake = FakeTurso(
+      (_) => okRows(
+        ['destination', 'country', 'data'],
+        [
+          for (final row in [
+            [
+              'Alexandria',
+              'Egypt',
+              jsonEncode([
+                ['Why to Go There', 'x'],
+              ]),
+            ],
+            ['Rome', 'Italy', jsonEncode(const [])],
+            ['Milan', 'Italy', jsonEncode(const [])],
+          ])
+            row,
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: _themeFor(),
+        home: CataloguePage(
+          repository: DestinationRepository(
+            TursoClient(_config, httpClient: fake.client()),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     // Each country's header carries its count, in the
@@ -139,8 +165,10 @@ void main() {
       tester,
       DestinationPage(
         repository: DestinationRepository(
-          TursoClient(_config,
-              httpClient: FakeTurso((_) => okRows(['destination'], [])).client()),
+          TursoClient(
+            _config,
+            httpClient: FakeTurso((_) => okRows(['destination'], [])).client(),
+          ),
         ),
         destination: alexandria(),
       ),
@@ -149,8 +177,9 @@ void main() {
 
   testWidgets('the weekend finder renders', (tester) async {
     final fake = FakeTurso((_) => okRows(['destination'], []));
-    final repository =
-        DestinationRepository(TursoClient(_config, httpClient: fake.client()));
+    final repository = DestinationRepository(
+      TursoClient(_config, httpClient: fake.client()),
+    );
     await render(
       tester,
       WeekendFinderPage(
@@ -160,17 +189,26 @@ void main() {
     );
   });
 
-  testWidgets('the weekend finder searches and shows the summary table',
-      (tester) async {
+  testWidgets('the weekend finder searches and shows the summary table', (
+    tester,
+  ) async {
     // The search runs on an injected board (no network);
     // the airport table is installed so the lookup needs
     // no asset. The benefits come from the seed list
     // (the config carries no benefits URL), so the
     // carrier is spelled the way the seed spells it.
     AirportLookup.installForTesting({'LHR': ('London', 'GB')});
-    final fake = FakeTurso((_) => okRows(['destination'], []));
-    final repository =
-        DestinationRepository(TursoClient(_config, httpClient: fake.client()));
+    final fake = FakeTurso(
+      (_) => okRows(
+        ['destination', 'country', 'data'],
+        [
+          ['London', 'United Kingdom', jsonEncode(const [])],
+        ],
+      ),
+    );
+    final repository = DestinationRepository(
+      TursoClient(_config, httpClient: fake.client()),
+    );
     await render(
       tester,
       WeekendFinderPage(
@@ -183,9 +221,11 @@ void main() {
     // ListView builds lazily, so drag until the target is
     // actually built rather than assuming a fixed offset.
     Future<void> dragUntil(Finder target) async {
-      for (var attempt = 0;
-          attempt < 25 && target.evaluate().isEmpty;
-          attempt++) {
+      for (
+        var attempt = 0;
+        attempt < 25 && target.evaluate().isEmpty;
+        attempt++
+      ) {
         await tester.drag(find.byType(ListView), const Offset(0, -300));
         await tester.pumpAndSettle();
       }
@@ -195,34 +235,43 @@ void main() {
     await tester.tap(find.text('Find weekends'));
     await tester.pumpAndSettle();
     // The report lands below the fold.
-    await dragUntil(find.text('London (United Kingdom)'));
+    await dragUntil(find.textContaining('London (United Kingdom)'));
     await tester.pumpAndSettle();
     // The merged results list: one expandable row per
     // city (city, options, earliest out, nights,
     // airlines) that opens into the flight detail.
     // The country renders as its English name — the ISO
     // code ("GB") meant nothing to read.
-    expect(find.text('London (United Kingdom)'), findsWidgets);
+    expect(find.textContaining('London (United Kingdom)'), findsWidgets);
+    expect(find.text('Destination on your list:'), findsOneWidget);
     expect(find.textContaining('option'), findsWidgets);
     // Collapsed: the flight lines are not built yet.
     expect(find.text('LH1000 · Lufthansa'), findsNothing);
     // Expanding the row reveals the flights in place.
-    await tester.tap(find.text('London (United Kingdom)'));
+    await tester.tap(find.textContaining('London (United Kingdom)').first);
     await tester.pumpAndSettle();
     expect(find.text('LH1000 · Lufthansa'), findsWidgets);
     expect(find.text('LH2000 · Lufthansa'), findsWidgets);
+    expect(find.text('Outbound'), findsWidgets);
+    expect(find.text('Return'), findsWidgets);
+    expect(find.text('[LHR]'), findsNothing);
+    expect(find.textContaining('Catalogue name:'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('the world map renders', (tester) async {
-    final fake = FakeTurso((_) => okRows(
-          ['destination', 'country', 'data'],
-          [
-            for (final name in ['Alexandria', 'Rome', 'Kyoto', 'Lima'])
-              [name, 'X', jsonEncode(const [])],
-          ],
-        ));
-    final repository =
-        DestinationRepository(TursoClient(_config, httpClient: fake.client()));
+    final fake = FakeTurso(
+      (_) => okRows(
+        ['destination', 'country', 'data'],
+        [
+          for (final name in ['Alexandria', 'Rome', 'Kyoto', 'Lima'])
+            [name, 'X', jsonEncode(const [])],
+        ],
+      ),
+    );
+    final repository = DestinationRepository(
+      TursoClient(_config, httpClient: fake.client()),
+    );
     await render(tester, WorldMapPage(repository: repository));
   });
 
@@ -230,67 +279,126 @@ void main() {
   /// catalogue the add-stop panel and the month
   /// suggestions read, and a cache-less geocoder.
   TripsPage tripsPage(FakeTurso fake) => TripsPage(
-        repository: TripRepository(
-            TursoClient(_config, httpClient: fake.client())),
-        destinations: DestinationRepository(
-            TursoClient(_config, httpClient: fake.client())),
-        geocoder: GeocodeRepository(''),
-      );
+    repository: TripRepository(TursoClient(_config, httpClient: fake.client())),
+    destinations: DestinationRepository(
+      TursoClient(_config, httpClient: fake.client()),
+    ),
+    geocoder: GeocodeRepository(''),
+  );
 
   testWidgets('the trips page renders its problem view', (tester) async {
     final fake = FakeTurso((_) => pipelineError('trips table missing'));
     await render(tester, tripsPage(fake));
   });
 
-  testWidgets('the trips page renders the editor with a route',
-      (tester) async {
+  testWidgets('the trips page renders the editor with a route', (tester) async {
     final fake = FakeTurso((statements) {
       // The trips load pipeline: four SELECTs in one
       // request, answered with four results.
       if (statements.length == 4 &&
           statements.first.startsWith('SELECT * FROM trips')) {
         return okMulti([
-          (['id', 'name', 'created', 'active_variant_id'], [
-            ['t1', 'Italy 2026', '2026-01-01T10:00:00', 'v1'],
-          ]),
-          (['id', 'trip_id', 'name', 'notes', 'rating', 'months',
-            'comment'], [
-            ['v1', 't1', 'Two cities', 'notes', 4,
-                '["April","May"]', ''],
-          ]),
-          (['id', 'variant_id', 'kind', 'name', 'country', 'lat',
-            'lon', 'role', 'arrival_date', 'departure_date',
-            'arrival_time', 'departure_time', 'nights', 'notes'], [
+          (
+            ['id', 'name', 'created', 'active_variant_id'],
             [
-              's1', 'v1', 'gateway', 'Frankfurt', 'Germany', 50.11,
-              8.68, 'origin', null, '2027-04-01', null, '18:45',
-              null, ''
+              ['t1', 'Italy 2026', '2026-01-01T10:00:00', 'v1'],
+            ],
+          ),
+          (
+            ['id', 'trip_id', 'name', 'notes', 'rating', 'months', 'comment'],
+            [
+              ['v1', 't1', 'Two cities', 'notes', 4, '["April","May"]', ''],
+            ],
+          ),
+          (
+            [
+              'id',
+              'variant_id',
+              'kind',
+              'name',
+              'country',
+              'lat',
+              'lon',
+              'role',
+              'arrival_date',
+              'departure_date',
+              'arrival_time',
+              'departure_time',
+              'nights',
+              'notes',
             ],
             [
-              's2', 'v1', 'destination', 'Rome', 'Italy', 41.9, 12.5,
-              'stop', '2027-04-01', '2027-04-04', '09:30', '18:00',
-              3, 'colosseum'
+              [
+                's1',
+                'v1',
+                'gateway',
+                'Frankfurt',
+                'Germany',
+                50.11,
+                8.68,
+                'origin',
+                null,
+                '2027-04-01',
+                null,
+                '18:45',
+                null,
+                '',
+              ],
+              [
+                's2',
+                'v1',
+                'destination',
+                'Rome',
+                'Italy',
+                41.9,
+                12.5,
+                'stop',
+                '2027-04-01',
+                '2027-04-04',
+                '09:30',
+                '18:00',
+                3,
+                'colosseum',
+              ],
+              [
+                's3',
+                'v1',
+                'destination',
+                'Florence',
+                'Italy',
+                43.77,
+                11.26,
+                'stop',
+                '2027-04-04',
+                '2027-04-06',
+                '09:00',
+                null,
+                2,
+                '',
+              ],
             ],
+          ),
+          (
+            ['variant_id', 'position', 'mode', 'note'],
             [
-              's3', 'v1', 'destination', 'Florence', 'Italy', 43.77,
-              11.26, 'stop', '2027-04-04', '2027-04-06', '09:00',
-              null, 2, ''
+              ['v1', 0, 'flight', ''],
+              ['v1', 1, 'train', ''],
             ],
-          ]),
-          (['variant_id', 'position', 'mode', 'note'], [
-            ['v1', 0, 'flight', ''],
-            ['v1', 1, 'train', ''],
-          ]),
+          ),
         ]);
       }
       if (statements.first.startsWith('SELECT * FROM destinations')) {
         return okRows(
           ['destination', 'country', 'data'],
           [
-            ['Rome', 'Italy', jsonEncode([
-              ['Destination', 'Rome'],
-              ['April', 'ideal'],
-            ])],
+            [
+              'Rome',
+              'Italy',
+              jsonEncode([
+                ['Destination', 'Rome'],
+                ['April', 'ideal'],
+              ]),
+            ],
           ],
         );
       }
@@ -314,24 +422,44 @@ void main() {
     expect(find.text('Compare'), findsOneWidget);
   });
 
-  testWidgets('the trips page backs up all trips as JSON',
-      (tester) async {
+  testWidgets('the trips page backs up all trips as JSON', (tester) async {
     final fake = FakeTurso((statements) {
       // The trips load pipeline: four SELECTs in
       // one request, answered with four results.
       if (statements.length == 4 &&
           statements.first.startsWith('SELECT * FROM trips')) {
         return okMulti([
-          (['id', 'name', 'created', 'active_variant_id'], [
-            ['t1', 'Italy 2026', '2026-01-01T10:00:00', 'v1'],
-          ]),
-          (['id', 'trip_id', 'name', 'notes', 'rating', 'months',
-            'comment'], [
-            ['v1', 't1', 'Two cities', '', 4, '[]', ''],
-          ]),
-          (['id', 'variant_id', 'kind', 'name', 'country', 'lat',
-            'lon', 'role', 'arrival_date', 'departure_date',
-            'arrival_time', 'departure_time', 'nights', 'notes'], []),
+          (
+            ['id', 'name', 'created', 'active_variant_id'],
+            [
+              ['t1', 'Italy 2026', '2026-01-01T10:00:00', 'v1'],
+            ],
+          ),
+          (
+            ['id', 'trip_id', 'name', 'notes', 'rating', 'months', 'comment'],
+            [
+              ['v1', 't1', 'Two cities', '', 4, '[]', ''],
+            ],
+          ),
+          (
+            [
+              'id',
+              'variant_id',
+              'kind',
+              'name',
+              'country',
+              'lat',
+              'lon',
+              'role',
+              'arrival_date',
+              'departure_date',
+              'arrival_time',
+              'departure_time',
+              'nights',
+              'notes',
+            ],
+            [],
+          ),
           (['variant_id', 'position', 'mode', 'note'], []),
         ]);
       }
@@ -344,10 +472,8 @@ void main() {
     await tester.tap(find.byIcon(Icons.download));
     await tester.pumpAndSettle();
     expect(find.text('Backup all trips'), findsOneWidget);
-    expect(find.textContaining('"schema_version": 1'),
-        findsOneWidget);
-    expect(find.textContaining('"name": "Italy 2026"'),
-        findsOneWidget);
+    expect(find.textContaining('"schema_version": 1'), findsOneWidget);
+    expect(find.textContaining('"name": "Italy 2026"'), findsOneWidget);
     // The dialog's Copy is the only Copy on screen: the
     // trip/variant duplicates moved into the ⋯ action menus.
     expect(find.text('Copy'), findsOneWidget);
@@ -360,17 +486,38 @@ void main() {
       if (statements.length == 4 &&
           statements.first.startsWith('SELECT * FROM trips')) {
         return okMulti([
-          (['id', 'name', 'created', 'active_variant_id'], [
-            ['t1', 'Italy 2026', '2026-01-01T10:00:00', 'v1'],
-          ]),
-          (['id', 'trip_id', 'name', 'notes', 'rating', 'months',
-            'comment'], [
-            ['v1', 't1', 'Two cities', '', 4, '[]', ''],
-            ['v2', 't1', 'Two cities alt', '', 3, '[]', ''],
-          ]),
-          (['id', 'variant_id', 'kind', 'name', 'country', 'lat',
-            'lon', 'role', 'arrival_date', 'departure_date',
-            'arrival_time', 'departure_time', 'nights', 'notes'], []),
+          (
+            ['id', 'name', 'created', 'active_variant_id'],
+            [
+              ['t1', 'Italy 2026', '2026-01-01T10:00:00', 'v1'],
+            ],
+          ),
+          (
+            ['id', 'trip_id', 'name', 'notes', 'rating', 'months', 'comment'],
+            [
+              ['v1', 't1', 'Two cities', '', 4, '[]', ''],
+              ['v2', 't1', 'Two cities alt', '', 3, '[]', ''],
+            ],
+          ),
+          (
+            [
+              'id',
+              'variant_id',
+              'kind',
+              'name',
+              'country',
+              'lat',
+              'lon',
+              'role',
+              'arrival_date',
+              'departure_date',
+              'arrival_time',
+              'departure_time',
+              'nights',
+              'notes',
+            ],
+            [],
+          ),
           (['variant_id', 'position', 'mode', 'note'], []),
         ]);
       }
@@ -389,11 +536,13 @@ void main() {
     // so in a test itsTurso calls answer with the test
     // binding's 400 -- the pages then render their problem
     // views, which is exactly the layout this suite guards.
-    await tester.pumpWidget(MaterialApp(
-      theme: _themeFor(),
-      darkTheme: _themeFor(brightness: Brightness.dark),
-      home: const HomeShell(config: _config),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: _themeFor(),
+        darkTheme: _themeFor(brightness: Brightness.dark),
+        home: const HomeShell(config: _config),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.byType(NavigationBar), findsOneWidget);
@@ -404,14 +553,15 @@ void main() {
     expect(find.text('Finder'), findsWidgets);
   });
 
-  testWidgets('the shell switches to the rail on wide windows',
-      (tester) async {
+  testWidgets('the shell switches to the rail on wide windows', (tester) async {
     _setSurface(tester, const Size(1200, 900));
-    await tester.pumpWidget(MaterialApp(
-      theme: _themeFor(),
-      darkTheme: _themeFor(brightness: Brightness.dark),
-      home: const HomeShell(config: _config),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: _themeFor(),
+        darkTheme: _themeFor(brightness: Brightness.dark),
+        home: const HomeShell(config: _config),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     // The desktop layout: a side rail, no bottom bar,
@@ -428,14 +578,13 @@ const _config = TursoConfig(
   token: 'token',
 );
 
-ThemeData _themeFor({Brightness brightness = Brightness.light}) =>
-    ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF0E7C86),
-        brightness: brightness,
-      ),
-    );
+ThemeData _themeFor({Brightness brightness = Brightness.light}) => ThemeData(
+  useMaterial3: true,
+  colorScheme: ColorScheme.fromSeed(
+    seedColor: const Color(0xFF0E7C86),
+    brightness: brightness,
+  ),
+);
 
 /// Set the test surface to [size]. The old
 /// `binding.setSurfaceSize` is deprecated and a
@@ -503,8 +652,8 @@ class _FakeBoard implements FlightBoardProvider {
   }
 
   FetchResult _empty() => FetchResult(
-        flights: const <Flight>[],
-        source: 'fake',
-        fetchedAt: DateTime.now().toIso8601String(),
-      );
+    flights: const <Flight>[],
+    source: 'fake',
+    fetchedAt: DateTime.now().toIso8601String(),
+  );
 }

@@ -25,6 +25,8 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
 
+import 'app_settings.dart' show configOverrides;
+
 class AiConfig {
   final String apiKey;
   final String model;
@@ -43,9 +45,14 @@ class AiConfig {
       final text =
           await rootBundle.loadString('assets/turso_config.json');
       final map = jsonDecode(text) as Map<String, dynamic>;
+      final bundledKey = (map['deepseek_api_key'] as String?)?.trim() ?? '';
+      final effectiveKey = configOverrides?.deepseekApiKey ??
+          bundledKey;
+      final bundledModel = (map['deepseek_model'] as String?)?.trim() ?? defaultModel;
+      final effectiveModel = configOverrides?.deepseekModel ?? bundledModel;
       return AiConfig(
-        apiKey: (map['deepseek_api_key'] as String?)?.trim() ?? '',
-        model: (map['deepseek_model'] as String?)?.trim() ?? defaultModel,
+        apiKey: effectiveKey,
+        model: effectiveModel.isEmpty ? defaultModel : effectiveModel,
       );
     } catch (_) {
       return const AiConfig();

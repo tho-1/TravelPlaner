@@ -36,14 +36,22 @@ import 'package:flutter/material.dart';
 
 import '../models/destination_profile.dart';
 
-class AqiChart extends StatelessWidget {
+class AqiChart extends StatefulWidget {
   final ClimateData data;
 
   const AqiChart({super.key, required this.data});
 
   @override
+  State<AqiChart> createState() => _AqiChartState();
+}
+
+class _AqiChartState extends State<AqiChart> {
+  int? _selected;
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final data = widget.data;
     final legend = <_LegendEntry>[
       if (data.groundAqi.any((v) => v != null))
         _LegendEntry(
@@ -67,6 +75,16 @@ class AqiChart extends StatelessWidget {
           label: 'Open-Meteo (multi-year)',
         ),
     ];
+    String selectionText = '';
+    if (_selected != null) {
+      final i = _selected!;
+      selectionText =
+          '${monthAbbreviations[i]}: '
+          'AQI ${_fmt(data.aqi, i)}, '
+          'ground ${_fmt(data.groundAqi, i)}, '
+          'typical ${_fmt(data.typical, i)}, '
+          'ground typical ${_fmt(data.groundTypical, i)}';
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -79,21 +97,46 @@ class AqiChart extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        SizedBox(
-          height: 240,
-          child: CustomPaint(
-            painter: _AqiChartPainter(
-              aqi: data.aqi,
-              groundAqi: data.groundAqi,
-              typical: data.typical,
-              groundTypical: data.groundTypical,
-              labelColor: scheme.onSurfaceVariant,
-            ),
-            child: const SizedBox.expand(),
-          ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final plotWidth = constraints.maxWidth - 34.0 - 4.0;
+            return GestureDetector(
+              onTapDown: (details) {
+                if (plotWidth <= 0) return;
+                final index =
+                    ((details.localPosition.dx - 34.0) / plotWidth * 12).floor();
+                if (index < 0 || index > 11) return;
+                setState(() => _selected = index);
+              },
+              child: SizedBox(
+                height: 240,
+                child: CustomPaint(
+                  painter: _AqiChartPainter(
+                    aqi: data.aqi,
+                    groundAqi: data.groundAqi,
+                    typical: data.typical,
+                    groundTypical: data.groundTypical,
+                    labelColor: scheme.onSurfaceVariant,
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            );
+          },
         ),
+        if (selectionText.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(selectionText,
+                style: Theme.of(context).textTheme.bodySmall),
+          ),
       ],
     );
+  }
+
+  String _fmt(List<double?> series, int i) {
+    if (i >= series.length || series[i] == null) return '—';
+    return series[i]!.round().toString();
   }
 }
 

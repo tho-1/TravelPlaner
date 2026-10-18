@@ -10,11 +10,16 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:travel_planner/data/flight_routes_schedule_repository.dart';
 import 'package:travel_planner/data/weekend_repository.dart';
 import 'package:travel_planner/models/airline_benefits.dart';
 import 'package:travel_planner/models/timetable.dart';
 import 'package:travel_planner/models/travel_days.dart';
 import 'package:travel_planner/models/weekend_match.dart';
+import 'package:travel_planner/turso/config.dart';
+import 'package:travel_planner/turso/pipeline_client.dart';
+
+import 'fake_turso.dart';
 
 final friday = DateTime(2026, 10, 16);
 
@@ -157,6 +162,115 @@ void main() {
     expect(london.options.single.nights, 1);
     // Both out legs were in their windows.
     expect(result.report.outboundTotal, 2);
+  });
+
+  test('full shared FlightRoutes boards supply both weekend legs', () async {
+    final day = '2026-10-16';
+    final returnDay = '2026-10-17';
+    final fakeTurso = FakeTurso((statements) {
+      final sql = statements.single;
+      if (sql.contains("day = '$day'") && sql.contains("IN ('FRA')")) {
+        return okRows(
+          ['iata', 'day', 'payload', 'updated_at'],
+          [
+            [
+              'FRA',
+              day,
+              jsonEncode({
+                'meta': {
+                  'schema_version': 2,
+                  'airport': 'FRA',
+                  'date': day,
+                  'source': 'aerodatabox',
+                  'obtained_at': '2026-10-15T12:00:00Z',
+                  'n_flights': 1,
+                },
+                'flights': [
+                  {
+                    'dep_time': '15:10',
+                    'arr_time': '15:55',
+                    'carrier_iata': 'LH',
+                    'carrier_name': 'Lufthansa',
+                    'flight_no': 'LH1000',
+                    'dest_iata': 'LHR',
+                    'dep_at_local': '2026-10-16T15:10:00+02:00',
+                    'arr_at_local': '2026-10-16T15:55:00+01:00',
+                    'dep_at_utc': '2026-10-16T13:10:00Z',
+                    'arr_at_utc': '2026-10-16T14:55:00Z',
+                  },
+                ],
+              }),
+              '2026-10-15T12:00:00Z',
+            ],
+          ],
+        );
+      }
+      if (sql.contains("day = '$returnDay'") && sql.contains("IN ('LHR')")) {
+        return okRows(
+          ['iata', 'day', 'payload', 'updated_at'],
+          [
+            [
+              'LHR',
+              returnDay,
+              jsonEncode({
+                'meta': {
+                  'schema_version': 2,
+                  'airport': 'LHR',
+                  'date': returnDay,
+                  'source': 'aerodatabox',
+                  'obtained_at': '2026-10-16T12:00:00Z',
+                  'n_flights': 1,
+                },
+                'flights': [
+                  {
+                    'dep_time': '17:30',
+                    'arr_time': '20:30',
+                    'carrier_iata': 'LH',
+                    'carrier_name': 'Lufthansa',
+                    'flight_no': 'LH2000',
+                    'dest_iata': 'FRA',
+                    'dep_at_local': '2026-10-17T17:30:00+01:00',
+                    'arr_at_local': '2026-10-17T20:30:00+02:00',
+                    'dep_at_utc': '2026-10-17T16:30:00Z',
+                    'arr_at_utc': '2026-10-17T18:30:00Z',
+                  },
+                ],
+              }),
+              '2026-10-16T12:00:00Z',
+            ],
+          ],
+        );
+      }
+      return okRows(
+        ['iata', 'day', 'payload', 'updated_at'],
+        const [],
+      );
+    });
+    final shared = FlightRoutesScheduleRepository(
+      TursoClient(
+        const TursoConfig(url: 'https://shared.test.turso.io', token: 'fake'),
+        httpClient: fakeTurso.client(),
+      ),
+    );
+    final selectedDays = TravelPlan(
+      outDays: [TravelDay(DateTime(2026, 10, 16))],
+      backDays: [TravelDay(DateTime(2026, 10, 17))],
+    );
+    final repository = WeekendRepository(
+      _FakeBoard(const {}),
+      sharedSchedules: shared,
+    );
+
+    final result = await repository.search(selectedDays, _benefits);
+
+    final london = result.report.cities.single;
+    expect(london.city, 'London');
+    expect(london.options.single.outFlight.flightNo, 'LH1000');
+    expect(london.options.single.backFlight.flightNo, 'LH2000');
+    expect(london.options.single.nights, 1);
+    expect(london.options.single.outFlight.duration, const Duration(minutes: 105));
+    expect(result.report.notes, contains(contains('shared by FlightRoutes')));
+    expect(fakeTurso.requests.length, greaterThanOrEqualTo(3));
   });
 
   test('an airline the filter drops explains itself in the report',

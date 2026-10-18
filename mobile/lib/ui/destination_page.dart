@@ -12,6 +12,8 @@ library;
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../data/ai_config.dart';
@@ -22,6 +24,7 @@ import '../data/destination_repository.dart';
 import '../data/food_populator.dart';
 import '../data/gallery_cache.dart';
 import '../data/gallery_repository.dart';
+import '../data/gallery_search.dart';
 import '../data/photo_repository.dart';
 import '../models/destination.dart';
 import '../models/condition.dart';
@@ -55,6 +58,13 @@ class DestinationPage extends StatefulWidget {
   /// Pictures folder.
   final String? picturesDir;
 
+  /// Optional direct banner path for deterministic widget tests.
+  final String? bannerPhotoPath;
+
+  /// Injectable photo seams for deterministic gallery and cache tests.
+  final PhotoSearchProvider? photoSearchProvider;
+  final GalleryMetadataCache? galleryCache;
+
   /// Called when a destination is opened from this page's
   /// related links, so the shell records the open tab.
   /// Passed on to the pushed page, so the chain records
@@ -69,6 +79,9 @@ class DestinationPage extends StatefulWidget {
     this.aiClient,
     this.aiConfig,
     this.picturesDir,
+    this.bannerPhotoPath,
+    this.photoSearchProvider,
+    this.galleryCache,
     this.onOpenDestination,
   });
 
@@ -85,6 +98,9 @@ class _DestinationPageState extends State<DestinationPage> {
   var _populating = false;
   var _populatingFood = false;
   var _aiConfigured = false;
+  GalleryRepository? _galleryRepository;
+  List<GalleryEntry> _galleryEntries = const [];
+  String? _bannerPhotoPath;
 
   /// The comment editor is only mounted when there is
   /// something to edit: an empty destination used to open
@@ -100,6 +116,53 @@ class _DestinationPageState extends State<DestinationPage> {
     _comment = TextEditingController(text: _dest.comment ?? '');
     _loadCoordinate();
     _loadAiConfig();
+    _loadPhotoServices();
+  }
+
+  Future<void> _loadPhotoServices() async {
+    final hasInjectedServices =
+        widget.galleryCache != null && widget.photoSearchProvider != null;
+    final config = hasInjectedServices ? null : await TursoConfig.load();
+    GalleryMetadataCache? cache = widget.galleryCache;
+    if (cache == null) {
+      try {
+        final documents = await getApplicationDocumentsDirectory();
+        cache = FileGalleryMetadataCache(
+          p.join(documents.path, 'travel_planner'),
+        );
+      } catch (_) {
+        // Legacy desktop folders remain readable if app storage is unavailable.
+      }
+    }
+    final picturesDir = widget.picturesDir ?? config?.picturesDir ?? '';
+    final repository = GalleryRepository(
+      picturesDir,
+      cache: cache,
+      provider:
+          widget.photoSearchProvider ??
+          UnsplashPhotoSearchProvider(config?.unsplashAccessKey ?? ''),
+    );
+    List<GalleryEntry> entries = const [];
+    try {
+      entries = await repository.load(_dest.name) ?? const [];
+    } catch (_) {
+      // A missing or unreadable cache is an ordinary empty-gallery state.
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _galleryRepository = repository;
+      _galleryEntries = entries;
+    });
+
+    var bannerPath = widget.bannerPhotoPath;
+    if (bannerPath == null && picturesDir.trim().isNotEmpty) {
+      final banner = await PhotoRepository(picturesDir)
+          .findBanner(_dest.name, _dest.name);
+      bannerPath = banner?.path;
+    }
+    if (!mounted) return;
+    setState(() => _bannerPhotoPath = bannerPath);
   }
 
   Future<void> _loadAiConfig() async {
@@ -120,7 +183,8 @@ class _DestinationPageState extends State<DestinationPage> {
   /// with_ai` has.
   Future<void> _populateWithAi() async {
     setState(() => _populating = true);
-    final client = widget.aiClient ??
+    final client =
+        widget.aiClient ??
         DeepSeekClient(widget.aiConfig ?? await AiConfig.load());
     try {
       final profile = await client.generateDestinationProfile(
@@ -139,17 +203,20 @@ class _DestinationPageState extends State<DestinationPage> {
         }
       });
       if (ok) widget.onChanged?.call();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(ok
-            ? 'Populated with DeepSeek AI'
-            : 'The profile was generated but nothing was written.'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Populated with DeepSeek AI'
+                : 'The profile was generated but nothing was written.',
+          ),
+        ),
+      );
     } on DeepSeekError catch (error) {
       if (!mounted) return;
       setState(() => _populating = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(error.message),
-      ));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
     }
   }
 
@@ -160,7 +227,8 @@ class _DestinationPageState extends State<DestinationPage> {
   /// message, never a crash.
   Future<void> _populateFood() async {
     setState(() => _populatingFood = true);
-    final client = widget.aiClient ??
+    final client =
+        widget.aiClient ??
         DeepSeekClient(widget.aiConfig ?? await AiConfig.load());
     try {
       final food = await client.generateFoodProfile(
@@ -178,17 +246,20 @@ class _DestinationPageState extends State<DestinationPage> {
         }
       });
       if (ok) widget.onChanged?.call();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(ok
-            ? 'Food information saved'
-            : 'The food profile was generated but nothing was written.'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ok
+                ? 'Food information saved'
+                : 'The food profile was generated but nothing was written.',
+          ),
+        ),
+      );
     } on DeepSeekError catch (error) {
       if (!mounted) return;
       setState(() => _populatingFood = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(error.message),
-      ));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error.message)));
     }
   }
 
@@ -215,16 +286,21 @@ class _DestinationPageState extends State<DestinationPage> {
       // Success is visible in the field itself; only a
       // failed write pops a bar. Every save used to pop
       // "Saved", burying the one message that matters.
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Nothing written -- the read or the write failed. '
-            'Check the token and the connection.'),
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Nothing written -- the read or the write failed. '
+            'Check the token and the connection.',
+          ),
+        ),
+      );
     }
   }
 
   Future<void> _editPrio() async {
-    final controller =
-        TextEditingController(text: _dest.prio?.toString() ?? '');
+    final controller = TextEditingController(
+      text: _dest.prio?.toString() ?? '',
+    );
     try {
       final value = await showDialog<Object?>(
         context: context,
@@ -234,8 +310,7 @@ class _DestinationPageState extends State<DestinationPage> {
             controller: controller,
             autofocus: true,
             keyboardType: TextInputType.number,
-            decoration:
-                const InputDecoration(hintText: '1-10, empty to clear'),
+            decoration: const InputDecoration(hintText: '1-10, empty to clear'),
           ),
           actions: [
             TextButton(
@@ -246,7 +321,9 @@ class _DestinationPageState extends State<DestinationPage> {
               onPressed: () {
                 final raw = controller.text.trim();
                 Navigator.pop(
-                    context, raw.isEmpty ? null : num.tryParse(raw) ?? raw);
+                  context,
+                  raw.isEmpty ? null : num.tryParse(raw) ?? raw,
+                );
               },
               child: const Text('Save'),
             ),
@@ -307,9 +384,7 @@ class _DestinationPageState extends State<DestinationPage> {
     final profile = _profile;
     return Scaffold(
       appBar: AppBar(
-        // Back-only: the name is the page's big header (or
-        // the banner photo's overlay) — titling both bars
-        // said "Ulaanbaatar" twice in a row.
+        title: Text(dest.name),
         actions: [
           if (_busy)
             const Padding(
@@ -319,8 +394,13 @@ class _DestinationPageState extends State<DestinationPage> {
                 height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
-            ),
-        ],
+                  ),
+                  IconButton(
+                    tooltip: 'Prio',
+                    icon: const Icon(Icons.priority_high_outlined),
+                    onPressed: _busy ? null : _editPrio,
+                  ),
+              ],
       ),
       body: AbsorbPointer(
         absorbing: _busy,
@@ -328,7 +408,11 @@ class _DestinationPageState extends State<DestinationPage> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           children: [
             _DestinationHeader(
-                destination: dest, profile: profile, picturesDir: widget.picturesDir),
+              destination: dest,
+              profile: profile,
+              bannerPath: _bannerPhotoPath,
+              galleryEntries: _galleryEntries,
+            ),
             if (profile.dataStatus != null) ...[
               const SizedBox(height: 12),
               _StatusBanner(
@@ -343,43 +427,35 @@ class _DestinationPageState extends State<DestinationPage> {
               spacing: 8,
               runSpacing: 4,
               children: [
-                FilterChip(
-                  avatar: Icon(dest.visited
-                      ? Icons.check_circle_outline
-                      : Icons.circle_outlined),
-                  label: const Text('Visited'),
-                  selected: dest.visited,
-                  onSelected: (value) => _update('visited', value),
+                IconButton(
+                  tooltip: 'Visited',
+                  icon: Icon(
+                    dest.visited ? Icons.check_circle : Icons.circle_outlined,
+                    color: dest.visited ? accentSafety : null,
+                  ),
+                  onPressed: _busy
+                      ? null
+                      : () => _update('visited', !dest.visited),
                 ),
-                FilterChip(
-                  avatar: Icon(dest.favourite
-                      ? Icons.star
-                      : Icons.star_border_outlined,
-                      color: dest.favourite ? accentFavourite : null),
-                  label: const Text('Favourite'),
-                  selected: dest.favourite,
-                  onSelected: (value) => _update('favourite', value),
+                IconButton(
+                  tooltip: 'Favourite',
+                  icon: Icon(
+                    dest.favourite ? Icons.star : Icons.star_border_outlined,
+                    color: dest.favourite ? accentFavourite : null,
+                  ),
+                  onPressed: _busy
+                      ? null
+                      : () => _update('favourite', !dest.favourite),
                 ),
-                // The legacy header's research button: a
-                // toggle, not a static note — the ❔/❓
-                // button that marks the row as researched.
-                FilterChip(
-                  avatar: Icon(dest.toBeResearched
-                      ? Icons.help_outline
-                      : Icons.help_outline_outlined),
-                  label: Text(dest.toBeResearched
-                      ? 'Needs research'
-                      : 'Researched'),
-                  selected: dest.toBeResearched,
-                  onSelected: (value) =>
-                      _update('to_be_researched', value),
-                ),
-                ActionChip(
-                  avatar: const Icon(Icons.priority_high_outlined),
-                  label: Text(dest.prio == null
-                      ? 'Prio: not set'
-                      : 'Prio: ${dest.prio}'),
-                  onPressed: _busy ? null : _editPrio,
+                IconButton(
+                  tooltip: 'Researched',
+                  icon: Icon(
+                    dest.toBeResearched ? Icons.help : Icons.help_outline,
+                    color: dest.toBeResearched ? Colors.orange : null,
+                  ),
+                  onPressed: _busy
+                      ? null
+                      : () => _update('to_be_researched', !dest.toBeResearched),
                 ),
               ],
             ),
@@ -420,8 +496,7 @@ class _DestinationPageState extends State<DestinationPage> {
                   // empty box over an existing comment asks
                   // first — one stray select-all + Save
                   // used to lose the text outright.
-                  if (_dest.comment != null &&
-                      _dest.comment!.trim().isNotEmpty)
+                  if (_dest.comment != null && _dest.comment!.trim().isNotEmpty)
                     TextButton(
                       onPressed: _busy ? null : _confirmDeleteComment,
                       child: const Text('Delete'),
@@ -430,9 +505,7 @@ class _DestinationPageState extends State<DestinationPage> {
                   FilledButton.icon(
                     icon: const Icon(Icons.save_outlined),
                     label: const Text('Save comment'),
-                    onPressed: _busy
-                        ? null
-                        : () => _saveComment(),
+                    onPressed: _busy ? null : () => _saveComment(),
                   ),
                 ],
               ),
@@ -445,25 +518,34 @@ class _DestinationPageState extends State<DestinationPage> {
                 // colour: on the pale basemap, a coastal
                 // city's view used to read as "grey and
                 // grey".
-                countryColor: Color(conditionOfMonth(
-                        DestinationProfile.from(_dest)
-                            .months[DateTime.now().month - 1])
-                    .colorValue),
+                countryColor: Color(
+                  conditionOfMonth(
+                    DestinationProfile.from(_dest)
+                        .months[DateTime.now().month - 1],
+                  ).colorValue,
+                ),
               ),
               const SizedBox(height: 12),
             ],
             if (profile.hasOverviewText) ...[
               if (profile.introduction != null)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Text(profile.introduction!,
-                      style: Theme.of(context).textTheme.bodyLarge),
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Text(
+                    profile.introduction!,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
                 ),
               _LabelledText('Why to Go There', profile.whyToGo),
               _LabelledText('What to Expect', profile.whatToExpect),
-              if (profile.touristReviews != null)
+              if (profile.touristReviews != null) ...[
+                const _SectionTitle('Reviews'),
                 _LabelledText(
-                    'Tourist Reviews', profile.touristReviews, subheader: true),
+                  'Tourist Reviews',
+                  profile.touristReviews,
+                  subheader: true,
+                ),
+              ],
               _LabelledText('What do the reviews praise?', profile.praises),
               _LabelledText('What do they dislike?', profile.dislikes),
             ] else
@@ -495,7 +577,14 @@ class _DestinationPageState extends State<DestinationPage> {
             const _SectionTitle('Climate'),
             _ClimateSection(profile: profile),
             _GallerySection(
-                destinationName: dest.name, picturesDir: widget.picturesDir),
+              destinationName: dest.name,
+              country: dest.country,
+              repository: _galleryRepository,
+              entries: _galleryEntries,
+              onEntriesChanged: (entries) {
+                if (mounted) setState(() => _galleryEntries = entries);
+              },
+            ),
             // The legacy renders the transport
             // connections after the gallery.
             FlightRoutesSection(
@@ -503,16 +592,19 @@ class _DestinationPageState extends State<DestinationPage> {
               destination: dest,
               onOpenDestination: (destination) {
                 widget.onOpenDestination?.call(destination.name);
-                Navigator.of(context).push(MaterialPageRoute(
-                  settings:
-                      RouteSettings(name: 'destination/${destination.name}'),
-                  builder: (_) => DestinationPage(
-                    repository: widget.repository,
-                    destination: destination,
-                    onChanged: widget.onChanged,
-                    onOpenDestination: widget.onOpenDestination,
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    settings: RouteSettings(
+                      name: 'destination/${destination.name}',
+                    ),
+                    builder: (_) => DestinationPage(
+                      repository: widget.repository,
+                      destination: destination,
+                      onChanged: widget.onChanged,
+                      onOpenDestination: widget.onOpenDestination,
+                    ),
                   ),
-                ));
+                );
               },
             ),
           ],
@@ -529,9 +621,22 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 20, bottom: 8),
-      child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 20, bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        title,
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+          color: scheme.onPrimaryContainer,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
     );
   }
 }
@@ -591,8 +696,10 @@ class _FoodSection extends StatelessWidget {
               children: [
                 Text('Spiciness', style: theme.textTheme.labelLarge),
                 const SizedBox(height: 2),
-                Text(profile.foodSpicinessText,
-                    style: theme.textTheme.bodyMedium),
+                Text(
+                  profile.foodSpicinessText,
+                  style: theme.textTheme.bodyMedium,
+                ),
               ],
             ),
             const SizedBox(width: 40),
@@ -601,26 +708,24 @@ class _FoodSection extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Main dishes (in local language)',
-                        style: theme.textTheme.labelLarge),
+                    Text(
+                      'Main dishes (in local language)',
+                      style: theme.textTheme.labelLarge,
+                    ),
                     const SizedBox(height: 2),
                     Wrap(
                       spacing: 0,
                       runSpacing: 2,
                       children: [
                         for (var i = 0; i < dishes.length; i++) ...[
-                          _DishLink(
-                            dish: dishes[i],
-                            destination: profile.name,
-                          ),
-                          if (i < dishes.length - 1)
-                            const Text(', '),
+                          _DishLink(dish: dishes[i], destination: profile.name),
+                          if (i < dishes.length - 1) const Text(', '),
                         ],
                       ],
                     ),
-                ],
+                  ],
+                ),
               ),
-            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -664,9 +769,11 @@ class _FoodEmpty extends StatelessWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.restaurant_outlined, size: 18),
-            label: Text(populating
-                ? 'Asking DeepSeek…'
-                : 'Populate Food with DeepSeek AI'),
+            label: Text(
+              populating
+                  ? 'Asking DeepSeek…'
+                  : 'Populate Food with DeepSeek AI',
+            ),
             onPressed: onPopulate,
           ),
         ],
@@ -689,8 +796,7 @@ class _DishLink extends StatelessWidget {
       'tbm': 'isch',
       'q': '$dish $destination',
     });
-    final launched =
-        await launchUrl(url, mode: LaunchMode.externalApplication);
+    final launched = await launchUrl(url, mode: LaunchMode.externalApplication);
     if (!launched && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open the image search.')),
@@ -723,16 +829,17 @@ class _LogisticsGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final malaria = profile.malariaRisk;
-    final risky = malaria != null &&
-        malaria.trim().toLowerCase().startsWith('yes');
+    final risky =
+        malaria != null && malaria.trim().toLowerCase().startsWith('yes');
     return Column(
       children: [
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _LogisticsCell(
-                label: 'Visa requirement',
-                value: profile.visaRequirement ?? '—'),
+              label: 'Visa requirement',
+              value: profile.visaRequirement ?? '—',
+            ),
             _LogisticsCell(
               label: 'Malaria risk?',
               value: malaria ?? '—',
@@ -750,10 +857,13 @@ class _LogisticsGrid extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _LogisticsCell(
-                label: 'Rent a car?', value: profile.rentACar ?? '—'),
+              label: 'Rent a car?',
+              value: profile.rentACar ?? '—',
+            ),
             _LogisticsCell(
-                label: 'Recommended stay',
-                value: profile.recommendedStay ?? '—'),
+              label: 'Recommended stay',
+              value: profile.recommendedStay ?? '—',
+            ),
             _LogisticsCell(
               label: 'Population (metro)',
               value: profile.population == null
@@ -769,10 +879,13 @@ class _LogisticsGrid extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _LogisticsCell(
-                    label: 'Ideal time to go', value: profile.idealTime ?? '—'),
+                  label: 'Ideal time to go',
+                  value: profile.idealTime ?? '—',
+                ),
                 _LogisticsCell(
-                    label: 'Avoid going there',
-                    value: profile.avoidTime ?? '—'),
+                  label: 'Avoid going there',
+                  value: profile.avoidTime ?? '—',
+                ),
               ],
             ),
           ),
@@ -856,20 +969,28 @@ class _BestMonths extends StatelessWidget {
                 excludeFromSemantics: true,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 8),
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: _colorFor(month.bucket, theme.colorScheme),
                     borderRadius: BorderRadius.circular(10),
                     border: Border.all(
-                        color: _borderFor(month.bucket, theme.colorScheme)),
+                      color: _borderFor(month.bucket, theme.colorScheme),
+                    ),
                   ),
                   child: Column(
                     children: [
-                      Text(month.abbreviation,
-                          style: theme.textTheme.labelLarge
-                              ?.copyWith(fontWeight: FontWeight.bold)),
-                      Text(_labelFor(month.bucket),
-                          style: theme.textTheme.labelSmall),
+                      Text(
+                        month.abbreviation,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        _labelFor(month.bucket),
+                        style: theme.textTheme.labelSmall,
+                      ),
                     ],
                   ),
                 ),
@@ -881,10 +1002,8 @@ class _BestMonths extends StatelessWidget {
             padding: const EdgeInsets.only(top: 8),
             child: Text(
               [
-                if (profile.idealTime != null)
-                  'Ideal: ${profile.idealTime}',
-                if (profile.avoidTime != null)
-                  'Avoid: ${profile.avoidTime}',
+                if (profile.idealTime != null) 'Ideal: ${profile.idealTime}',
+                if (profile.avoidTime != null) 'Avoid: ${profile.avoidTime}',
               ].join(' · '),
               style: theme.textTheme.bodySmall,
             ),
@@ -960,9 +1079,7 @@ class _ClimateSection extends StatelessWidget {
           children: [
             _KpiCard(
               label: 'Peak high',
-              value: peak == null
-                  ? '—'
-                  : '${peak.$1.round()}°C (${peak.$2})',
+              value: peak == null ? '—' : '${peak.$1.round()}°C (${peak.$2})',
             ),
             _KpiCard(
               label: 'Wettest month',
@@ -976,14 +1093,14 @@ class _ClimateSection extends StatelessWidget {
               value: averageAqi == null
                   ? '—'
                   : '${averageAqi.round()} ('
-                      '${DestinationProfile.aqiBand(averageAqi)})',
+                        '${DestinationProfile.aqiBand(averageAqi)})',
             ),
             _KpiCard(
               label: 'IQAir rank',
               value: profile.iqairRank == null
                   ? 'not in ranking'
                   : '#${_formatRank(profile.iqairRank!)}'
-                      '${profile.iqairPm25 == null ? '' : ' (${profile.iqairPm25!.toStringAsFixed(1)} µg/m³)'}',
+                        '${profile.iqairPm25 == null ? '' : ' (${profile.iqairPm25!.toStringAsFixed(1)} µg/m³)'}',
             ),
             _KpiCard(
               label: 'Best months',
@@ -995,8 +1112,10 @@ class _ClimateSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 16),
-        Text('Monthly temperature & rainfall',
-            style: theme.textTheme.titleSmall),
+        Text(
+          'Monthly temperature & rainfall',
+          style: theme.textTheme.titleSmall,
+        ),
         const SizedBox(height: 8),
         ClimateChart(data: climate),
         const SizedBox(height: 16),
@@ -1050,8 +1169,10 @@ class _KpiCard extends StatelessWidget {
               const SizedBox(height: 4),
               Text(
                 value,
-                style: theme.textTheme.titleSmall
-                    ?.copyWith(color: color, fontWeight: FontWeight.bold),
+                style: theme.textTheme.titleSmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -1061,100 +1182,82 @@ class _KpiCard extends StatelessWidget {
   }
 }
 
-/// The destination's identity: name, where it is, and
-/// the facts that identify it at a glance.
-///
-/// On the desktop the legacy page leads with a banner
-/// photo read from `Pictures/` (a panoramic crop); this
-/// header loads the same photo with `PhotoRepository`
-/// and overlays the name on it. When there is no photo
-/// -- on the phone, or a machine without the folder --
-/// the header leads with typography and colour instead:
-/// a large name, the country and continent, and the
-/// chips below.
-class _DestinationHeader extends StatefulWidget {
+/// The destination identity: curated desktop art wins, then the first
+/// credited Unsplash gallery entry, then typography.
+class _DestinationHeader extends StatelessWidget {
   final Destination destination;
   final DestinationProfile profile;
-  final String? picturesDir;
+  final String? bannerPath;
+  final List<GalleryEntry> galleryEntries;
 
   const _DestinationHeader({
     required this.destination,
     required this.profile,
-    this.picturesDir,
+    required this.bannerPath,
+    required this.galleryEntries,
   });
-
-  @override
-  State<_DestinationHeader> createState() => _DestinationHeaderState();
-}
-
-class _DestinationHeaderState extends State<_DestinationHeader> {
-  String? _bannerPath;
-
-  Destination get _destination => widget.destination;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadBanner();
-  }
-
-  /// The banner is a per-machine folder the app cannot
-  /// assume exists; a missing folder or photo is a normal
-  /// state (the header falls back to typography), never a
-  /// crash.
-  Future<void> _loadBanner() async {
-    final dir =
-        widget.picturesDir ?? (await TursoConfig.load()).picturesDir;
-    if (dir.trim().isEmpty) return;
-    final file = await PhotoRepository(dir).findBanner(
-      _destination.name,
-      _destination.name,
-    );
-    if (mounted && file != null) {
-      setState(() => _bannerPath = file.path);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final location = [
-      if (_destination.country != null && _destination.country!.isNotEmpty)
-        _destination.country!,
-      if (_destination.continent != null &&
-          _destination.continent!.isNotEmpty)
-        _destination.continent!,
+      if (destination.country != null && destination.country!.isNotEmpty)
+        destination.country!,
     ].join(' · ');
-    final bannerPath = _bannerPath;
+    GalleryEntry? galleryPhoto;
+    if (bannerPath == null) {
+      for (final entry in galleryEntries) {
+        if (entry.hasCredit &&
+            (entry.hasRemoteImage || entry.imagePath.isNotEmpty)) {
+          galleryPhoto = entry;
+          break;
+        }
+      }
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (bannerPath != null)
           _BannerPhoto(
-              path: bannerPath,
-              name: _destination.name,
-              location: location)
+            path: bannerPath!,
+            name: destination.name,
+            location: location,
+          )
+        else if (galleryPhoto != null)
+          _GalleryHeroPhoto(
+            entry: galleryPhoto,
+            name: destination.name,
+            location: location,
+          )
         else
-          Text(_destination.name, style: theme.textTheme.headlineSmall),
-        if (bannerPath == null && location.isNotEmpty) ...[
+          Text(destination.name, style: theme.textTheme.headlineSmall),
+        if (bannerPath == null &&
+            galleryPhoto == null &&
+            location.isNotEmpty) ...[
           const SizedBox(height: 2),
-          Text(location, style: theme.textTheme.titleSmall?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          )),
+          Text(
+            location,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
         ],
         const SizedBox(height: 8),
-        // Only what is NOT editable below: the reviews chip.
-        // Visited / favourite / researched / prio live in the
-        // interactive chip row under the header — the passive
-        // copies here said everything twice.
+        // Visited, favourite, researched and priority are editable below.
         Wrap(
           spacing: 6,
           runSpacing: 6,
           children: [
-            if (widget.profile.reviewsCount != null)
+            if (profile.reviewsCount != null)
               _HeaderChip(
-                  icon: Icons.reviews_outlined,
-                  label: '${widget.profile.reviewsCount}/10 reviews'),
+                icon: Icons.reviews_outlined,
+                label: '${profile.reviewsCount}/10 reviews',
+              ),
+            if (destination.prio != null)
+              _HeaderChip(
+                icon: Icons.priority_high_outlined,
+                label: 'Prio ${destination.prio}',
+              ),
           ],
         ),
       ],
@@ -1222,15 +1325,17 @@ class _BannerPhoto extends StatelessWidget {
                   children: [
                     Text(
                       name,
-                      style: theme.textTheme.headlineSmall
-                          ?.copyWith(color: Colors.white),
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        color: Colors.white,
+                      ),
                     ),
                     if (location.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
                         location,
-                        style: theme.textTheme.titleSmall
-                            ?.copyWith(color: Colors.white70),
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: Colors.white70,
+                        ),
                       ),
                     ],
                   ],
@@ -1242,6 +1347,160 @@ class _BannerPhoto extends StatelessWidget {
       ),
     );
   }
+}
+
+class _GalleryHeroPhoto extends StatelessWidget {
+  final GalleryEntry entry;
+  final String name;
+  final String location;
+
+  const _GalleryHeroPhoto({
+    required this.entry,
+    required this.name,
+    required this.location,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final image = entry.hasRemoteImage
+        ? Image.network(
+            entry.imageUrl,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stack) =>
+                ColoredBox(color: theme.colorScheme.surfaceContainerHighest),
+          )
+        : Image.file(
+            File(entry.imagePath),
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stack) =>
+                ColoredBox(color: theme.colorScheme.surfaceContainerHighest),
+          );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: SizedBox(
+            height: 200,
+            width: double.infinity,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                image,
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Colors.transparent, Color(0x99000000)],
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: 12,
+                  child: IgnorePointer(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          name,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
+                        if (location.isNotEmpty)
+                          Text(
+                            location,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: Colors.white70,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        _PhotoAttribution(entry: entry),
+      ],
+    );
+  }
+}
+
+class _PhotoAttribution extends StatelessWidget {
+  final GalleryEntry entry;
+
+  const _PhotoAttribution({required this.entry});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodySmall;
+    if (entry.isUnsplash) {
+      final photographerUrl = entry.photographerUrl;
+      final sourceUrl = entry.photoPageUrl.isNotEmpty
+          ? entry.photoPageUrl
+          : entry.sourceUrl.isNotEmpty
+          ? entry.sourceUrl
+          : 'https://unsplash.com';
+      return Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text('Photo by ', style: style),
+          if (photographerUrl.isNotEmpty)
+            _PhotoTextLink(entry.caption, photographerUrl, style: style)
+          else
+            Text(entry.caption, style: style),
+          Text(' on ', style: style),
+          _PhotoTextLink('Unsplash', sourceUrl, style: style),
+        ],
+      );
+    }
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Text(
+          entry.caption.isEmpty ? entry.source : entry.caption,
+          style: style,
+        ),
+        if (entry.sourceUrl.isNotEmpty) ...[
+          const SizedBox(width: 6),
+          _PhotoTextLink(entry.source, entry.sourceUrl, style: style),
+        ],
+      ],
+    );
+  }
+}
+
+class _PhotoTextLink extends StatelessWidget {
+  final String label;
+  final String url;
+  final TextStyle? style;
+
+  const _PhotoTextLink(this.label, this.url, {this.style});
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: () async {
+      final uri = Uri.tryParse(url);
+      if (uri != null && uri.scheme == 'https') {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    },
+    child: Text(
+      label,
+      style: style?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+        decoration: TextDecoration.underline,
+      ),
+    ),
+  );
 }
 
 /// An empty note with an icon: "no data" is information,
@@ -1260,10 +1519,12 @@ class _EmptyNote extends StatelessWidget {
         Icon(icon, size: 18, color: theme.colorScheme.onSurfaceVariant),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(text,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              )),
+          child: Text(
+            text,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
         ),
       ],
     );
@@ -1324,16 +1585,21 @@ class _StatusBanner extends StatelessWidget {
         padding: const EdgeInsets.all(12),
         child: Row(
           children: [
-            Icon(Icons.info_outline, color: theme.colorScheme.onTertiaryContainer),
+            Icon(
+              Icons.info_outline,
+              color: theme.colorScheme.onTertiaryContainer,
+            ),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(status,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        color: theme.colorScheme.onTertiaryContainer,
-                      )),
+                  Text(
+                    status,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: theme.colorScheme.onTertiaryContainer,
+                    ),
+                  ),
                   const SizedBox(height: 2),
                   Text(
                     'The details below are incomplete until this destination '
@@ -1352,9 +1618,9 @@ class _StatusBanner extends StatelessWidget {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.auto_awesome_outlined, size: 18),
-                      label: Text(populating
-                          ? 'Asking DeepSeek…'
-                          : 'Populate with AI'),
+                      label: Text(
+                        populating ? 'Asking DeepSeek…' : 'Populate with AI',
+                      ),
                       onPressed: onPopulate,
                     ),
                   ],
@@ -1381,6 +1647,18 @@ class _FactGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     final facts = <(IconData, String, String?, Color)>[
       (
+        Icons.public_outlined,
+        'Population',
+        _populationLabel(profile.population),
+        accentPopulation,
+      ),
+      (
+        Icons.hotel_outlined,
+        'Recommended stay',
+        profile.recommendedStay,
+        const Color(0xFF009688),
+      ),
+      (
         Icons.shield_outlined,
         'Safety',
         destination.safetyRating?.toStringAsFixed(1),
@@ -1402,16 +1680,6 @@ class _FactGrid extends StatelessWidget {
             : '${destination.flightTimeFra!.toStringAsFixed(1)} h',
         accentFlight,
       ),
-      (
-        Icons.public_outlined,
-        'Population',
-        _populationLabel(profile.population),
-        accentPopulation,
-      ),
-      // The reviews count stays in the header chip (it used
-      // to render twice), and the "Stay" prose is a line
-      // under the grid — a sentence inside a stat card
-      // truncated itself into nonsense.
     ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1420,60 +1688,65 @@ class _FactGrid extends StatelessWidget {
         // the left, value over label on the right. The old
         // vertical cards stacked icon / number / label and
         // burned ~100 px of height on alignment padding.
-        LayoutBuilder(builder: (context, constraints) {
-          final wide = constraints.maxWidth >= 560;
-          return Column(
-            children: [
-              Row(
-                children: [
-                  for (var i = 0; i < (wide ? 4 : 2); i++)
-                    if (i < facts.length) ...[
-                      if (i > 0 && wide) const SizedBox(width: 8),
-                      Expanded(
-                          child: _StatTile(
-                              icon: facts[i].$1,
-                              label: facts[i].$2,
-                              value: facts[i].$3,
-                              color: facts[i].$4)),
-                    ],
-                ],
-              ),
-              if (!wide && facts.length > 2) ...[
-                const SizedBox(height: 8),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final wide = constraints.maxWidth >= 560;
+            return Column(
+              children: [
                 Row(
                   children: [
-                    for (var i = 2; i < facts.length; i++) ...[
-                      if (i > 2) const SizedBox(width: 8),
-                      Expanded(
+                    for (var i = 0; i < (wide ? 5 : 2); i++)
+                      if (i < facts.length) ...[
+                        if (i > 0 && wide) const SizedBox(width: 8),
+                        Expanded(
                           child: _StatTile(
-                              icon: facts[i].$1,
-                              label: facts[i].$2,
-                              value: facts[i].$3,
-                              color: facts[i].$4)),
-                    ],
+                            icon: facts[i].$1,
+                            label: facts[i].$2,
+                            value: facts[i].$3,
+                            color: facts[i].$4,
+                          ),
+                        ),
+                      ],
                   ],
                 ),
-              ],
-            ],
-          );
-        }),
-        if (profile.recommendedStay != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Row(
-              children: [
-                Icon(Icons.hotel_outlined,
-                    size: 14, color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    'Recommended stay: ${profile.recommendedStay}',
-                    style: Theme.of(context).textTheme.bodySmall,
+                if (!wide && facts.length > 2) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      for (var i = 2; i < 4 && i < facts.length; i++) ...[
+                        if (i > 2) const SizedBox(width: 8),
+                        Expanded(
+                          child: _StatTile(
+                            icon: facts[i].$1,
+                            label: facts[i].$2,
+                            value: facts[i].$3,
+                            color: facts[i].$4,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      for (var i = 4; i < facts.length; i++) ...[
+                        if (i > 4) const SizedBox(width: 8),
+                        Expanded(
+                          child: _StatTile(
+                            icon: facts[i].$1,
+                            label: facts[i].$2,
+                            value: facts[i].$3,
+                            color: facts[i].$4,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
               ],
-            ),
-          ),
+            );
+          },
+        ),
       ],
     );
   }
@@ -1562,25 +1835,21 @@ class _StatTile extends StatelessWidget {
   }
 }
 
-/// The photo gallery: the cached photos the
-/// legacy app populated under `Pictures/`,
-/// shown as a wrap of images with their
-/// captions. The photos load from disk, so
-/// the section stays empty until the cache
-/// is read; a destination with no cache
-/// shows nothing, the same "no data" the
-/// legacy treats a missing gallery as.
-///
-/// The per-photo replace button the legacy
-/// offers is not ported yet — the grid is
-/// read-only for now.
+/// User-initiated Unsplash gallery search and per-image replacement. Cache
+/// reads never trigger network requests; legacy Pictures entries remain visible.
 class _GallerySection extends StatefulWidget {
   final String destinationName;
-  final String? picturesDir;
+  final String? country;
+  final GalleryRepository? repository;
+  final List<GalleryEntry> entries;
+  final ValueChanged<List<GalleryEntry>>? onEntriesChanged;
 
   const _GallerySection({
     required this.destinationName,
-    this.picturesDir,
+    required this.country,
+    required this.repository,
+    required this.entries,
+    this.onEntriesChanged,
   });
 
   @override
@@ -1588,83 +1857,272 @@ class _GallerySection extends StatefulWidget {
 }
 
 class _GallerySectionState extends State<_GallerySection> {
-  List<GalleryEntry>? _entries;
+  late List<GalleryEntry> _entries;
+  final Set<int> _replacing = {};
+  var _loading = true;
+  var _fetching = false;
+  var _nextPage = 1;
+  String? _error;
 
   @override
   void initState() {
     super.initState();
+    _entries = widget.entries;
     _load();
   }
 
-  /// The gallery is a per-machine cache the
-  /// app cannot assume exists; a missing
-  /// folder or cache is a normal state (the
-  /// section stays empty), never a crash.
-  Future<void> _load() async {
-    final dir =
-        widget.picturesDir ?? (await TursoConfig.load()).picturesDir;
-    if (dir.trim().isEmpty) return;
-    final entries =
-        await GalleryRepository(dir).load(widget.destinationName);
-    if (mounted && entries != null && entries.isNotEmpty) {
-      setState(() => _entries = entries);
+  @override
+  void didUpdateWidget(covariant _GallerySection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.repository != widget.repository) {
+      _entries = widget.entries;
+      _load();
+    } else if (oldWidget.entries != widget.entries) {
+      _entries = widget.entries;
     }
   }
+
+  Future<void> _load() async {
+    final repository = widget.repository;
+    if (repository == null) {
+      setState(() => _loading = true);
+      return;
+    }
+    setState(() => _loading = true);
+    try {
+      final entries = await repository.load(widget.destinationName) ?? const [];
+      if (!mounted) return;
+      setState(() {
+        _entries = entries;
+        _loading = false;
+      });
+      widget.onEntriesChanged?.call(entries);
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<List<GalleryEntry>> _searchNextPage() async {
+    final repository = widget.repository;
+    if (repository == null) {
+      throw const PhotoSearchException('Photo search is unavailable.');
+    }
+    final page = _nextPage++;
+    final country = widget.country?.trim() ?? '';
+    final query = country.isEmpty
+        ? widget.destinationName
+        : '${widget.destinationName}, $country';
+    return repository.search(query, page: page);
+  }
+
+  Future<void> _findPhotos() async {
+    if (_fetching || widget.repository == null) return;
+    setState(() {
+      _fetching = true;
+      _error = null;
+    });
+    try {
+      final results = await _searchNextPage();
+      final existing = _entries.map(_entryKey).toSet();
+      final additions = results
+          .where((entry) => existing.add(_entryKey(entry)))
+          .toList();
+      if (additions.isEmpty) {
+        throw const PhotoSearchException(
+          'Unsplash returned no new photos for this destination.',
+        );
+      }
+      await _saveEntries([..._entries, ...additions]);
+    } catch (error) {
+      if (mounted) setState(() => _error = _photoError(error));
+    } finally {
+      if (mounted) setState(() => _fetching = false);
+    }
+  }
+
+  Future<void> _replacePhoto(int index) async {
+    if (_replacing.contains(index) || index >= _entries.length) return;
+    setState(() {
+      _replacing.add(index);
+      _error = null;
+    });
+    try {
+      final results = await _searchNextPage();
+      final current = _entries[index];
+      final otherEntries = {
+        for (var i = 0; i < _entries.length; i++)
+          if (i != index) _entryKey(_entries[i]),
+      };
+      GalleryEntry? replacement;
+      for (final candidate in results) {
+        if (_entryKey(candidate) != _entryKey(current) &&
+            !otherEntries.contains(_entryKey(candidate))) {
+          replacement = candidate;
+          break;
+        }
+      }
+      if (replacement == null) {
+        throw const PhotoSearchException(
+          'No different Unsplash photo was found. Try again later.',
+        );
+      }
+      final updated = [..._entries];
+      updated[index] = replacement;
+      await _saveEntries(updated);
+    } catch (error) {
+      if (mounted) setState(() => _error = _photoError(error));
+    } finally {
+      if (mounted) setState(() => _replacing.remove(index));
+    }
+  }
+
+  Future<void> _saveEntries(List<GalleryEntry> entries) async {
+    if (mounted) {
+      setState(() => _entries = entries);
+      widget.onEntriesChanged?.call(entries);
+    }
+    try {
+      final repository = widget.repository;
+      if (repository == null || repository.cache == null) {
+        throw const FileSystemException('Photo metadata cache unavailable');
+      }
+      await repository.save(widget.destinationName, entries);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _error =
+              'Photos found, but the metadata cache could not be saved.',
+        );
+      }
+    }
+  }
+
+  String _entryKey(GalleryEntry entry) => entry.photoId.isNotEmpty
+      ? entry.photoId
+      : entry.imageUrl.isNotEmpty
+      ? entry.imageUrl
+      : entry.imagePath;
+
+  String _photoError(Object error) => error is PhotoSearchException
+      ? error.message
+      : 'Photo search failed. Check the connection and try again.';
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final entries = _entries;
-    if (entries == null || entries.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    final repository = widget.repository;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const _SectionTitle('Gallery'),
         Text(
-          'Photos from DuckDuckGo & Unsplash.',
+          'Unsplash photos load only when you ask. Existing DuckDuckGo cache entries are shown as before.',
           style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final entry in entries)
-              SizedBox(
-                width: 220,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    AspectRatio(
-                      aspectRatio: 3 / 2,
-                      child: Image.file(
-                        File(entry.imagePath),
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stack) =>
-                            ColoredBox(
-                          color: theme
-                              .colorScheme.surfaceContainerHighest,
-                        ),
-                      ),
-                    ),
-                    if (entry.caption.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Text(
-                          entry.caption,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.bodySmall,
-                        ),
-                      ),
-                  ],
-                ),
+        if (_loading || repository == null)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                Icon(Icons.photo_library_outlined, size: 16),
+                SizedBox(width: 8),
+                Text('Loading photo cache…'),
+              ],
+            ),
+          )
+        else if (_entries.isEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text('No cached photos yet. Find photos from Unsplash.'),
+          ),
+        if (!_loading && repository != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _fetching ? null : _findPhotos,
+              icon: _fetching
+                  ? Icon(Icons.photo_library_outlined, size: 16)
+                  : const Icon(Icons.search),
+              label: Text(
+                _entries.isEmpty ? 'Find photos' : 'Find more photos',
               ),
-          ],
-        ),
+            ),
+          ),
+        if (_error != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              _error!,
+              style: TextStyle(color: theme.colorScheme.error),
+            ),
+          ),
+        if (_entries.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              for (var index = 0; index < _entries.length; index++)
+                SizedBox(
+                  width: 220,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AspectRatio(
+                        aspectRatio: 3 / 2,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: _galleryImage(_entries[index], theme),
+                        ),
+                      ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _PhotoAttribution(entry: _entries[index]),
+                          ),
+                          IconButton(
+                            tooltip: 'Replace photo',
+                            visualDensity: VisualDensity.compact,
+                            onPressed: _replacing.contains(index)
+                                ? null
+                                : () => _replacePhoto(index),
+                            icon: _replacing.contains(index)
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.refresh),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ],
       ],
+    );
+  }
+
+  Widget _galleryImage(GalleryEntry entry, ThemeData theme) {
+    if (entry.hasRemoteImage) {
+      return Image.network(
+        entry.imageUrl,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stack) =>
+            ColoredBox(color: theme.colorScheme.surfaceContainerHighest),
+      );
+    }
+    return Image.file(
+      File(entry.imagePath),
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stack) =>
+          ColoredBox(color: theme.colorScheme.surfaceContainerHighest),
     );
   }
 }

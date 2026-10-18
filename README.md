@@ -32,11 +32,13 @@ Android: `flutter build apk --release` and install
 `build\app\outputs\flutter-apk\app-release.apk`.
 
 Credentials come from `mobile/assets/turso_config.json` (git-ignored;
-template `turso_config.example.json`, values from
-`.streamlit/secrets.toml`). Without it the app runs unconfigured and
-explains itself instead of crashing — a fresh clone needs the file copied
-in before data shows up. An optional `flightaware_api_key` adds the
-FlightAware AeroAPI fallback for the finder (see "Known limitations").
+template `mobile/assets/turso_config.example.json`). Without it the app runs
+unconfigured and explains itself instead of crashing — a fresh clone needs the
+file copied in before data shows up. Optional settings include
+`flightaware_api_key` for the Finder fallback, `flight_routes_url` and
+`flight_routes_token` for the shared departure cache, and `unsplash_access_key`
+for the user-triggered destination gallery. The FlightRoutes token should be
+read-only; never reuse the destinations or airline-benefits database token.
 
 The app runs in **light mode** — the map tiles and charts are imagery
 designed for light surfaces. Four tabs, each with its own colour icon
@@ -60,8 +62,9 @@ the rail pill, not a drained icon):
   1 night). Out/back days come from a travel-period picker: pick the
   period, then freely select/deselect each candidate day (period ± 1) and
   give each a time bound ("departs after 14:00" / "lands before 09:00" /
-  any time). One expandable row per city; result cities open their
-  destination page and return to intact results.
+  any time). One expandable row per city; options show stacked, labeled
+  outbound/return legs and stay length without repeating mapped airport codes.
+  Result cities open their destination page and return to intact results.
 * **Map** — the month choropleth on English-labelled tiles: pick a month
   and every country fills with its best condition, country borders and a
   hover name tooltip, wheel/pinch zoom and drag panning, a fly-to search,
@@ -137,13 +140,43 @@ contract and fallback ladder: `TURSO_PLAN.md`. The reader lives in
 `mobile/lib/data/benefits_repository.dart` (the archived
 `archive/streamlit/benefits_turso.py` is the Python original).
 
+## Shared FlightRoutes departure boards
+
+The Finder can read exact-day, full-day **schema-v2** departure boards from the
+FlightRoutes Turso database (`schedule_boards`). FlightRoutes remains the
+producer, using its existing AeroDataBox/AirLabs setup and sync; Travel Planner
+uses separate `flight_routes_url` and `flight_routes_token` settings. Use a
+read-only token; do not reuse the destinations or benefits database credentials.
+The current ignored local config was populated from FlightRoutes at the user's
+request, but its token scope is unverified—replace it with a read-only token
+before distributing the app. No credentials are committed.
+
+The reader uses a complete FRA board for outbound flights and can supplement
+suspicious return-arrival windows from complete candidate-airport boards. It
+rejects legacy v1, partial AirLabs, corrupt, and timestamp-incomplete rows; those
+fall back to the existing Fraport/FlightAware path. It applies flight-day rules
+using airport-local timestamps and duration caps using UTC timestamps. Travel
+Planner does not write its filtered Fraport windows as full airport-day boards.
+If shared DB settings are missing or unreadable, the Finder still uses its
+existing providers and reports the read problem.
+
+## Destination photos
+
+The detail gallery offers user-initiated Unsplash search and per-photo replace.
+It hotlinks the official API's image URLs and stores attributed metadata only in
+per-device app storage. Set `unsplash_access_key` in the git-ignored config to
+enable searches; opening destinations does not search. Existing legacy
+`Pictures/` gallery caches remain readable. The top banner prefers a matching
+curated desktop photo, then a credited gallery photo, then the typography
+fallback. See `PROPOSAL_PICTURES.md` for provider/rights and cache details.
+
 ## Tests, analyze, build
 
 ```powershell
 cd mobile
 & "C:\src\flutter\bin\flutter.bat" pub get
 & "C:\src\flutter\bin\flutter.bat" analyze   # must be clean
-& "C:\src\flutter\bin\flutter.bat" test      # 417 tests, no credentials
+& "C:\src\flutter\bin\flutter.bat" test      # 430 tests, no credentials
 ```
 
 The suite uses a scripted Turso fake (`mobile/test/fake_turso.dart`) — no

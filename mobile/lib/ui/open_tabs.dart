@@ -19,6 +19,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../data/catalogue_match.dart';
 import '../models/destination.dart';
 
 /// Records a destination as "opened" (the shell persists
@@ -86,15 +87,14 @@ class _TabRow extends StatelessWidget {
         child: Row(
           children: [
             const SizedBox(width: 8),
-            Icon(
-              destination?.favourite ?? false
-                  ? Icons.star
-                  : Icons.location_on_outlined,
-              size: 15,
-              color: destination?.favourite ?? false
-                  ? const Color(0xFFF6B100)
-                  : scheme.onSurfaceVariant,
-            ),
+            (destination?.favourite ?? false)
+                ? const Icon(Icons.star, size: 15, color: Color(0xFFF6B100))
+                : (destination?.country != null &&
+                        CountryNames.flagFor(destination!.country!).isNotEmpty)
+                    ? Text(CountryNames.flagFor(destination!.country!),
+                        style: const TextStyle(fontSize: 14))
+                    : Icon(Icons.location_on_outlined,
+                        size: 15, color: scheme.onSurfaceVariant),
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(6, 7, 2, 7),
@@ -173,12 +173,7 @@ class OpenTabsSheet extends StatelessWidget {
                           ),
                     ),
                   ),
-                  if (tabs.isNotEmpty)
-                    TextButton(
-                      onPressed: onCloseAll,
-                      child: const Text('Close all'),
-                    ),
-                  IconButton(
+                   IconButton(
                     icon: const Icon(Icons.close, size: 18),
                     tooltip: 'Close',
                     onPressed: () => Navigator.of(context).pop(),

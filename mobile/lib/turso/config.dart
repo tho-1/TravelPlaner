@@ -25,6 +25,8 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../data/app_settings.dart' show configOverrides;
+
 class TursoConfig {
   final String url;
   final String token;
@@ -33,6 +35,11 @@ class TursoConfig {
   /// seed list covers its absence).
   final String benefitsUrl;
   final String benefitsToken;
+
+  /// Read-only FlightRoutes schedule database credentials. The main app's
+  /// destinations/trips database and airline-benefits database are separate.
+  final String flightRoutesUrl;
+  final String flightRoutesToken;
 
   /// The local IQAir ranking snapshot
   /// (`iqair_cache/world_cities.json`), read with
@@ -75,6 +82,10 @@ class TursoConfig {
   /// its documents directory.
   final String stateDir;
 
+  /// The optional Unsplash API access key used only after a user requests
+  /// gallery photos. Opening a destination never makes a search request.
+  final String unsplashAccessKey;
+
   /// The FlightAware AeroAPI key (report j, 2026-10-16).
   /// Optional: with it, the finder fills board windows that
   /// failed or look incomplete from the licensed API;
@@ -88,11 +99,14 @@ class TursoConfig {
     required this.token,
     this.benefitsUrl = '',
     this.benefitsToken = '',
+    this.flightRoutesUrl = '',
+    this.flightRoutesToken = '',
     this.iqairSnapshot = '',
     this.picturesDir = '',
     this.flightRoutesCache = '',
     this.geocodeCache = '',
     this.stateDir = '',
+    this.unsplashAccessKey = '',
     this.flightAwareApiKey = '',
   });
 
@@ -100,6 +114,9 @@ class TursoConfig {
 
   bool get benefitsConfigured =>
       benefitsUrl.trim().isNotEmpty && benefitsToken.trim().isNotEmpty;
+
+  bool get flightRoutesConfigured =>
+      flightRoutesUrl.trim().isNotEmpty && flightRoutesToken.trim().isNotEmpty;
 
   bool get fallbackFlightsConfigured =>
       flightAwareApiKey.trim().isNotEmpty;
@@ -121,10 +138,15 @@ class TursoConfig {
       final map = jsonDecode(text) as Map<String, dynamic>;
       return TursoConfig(
         url: (map['url'] as String?)?.trim() ?? defaultUrl,
-        token: (map['token'] as String?)?.trim() ?? '',
+        token: _effective(map, 'token', configOverrides?.tursoToken),
         benefitsUrl: (map['benefits_url'] as String?)?.trim() ??
             defaultBenefitsUrl,
-        benefitsToken: (map['benefits_token'] as String?)?.trim() ?? '',
+        benefitsToken: _effective(
+            map, 'benefits_token', configOverrides?.benefitsToken),
+        flightRoutesUrl:
+            (map['flight_routes_url'] as String?)?.trim() ?? '',
+        flightRoutesToken:
+            (map['flight_routes_token'] as String?)?.trim() ?? '',
         iqairSnapshot:
             (map['iqair_snapshot'] as String?)?.trim() ?? '',
         picturesDir:
@@ -134,8 +156,10 @@ class TursoConfig {
         geocodeCache:
             (map['geocode_cache'] as String?)?.trim() ?? '',
         stateDir: (map['state_dir'] as String?)?.trim() ?? '',
-        flightAwareApiKey:
-            (map['flightaware_api_key'] as String?)?.trim() ?? '',
+        unsplashAccessKey:
+            (map['unsplash_access_key'] as String?)?.trim() ?? '',
+        flightAwareApiKey: _effective(
+            map, 'flightaware_api_key', configOverrides?.flightAwareApiKey),
       );
     } catch (_) {
       return const TursoConfig(
@@ -144,5 +168,16 @@ class TursoConfig {
         benefitsUrl: defaultBenefitsUrl,
       );
     }
+  }
+
+  /// The bundled value, replaced by the per-device override
+  /// when one is present (and non-empty).
+  static String _effective(
+    Map<String, dynamic> map,
+    String key,
+    String? override,
+  ) {
+    if (override != null && override.trim().isNotEmpty) return override;
+    return (map[key] as String?)?.trim() ?? '';
   }
 }

@@ -19,6 +19,7 @@ import '../models/weekend_match.dart';
 import 'benefits_repository.dart';
 import 'catalogue_match.dart';
 import 'error_log.dart';
+import 'flight_routes_schedule_repository.dart';
 
 /// IATA code -> "City|Country" records from the generated
 /// `assets/airports.json` (built from the Python
@@ -130,7 +131,12 @@ class WeekendRepository {
   /// about healthy ones.
   final FlightBoardProvider? fallback;
 
-  WeekendRepository(this.provider, {this.fallback});
+  /// Exact-day FlightRoutes boards supplement the live
+  /// provider; only full v2 boards with timezone-aware
+  /// timestamps are usable here.
+  final FlightRoutesScheduleRepository? sharedSchedules;
+
+  WeekendRepository(this.provider, {this.fallback, this.sharedSchedules});
 
   /// Run one board query per selected day and match them.
   Future<WeekendSearch> search(
@@ -157,6 +163,14 @@ class WeekendRepository {
     for (final (rule, kind, sink) in queries) {
       final (since, until) = rule.fetchWindow();
       final windowLabel = '${_isoDate(rule.day)} $kind';
+      if (kind == 'departures') {
+        final cached = await _cachedOutbound(rule, windowLabel, notes);
+        if (cached != null) {
+          sink.addAll(cached.flights);
+          windowCounts[windowLabel] = cached.windowCount;
+          continue;
+        }
+      }
       try {
         final result = await provider.fetch(rule.day, kind,
             since: since, until: until);
@@ -210,6 +224,15 @@ class WeekendRepository {
     for (final label in suspicious) {
       final query = windowsByKey[label];
       if (query == null) continue;
+      if (query.$2 == 'arrivals') {
+        await _fillFromSharedScheduleCache(
+          rule: query.$1,
+          outbound: outbound,
+          sink: query.$3,
+          windowLabel: label,
+          notes: notes,
+        );
+      }
       await _fillFromFallback(
         rule: query.$1,
         kind: query.$2,
@@ -225,13 +248,8 @@ class WeekendRepository {
     // mistaken for "nothing flies".
     final cap = options.maxLegDuration;
     if (cap != null) {
-      final droppedOut = _dropOverlong(outbound, cap);
-      final droppedBack = _dropOverlong(returns, cap);
-      if (droppedOut + droppedBack > 0) {
-        notes.add(
-            'Dropped ${droppedOut + droppedBack} flight(s) longer than '
-            '${cap.inMinutes / 60} h per leg.');
-      }
+      _dropOverlong(outbound, cap);
+      _dropOverlong(returns, cap);
     }
 
     final report = findWeekends(
@@ -269,6 +287,148 @@ class WeekendRepository {
       }
     }
     return (report: withNotes(report, notes), benefits: benefits);
+  }
+
+  Future<({List<Flight> flights, int windowCount})?> _cachedOutbound(
+    TravelDay rule,
+    String windowLabel,
+    List<String> notes,
+  ) async {
+    final shared = sharedSchedules;
+    if (shared == null) return null;
+    final day = _isoDate(rule.day);
+    final read = await shared.loadBoards(day: day, airports: const ['FRA']);
+    if (!read.ok) {
+      final note = '$windowLabel: the shared schedule read failed '
+          '(${read.problems.join('; ')}); trying the live board.';
+      notes.add(note);
+      ErrorLog.instance.record('weekend-finder', note);
+      return null;
+    }
+    FlightRoutesScheduleBoard? board;
+    for (final candidate in read.boards) {
+      if (candidate.airport == 'FRA' && candidate.day == day) {
+        board = candidate;
+        break;
+      }
+    }
+    if (board == null) return null;
+    final flights = _flightsFromBoard(board);
+    if (flights == null) return null;
+    final windowCount = flights.where((flight) {
+      final minutes = flight.departure.hour * 60 + flight.departure.minute;
+      return rule.accepts(minutes);
+    }).length;
+    notes.add('$windowLabel: using the exact-day ${board.source} schedule '
+        'shared by FlightRoutes (fetched ${board.obtainedAt}).');
+    return (flights: flights, windowCount: windowCount);
+  }
+
+  Future<void> _fillFromSharedScheduleCache({
+    required TravelDay rule,
+    required List<Flight> outbound,
+    required List<Flight> sink,
+    required String windowLabel,
+    required List<String> notes,
+  }) async {
+    final shared = sharedSchedules;
+    if (shared == null) return;
+    final airports = <String>{
+      for (final flight in outbound)
+        if (RegExp(r'^[A-Z0-9]{3,4}$')
+            .hasMatch(flight.destination.trim().toUpperCase()))
+          flight.destination.trim().toUpperCase(),
+    };
+    if (airports.isEmpty) return;
+
+    final previousDay = DateTime(rule.day.year, rule.day.month, rule.day.day - 1);
+    final candidates = <Flight>[];
+    for (final day in [_isoDate(rule.day), _isoDate(previousDay)]) {
+      final read = await shared.loadBoards(day: day, airports: airports);
+      if (!read.ok) {
+        final note = '$windowLabel: the shared schedule read failed '
+            '(${read.problems.join('; ')}); keeping the live-board results.';
+        notes.add(note);
+        ErrorLog.instance.record('weekend-finder', note);
+        return;
+      }
+      for (final board in read.boards) {
+        if (!airports.contains(board.airport)) continue;
+        final flights = _flightsFromBoard(board);
+        if (flights == null) continue;
+        for (final flight in flights) {
+          if (flight.destination != 'FRA' ||
+              flight.arrival.year != rule.day.year ||
+              flight.arrival.month != rule.day.month ||
+              flight.arrival.day != rule.day.day) {
+            continue;
+          }
+          final minutes = flight.arrival.hour * 60 + flight.arrival.minute;
+          if (rule.accepts(minutes)) candidates.add(flight);
+        }
+      }
+    }
+
+    final seen = {
+      for (final flight in sink)
+        '${flight.flightNo}|${flight.departure.toIso8601String()}',
+    };
+    var added = 0;
+    for (final flight in candidates) {
+      final key = '${flight.flightNo}|${flight.departure.toIso8601String()}';
+      if (seen.add(key)) {
+        sink.add(flight);
+        added++;
+      }
+    }
+    if (added > 0) {
+      final note = '$windowLabel: added $added return flight(s) from exact-day '
+          'full boards in the shared FlightRoutes cache; the live-board '
+          'results remain included.';
+      notes.add(note);
+      ErrorLog.instance.record('weekend-finder', note, details: {
+        'window': windowLabel,
+        'added': added,
+        'airports': airports.length,
+      });
+    }
+  }
+
+  static List<Flight>? _flightsFromBoard(
+    FlightRoutesScheduleBoard board,
+  ) {
+    if (!board.isCompleteV2) return null;
+    final flights = <Flight>[];
+    for (final record in board.flights) {
+      if (!record.hasTimestamps ||
+          record.destIata.isEmpty ||
+          record.flightNo.isEmpty) {
+        return null;
+      }
+      final departure = wallClock(record.depAtLocal);
+      final arrival = wallClock(record.arrAtLocal);
+      final departureUtc = DateTime.tryParse(record.depAtUtc);
+      final arrivalUtc = DateTime.tryParse(record.arrAtUtc);
+      if (departure == null ||
+          arrival == null ||
+          departureUtc == null ||
+          arrivalUtc == null) {
+        return null;
+      }
+      final duration = arrivalUtc.toUtc().difference(departureUtc.toUtc());
+      if (duration.isNegative) return null;
+      flights.add(Flight(
+        flightNo: record.flightNo,
+        airline: record.carrierIata,
+        airlineName: record.carrierName,
+        origin: board.airport,
+        destination: record.destIata,
+        departure: departure,
+        arrival: arrival,
+        duration: duration,
+      ));
+    }
+    return flights;
   }
 
   /// The "this data looks wrong" note for one window, or
@@ -355,8 +515,8 @@ class WeekendRepository {
   /// this filter.
   static int _dropOverlong(List<Flight> flights, Duration cap) {
     final before = flights.length;
-    flights.retainWhere(
-        (flight) => flight.arrival.difference(flight.departure) <= cap);
+    flights.retainWhere((flight) =>
+        (flight.duration ?? flight.arrival.difference(flight.departure)) <= cap);
     return before - flights.length;
   }
 

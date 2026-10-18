@@ -17,6 +17,9 @@ import 'package:http/testing.dart';
 import 'package:travel_planner/data/ai_config.dart';
 import 'package:travel_planner/data/deepseek_client.dart';
 import 'package:travel_planner/data/destination_repository.dart';
+import 'package:travel_planner/data/gallery_cache.dart';
+import 'package:travel_planner/data/gallery_repository.dart';
+import 'package:travel_planner/data/gallery_search.dart';
 import 'package:travel_planner/models/destination.dart';
 import 'package:travel_planner/ui/destination_page.dart';
 import 'package:travel_planner/turso/config.dart';
@@ -68,11 +71,53 @@ Destination alexandria() {
 }
 
 DestinationRepository repositoryFor(FakeTurso fake) => DestinationRepository(
-      TursoClient(
-        const TursoConfig(url: 'https://db.example.turso.io', token: 'token'),
-        httpClient: fake.client(),
-      ),
-    );
+  TursoClient(
+    const TursoConfig(url: 'https://db.example.turso.io', token: 'token'),
+    httpClient: fake.client(),
+  ),
+);
+
+class _FakePhotoSearchProvider implements PhotoSearchProvider {
+  final String imagePath;
+  final List<int> requestedPages = [];
+  final List<String> requestedQueries = [];
+
+  _FakePhotoSearchProvider(this.imagePath);
+
+  @override
+  Future<List<GalleryEntry>> search(
+    String query, {
+    int page = 1,
+    int perPage = 8,
+  }) async {
+    requestedPages.add(page);
+    requestedQueries.add(query);
+    final ids = page == 1 ? ['first', 'second'] : ['replacement'];
+    return [
+      for (final id in ids)
+        GalleryEntry(
+          imagePath: imagePath,
+          photoId: id,
+          caption: 'Photographer $id',
+          source: 'Unsplash',
+          photographerUrl: 'https://unsplash.com/@photo-maker',
+          photoPageUrl: 'https://unsplash.com/photos/$id',
+        ),
+    ];
+  }
+}
+
+class _MemoryGalleryCache implements GalleryMetadataCache {
+  List<GalleryEntry>? entries;
+
+  @override
+  Future<List<GalleryEntry>?> load(String destinationName) async => entries;
+
+  @override
+  Future<void> save(String destinationName, List<GalleryEntry> value) async {
+    entries = List.of(value);
+  }
+}
 
 /// Walk down the ListView until `finder` is built and fully
 /// visible, then return.
@@ -90,17 +135,22 @@ Future<void> scrollTo(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
-  testWidgets('the profile sections render the workbook data',
-      (tester) async {
-    final repository =
-        repositoryFor(FakeTurso((_) => okRows(['destination'], [])));
+  testWidgets('the profile sections render the workbook data', (tester) async {
+    final repository = repositoryFor(
+      FakeTurso((_) => okRows(['destination'], [])),
+    );
 
-    await tester.pumpWidget(MaterialApp(
-      home: DestinationPage(repository: repository, destination: alexandria()),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DestinationPage(
+          repository: repository,
+          destination: alexandria(),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('Egypt · Africa'), findsOneWidget);
+    expect(find.text('Egypt'), findsOneWidget);
 
     await scrollTo(tester, find.text('Overview'));
     expect(find.text('A unique blend of history and sea.'), findsOneWidget);
@@ -113,9 +163,11 @@ void main() {
     // chip heights in the row).
     expect(find.text('Ideal'), findsWidgets);
     expect(
-      find.byWidgetPredicate((widget) =>
-          widget is Tooltip &&
-          (widget.message ?? '').contains('very hot and humid')),
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Tooltip &&
+            (widget.message ?? '').contains('very hot and humid'),
+      ),
       findsOneWidget,
     );
 
@@ -129,26 +181,36 @@ void main() {
   });
 
   testWidgets('a destination with no climate data says so', (tester) async {
-    final repository =
-        repositoryFor(FakeTurso((_) => okRows(['destination'], [])));
+    final repository = repositoryFor(
+      FakeTurso((_) => okRows(['destination'], [])),
+    );
     final empty = Destination(
       core: {'destination': 'Nowhere', 'country': 'Atlantis'},
       columns: const [],
     );
-    await tester.pumpWidget(MaterialApp(
-      home: DestinationPage(repository: repository, destination: empty),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DestinationPage(repository: repository, destination: empty),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    await scrollTo(tester, find.text('No overview text was found in the workbook.'));
+    await scrollTo(
+      tester,
+      find.text('No overview text was found in the workbook.'),
+    );
     expect(
-        find.text('No overview text was found in the workbook.'), findsOneWidget);
+      find.text('No overview text was found in the workbook.'),
+      findsOneWidget,
+    );
     await scrollTo(tester, find.textContaining('being populated'));
     expect(find.textContaining('being populated'), findsOneWidget);
   });
 
-  testWidgets('a comment write updates the field and stays quiet',
-      (tester) async {    // updateField is a read-modify-write: one SELECT for the
+  testWidgets('a comment write updates the field and stays quiet', (
+    tester,
+  ) async {
+    // updateField is a read-modify-write: one SELECT for the
     // read, one upsert for the write; the fake answers both.
     var selects = 0;
     var writes = 0;
@@ -156,23 +218,39 @@ void main() {
       final statement = statements.single;
       if (statement.startsWith('SELECT')) {
         selects++;
-        return okRows(['destination', 'data'], [
-          ['Alexandria', jsonEncode([['Comment', 'old']])],
-        ]);
+        return okRows(
+          ['destination', 'data'],
+          [
+            [
+              'Alexandria',
+              jsonEncode([
+                ['Comment', 'old'],
+              ]),
+            ],
+          ],
+        );
       }
       writes++;
       return okEmpty();
     });
     final repository = repositoryFor(fake);
 
-    await tester.pumpWidget(MaterialApp(
-      home: DestinationPage(repository: repository, destination: alexandria()),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DestinationPage(
+          repository: repository,
+          destination: alexandria(),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await scrollTo(tester, find.byType(TextField));
     await tester.enterText(find.byType(TextField), 'Beach day');
-    await scrollTo(tester, find.widgetWithIcon(FilledButton, Icons.save_outlined));
+    await scrollTo(
+      tester,
+      find.widgetWithIcon(FilledButton, Icons.save_outlined),
+    );
     await tester.tap(find.widgetWithIcon(FilledButton, Icons.save_outlined));
     await tester.pumpAndSettle();
 
@@ -185,42 +263,68 @@ void main() {
     expect(find.text('Nothing written'), findsNothing);
   });
 
-  testWidgets('a failed write pops the problem instead of staying silent',
-      (tester) async {
+  testWidgets('a failed write pops the problem instead of staying silent', (
+    tester,
+  ) async {
     final fake = FakeTurso((statements) {
       final statement = statements.single;
       if (statement.startsWith('SELECT')) {
-        return okRows(['destination', 'data'], [
-          ['Alexandria', jsonEncode([['Comment', 'old']])],
-        ]);
+        return okRows(
+          ['destination', 'data'],
+          [
+            [
+              'Alexandria',
+              jsonEncode([
+                ['Comment', 'old'],
+              ]),
+            ],
+          ],
+        );
       }
       return pipelineError('read-only database');
     });
     final repository = repositoryFor(fake);
 
-    await tester.pumpWidget(MaterialApp(
-      home: DestinationPage(repository: repository, destination: alexandria()),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DestinationPage(
+          repository: repository,
+          destination: alexandria(),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await scrollTo(tester, find.byType(TextField));
     await tester.enterText(find.byType(TextField), 'Beach day');
-    await scrollTo(tester, find.widgetWithIcon(FilledButton, Icons.save_outlined));
+    await scrollTo(
+      tester,
+      find.widgetWithIcon(FilledButton, Icons.save_outlined),
+    );
     await tester.tap(find.widgetWithIcon(FilledButton, Icons.save_outlined));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Nothing written'), findsOneWidget);
   });
 
-  testWidgets('the AI populate applies the profile and reports it',
-      (tester) async {
+  testWidgets('the AI populate applies the profile and reports it', (
+    tester,
+  ) async {
     var writes = 0;
     final fake = FakeTurso((statements) {
       final statement = statements.single;
       if (statement.startsWith('SELECT')) {
-        return okRows(['destination', 'data'], [
-          ['Alexandria', jsonEncode([['Data Status', 'PLACEHOLDER']])],
-        ]);
+        return okRows(
+          ['destination', 'data'],
+          [
+            [
+              'Alexandria',
+              jsonEncode([
+                ['Data Status', 'PLACEHOLDER'],
+              ]),
+            ],
+          ],
+        );
       }
       writes++;
       return okEmpty();
@@ -228,45 +332,54 @@ void main() {
     final repository = repositoryFor(fake);
     final client = DeepSeekClient(
       const AiConfig(apiKey: 'sk-test', model: 'deepseek-chat'),
-      httpClient: MockClient((request) async => http.Response(
-            jsonEncode({
-              'choices': [
-                {
-                  'message': {
-                    'content': jsonEncode({
-                      'destination': 'Alexandria',
-                      'country': 'Egypt',
-                      'continent': 'Africa',
-                      'profile': {
-                        'why_to_go': 'A hill town of towers.',
-                        'month_ratings': {'March': 'ideal'},
-                      },
-                    }),
-                  },
+      httpClient: MockClient(
+        (request) async => http.Response(
+          jsonEncode({
+            'choices': [
+              {
+                'message': {
+                  'content': jsonEncode({
+                    'destination': 'Alexandria',
+                    'country': 'Egypt',
+                    'continent': 'Africa',
+                    'profile': {
+                      'why_to_go': 'A hill town of towers.',
+                      'month_ratings': {'March': 'ideal'},
+                    },
+                  }),
                 },
-              ],
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          )),
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        ),
+      ),
     );
 
-    await tester.pumpWidget(MaterialApp(
-      home: DestinationPage(
-        repository: repository,
-        destination:
-            alexandria().withField('data_status', 'PLACEHOLDER - UPDATE REQUIRED'),
-        aiClient: client,
-        aiConfig: const AiConfig(apiKey: 'sk-test'),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DestinationPage(
+          repository: repository,
+          destination: alexandria().withField(
+            'data_status',
+            'PLACEHOLDER - UPDATE REQUIRED',
+          ),
+          aiClient: client,
+          aiConfig: const AiConfig(apiKey: 'sk-test'),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     // The banner button runs the whole pipeline.
-    await scrollTo(tester,
-        find.widgetWithIcon(OutlinedButton, Icons.auto_awesome_outlined));
+    await scrollTo(
+      tester,
+      find.widgetWithIcon(OutlinedButton, Icons.auto_awesome_outlined),
+    );
     await tester.tap(
-        find.widgetWithIcon(OutlinedButton, Icons.auto_awesome_outlined));
+      find.widgetWithIcon(OutlinedButton, Icons.auto_awesome_outlined),
+    );
     await tester.pumpAndSettle();
 
     expect(writes, greaterThanOrEqualTo(1));
@@ -280,53 +393,76 @@ void main() {
     final fake = FakeTurso((statements) {
       final statement = statements.single;
       if (statement.startsWith('SELECT')) {
-        return okRows(['destination', 'data'], [
-          ['Alexandria', jsonEncode(const [])],
-        ]);
+        return okRows(
+          ['destination', 'data'],
+          [
+            ['Alexandria', jsonEncode(const [])],
+          ],
+        );
       }
       writes++;
       return okEmpty();
     });
     final repository = repositoryFor(fake);
 
-    await tester.pumpWidget(MaterialApp(
-      home: DestinationPage(repository: repository, destination: alexandria()),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DestinationPage(
+          repository: repository,
+          destination: alexandria(),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    // The chip is a toggle: off -> on writes the flag.
-    await scrollTo(tester, find.widgetWithText(FilterChip, 'Researched'));
-    await tester.tap(find.widgetWithText(FilterChip, 'Researched'));
+    // The researched flag is an icon toggle: off -> on writes the flag.
+    await scrollTo(tester, find.byTooltip('Researched'));
+    await tester.tap(find.byTooltip('Researched'));
     await tester.pumpAndSettle();
 
     expect(writes, greaterThanOrEqualTo(1));
     expect(find.text('Saved'), findsNothing);
   });
 
-  testWidgets('clearing a comment asks before deleting it',
-      (tester) async {
+  testWidgets('clearing a comment asks before deleting it', (tester) async {
     var writes = 0;
     final fake = FakeTurso((statements) {
       final statement = statements.single;
       if (statement.startsWith('SELECT')) {
-        return okRows(['destination', 'data'], [
-          ['Alexandria', jsonEncode([['Comment', 'old']])],
-        ]);
+        return okRows(
+          ['destination', 'data'],
+          [
+            [
+              'Alexandria',
+              jsonEncode([
+                ['Comment', 'old'],
+              ]),
+            ],
+          ],
+        );
       }
       writes++;
       return okEmpty();
     });
     final repository = repositoryFor(fake);
 
-    await tester.pumpWidget(MaterialApp(
-      home: DestinationPage(repository: repository, destination: alexandria()),
-    ));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DestinationPage(
+          repository: repository,
+          destination: alexandria(),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     // Empty the box and save: the legacy asks first.
     await scrollTo(tester, find.byType(TextField));
     await tester.enterText(find.byType(TextField), '');
-    await scrollTo(tester, find.widgetWithIcon(FilledButton, Icons.save_outlined));
+    await scrollTo(
+      tester,
+      find.widgetWithIcon(FilledButton, Icons.save_outlined),
+    );
     await tester.tap(find.widgetWithIcon(FilledButton, Icons.save_outlined));
     await tester.pumpAndSettle();
 
@@ -349,28 +485,156 @@ void main() {
     expect(find.text('Saved'), findsNothing);
   });
 
-  testWidgets('no matching photo keeps the typography header',
-      (tester) async {
+  testWidgets('no matching photo keeps the typography header', (tester) async {
     final dir = Directory.systemTemp.createTempSync('banner_empty_');
     addTearDown(() {
       if (dir.existsSync()) dir.deleteSync(recursive: true);
     });
-    final repository =
-        repositoryFor(FakeTurso((_) => okRows(['destination'], [])));
+    final repository = repositoryFor(
+      FakeTurso((_) => okRows(['destination'], [])),
+    );
 
-    await tester.pumpWidget(MaterialApp(
-      home: DestinationPage(
-        repository: repository,
-        destination: alexandria(),
-        picturesDir: dir.path,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DestinationPage(
+          repository: repository,
+          destination: alexandria(),
+          picturesDir: dir.path,
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     // No photo decoded anywhere (the map's tile images fail
     // on purpose in tests and never decode); the header
     // falls back to the typography.
     expect(find.byType(RawImage), findsNothing);
-    expect(find.text('Egypt · Africa'), findsOneWidget);
+    expect(find.text('Egypt'), findsOneWidget);
+  });
+
+  testWidgets('credited cached photos fill the hero after curated photos', (
+    tester,
+  ) async {
+    final dir = Directory.systemTemp.createTempSync('gallery_hero_');
+    addTearDown(() {
+      if (dir.existsSync()) dir.deleteSync(recursive: true);
+    });
+    final entry = GalleryEntry(
+      imageUrl: 'https://images.unsplash.com/hero-photo',
+      photoId: 'hero-photo',
+      caption: 'Hero Photographer',
+      source: 'Unsplash',
+      photographerUrl: 'https://unsplash.com/@hero',
+      photoPageUrl: 'https://unsplash.com/photos/hero',
+    );
+    final cache = _MemoryGalleryCache()..entries = [entry];
+    final provider = _FakePhotoSearchProvider('missing-gallery-fixture.png');
+    final repository = repositoryFor(
+      FakeTurso((_) => okRows(['destination'], [])),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DestinationPage(
+          key: const ValueKey('gallery-hero'),
+          repository: repository,
+          destination: alexandria(),
+          photoSearchProvider: provider,
+          galleryCache: cache,
+        ),
+      ),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Hero Photographer'), findsOneWidget);
+    expect(provider.requestedPages, isEmpty);
+
+    File('${dir.path}/Alexandria_1.jpg').writeAsBytesSync([0, 1, 2]);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DestinationPage(
+          key: const ValueKey('curated-hero'),
+          repository: repository,
+          destination: alexandria(),
+          picturesDir: dir.path,
+          bannerPhotoPath: '${dir.path}/Alexandria_1.jpg',
+          photoSearchProvider: provider,
+          galleryCache: cache,
+        ),
+      ),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    await tester.pumpAndSettle();
+    final curatedBanner = find.byWidgetPredicate(
+      (widget) =>
+          widget is Image &&
+          widget.image is FileImage &&
+          (widget.image as FileImage).file.path.endsWith('Alexandria_1.jpg'),
+    );
+    for (
+      var attempt = 0;
+      attempt < 20 && curatedBanner.evaluate().isEmpty;
+      attempt++
+    ) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    await tester.pumpAndSettle();
+    expect(curatedBanner, findsOneWidget);
+    expect(provider.requestedPages, isEmpty);
+  });
+
+  testWidgets('gallery search and per-image replacement are user initiated', (
+    tester,
+  ) async {
+    final provider = _FakePhotoSearchProvider('missing-gallery-fixture.png');
+    final cache = _MemoryGalleryCache();
+    final repository = repositoryFor(
+      FakeTurso((_) => okRows(['destination'], [])),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DestinationPage(
+          repository: repository,
+          destination: alexandria(),
+          picturesDir: '',
+          photoSearchProvider: provider,
+          galleryCache: cache,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(provider.requestedPages, isEmpty);
+
+    await scrollTo(tester, find.text('Gallery'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('Find photos'),
+      findsOneWidget,
+      reason: tester
+          .widgetList<Text>(find.byType(Text))
+          .map((text) => text.data)
+          .join(' | '),
+    );
+    await tester.tap(find.text('Find photos'));
+    await tester.pumpAndSettle();
+    expect(provider.requestedPages, [1]);
+    expect(provider.requestedQueries, ['Alexandria, Egypt']);
+    expect(find.text('Photographer first'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Replace photo').first);
+    await tester.pumpAndSettle();
+    expect(provider.requestedPages, [1, 2]);
+    expect(find.text('Photographer replacement'), findsOneWidget);
+    expect(find.text('Photographer first'), findsNothing);
+
+    final saved = await cache.load('Alexandria');
+    expect(saved, hasLength(2));
+    expect(saved!.first.photoId, 'replacement');
+    expect(saved.first.caption, 'Photographer replacement');
   });
 }

@@ -40,6 +40,7 @@ class Flight {
   final DateTime departure;
   final DateTime arrival;
   final String terminal;
+  final Duration? duration;
 
   const Flight({
     required this.flightNo,
@@ -51,6 +52,7 @@ class Flight {
     required this.departure,
     required this.arrival,
     this.terminal = '',
+    this.duration,
   });
 
   /// Benefits and the airline filter follow the operator;

@@ -51,6 +51,32 @@ class CountryNames {
   static String nameFor(String code) =>
       _names[code.trim().toUpperCase()] ?? '';
 
+  static List<String> get allNames =>
+      (_names.values.toList()..sort());
+
+  /// Reverse lookup: country name -> ISO code (case-insensitive).
+  static String codeForName(String name) {
+    final needle = name.trim().toLowerCase();
+    for (final entry in _names.entries) {
+      if (entry.value.trim().toLowerCase() == needle) {
+        return entry.key;
+      }
+    }
+    return '';
+  }
+
+  /// Flag emoji for an ISO country code (or country name).
+  static String flagFor(String country) {
+    final code = country.trim().length == 2
+        ? country.trim().toUpperCase()
+        : codeForName(country);
+    if (code.length != 2) return '';
+    final a = code.codeUnitAt(0);
+    final b = code.codeUnitAt(1);
+    if (a < 0x41 || a > 0x5A || b < 0x41 || b > 0x5A) return '';
+    return String.fromCharCodes([0x1F1E6 + (a - 0x41), 0x1F1E6 + (b - 0x41)]);
+  }
+
   /// Test seam.
   static void installForTesting(Map<String, String> names) {
     _names

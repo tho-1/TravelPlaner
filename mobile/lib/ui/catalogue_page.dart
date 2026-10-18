@@ -102,7 +102,6 @@ class _CataloguePageState extends State<CataloguePage> {
   Future<void> _addDestination() async {
     final nameController = TextEditingController();
     final countryController = TextEditingController(text: 'Unknown');
-    final continentController = TextEditingController(text: 'Unknown');
     final ai = await AiConfig.load();
     if (!mounted) return;
 
@@ -118,13 +117,24 @@ class _CataloguePageState extends State<CataloguePage> {
               autofocus: true,
               decoration: const InputDecoration(labelText: 'Name'),
             ),
-            TextField(
-              controller: countryController,
-              decoration: const InputDecoration(labelText: 'Country'),
-            ),
-            TextField(
-              controller: continentController,
-              decoration: const InputDecoration(labelText: 'Continent'),
+            Autocomplete<String>(
+              optionsBuilder: (value) {
+                final q = value.text.trim().toLowerCase();
+                final names = CountryNames.allNames;
+                if (q.isEmpty) return names;
+                return names
+                    .where((n) => n.toLowerCase().contains(q));
+              },
+              onSelected: (value) => countryController.text = value,
+              fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+                controller.text = countryController.text;
+                controller.addListener(() => countryController.text = controller.text);
+                return TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  decoration: const InputDecoration(labelText: 'Country'),
+                );
+              },
             ),
           ],
         ),
@@ -159,36 +169,33 @@ class _CataloguePageState extends State<CataloguePage> {
         ));
         return;
       }
-      final country = countryController.text.trim().isEmpty
-          ? 'Unknown'
-          : countryController.text.trim();
-      final continent = continentController.text.trim().isEmpty
-          ? 'Unknown'
-          : continentController.text.trim();
+       final country = countryController.text.trim().isEmpty
+           ? 'Unknown'
+           : countryController.text.trim();
+       final continent = 'Unknown';
 
-      final added = await widget.repository.addDestination(
-        name: name,
-        country: country,
-        continent: continent,
-      );
-      if (!mounted) return;
-      if (!added) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text(
-              'Could not add the destination -- it exists already, '
-              'or the write failed.'),
-        ));
-        return;
-      }
-      _reload();
-      if (withAi) {
-        await _populate(name, country, continent);
-      }
-    } finally {
-      nameController.dispose();
-      countryController.dispose();
-      continentController.dispose();
-    }
+       final added = await widget.repository.addDestination(
+         name: name,
+         country: country,
+         continent: continent,
+       );
+       if (!mounted) return;
+       if (!added) {
+         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+           content: Text(
+               'Could not add the destination -- it exists already, '
+               'or the write failed.'),
+         ));
+         return;
+       }
+       _reload();
+       if (withAi) {
+         await _populate(name, country, continent);
+       }
+     } finally {
+       nameController.dispose();
+       countryController.dispose();
+     }
   }
 
   /// The second half of the add: ask DeepSeek and write the

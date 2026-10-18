@@ -22,6 +22,7 @@ import '../data/benefits_repository.dart';
 import '../data/catalogue_match.dart';
 import '../data/destination_repository.dart';
 import '../data/error_log.dart';
+import '../data/flight_routes_schedule_repository.dart';
 import '../data/weekend_repository.dart';
 import '../models/airline_benefits.dart';
 import '../models/destination.dart';
@@ -163,7 +164,14 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
       _searching = true;
       _result = null;
     });
-    final repository = WeekendRepository(_liveBoard, fallback: widget.fallback);
+    final sharedSchedules = widget.board == null
+        ? await FlightRoutesScheduleRepository.fromAssets()
+        : null;
+    final repository = WeekendRepository(
+      _liveBoard,
+      fallback: widget.fallback,
+      sharedSchedules: sharedSchedules,
+    );
     final hours = double.tryParse(_maxLegHours.text.trim());
     try {
       final search = await repository.search(
@@ -234,7 +242,11 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                 FilledButton.icon(
                   icon: const Icon(Icons.travel_explore_outlined),
                   label: const Text('Find weekends'),
-                  onPressed: _loadingBenefits ? null : _find,
+                  onPressed: (_loadingBenefits ||
+                          _outRules.isEmpty ||
+                          _backRules.isEmpty)
+                      ? null
+                      : _find,
                 ),
                 if (result != null) ...[
                   const SizedBox(height: 16),
@@ -295,7 +307,7 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                 ),
                 ChoiceChip(
                   label: Text('Next weekend '
-                      '(${_isoShort(weekendPeriod(nextFriday(DateTime.now(), minimumDaysAhead: 7)).start)})'),
+                      '(${_isoShort(weekendPeriod(fridayOf(DateTime.now()).add(const Duration(days: 7))).start)})'),
                   selected: _preset == 'next',
                   onSelected: (_) => setState(() => _applyPreset('next')),
                 ),
@@ -326,7 +338,7 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   void _applyPreset(String which) {
     final friday = which == 'this'
         ? fridayOf(DateTime.now())
-        : nextFriday(DateTime.now(), minimumDaysAhead: 7);
+        : fridayOf(DateTime.now()).add(const Duration(days: 7));
     final period = weekendPeriod(friday);
     final plan = legacyWeekendPlan(friday, label: period.describe());
     setState(() {
@@ -493,8 +505,10 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
             Text('any time', style: theme.textTheme.labelSmall)
           else
             ActionChip(
-              label: Text(rule.describe(outbound: outbound),
-                  style: theme.textTheme.labelSmall),
+              label: Text(
+                '${(rule.minutes! ~/ 60).toString().padLeft(2, '0')}:'
+                '${(rule.minutes! % 60).toString().padLeft(2, '0')}',
+                style: theme.textTheme.labelSmall),
               onPressed: () =>
                   _pickRuleTime(rule, outbound: outbound, rules: rules),
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -512,7 +526,9 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
       context: context,
       initialTime:
           TimeOfDay(hour: current ~/ 60, minute: current % 60),
-      helpText: outbound ? 'Departs (that day)' : 'Lands (that day)',
+      helpText: outbound
+          ? (rule.bound == DayBound.before ? 'Depart before:' : 'Depart after:')
+          : (rule.bound == DayBound.before ? 'Land before:' : 'Land after:'),
     );
     if (picked == null) return;
     setState(() {
@@ -526,7 +542,7 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final name = weekdays[day.weekday - 1];
     final date = '${day.day}.${day.month}.';
-    return isFlexDay(_period, day) ? '$name $date flex' : '$name $date';
+    return '$name $date';
   }
 
   /// The flight source and the flight filters: the live
@@ -723,45 +739,12 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
               ],
             ),
           ),
-        if (describeRule(report.outboundRejectedAirlines).isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: Text(describeRule(report.outboundRejectedAirlines),
-                style: theme.textTheme.bodySmall),
-          ),
-        const SizedBox(height: 12),
-        if (report.cityCount == 0)
-          _emptyState(report)
-        else
-          _cityList(report),
-        if (report.oneWayOnly.isNotEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('One leg only (${report.oneWayOnly.length})',
-                      style: theme.textTheme.titleSmall),
-                  Text(
-                    'A qualifying outbound or return, but not both. Useful '
-                    'if you would travel another way for one of the legs.',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 8),
-                  for (final city in report.oneWayOnly)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        '${city.label} (${city.airports.toList()..sort()})',
-                        style: theme.textTheme.bodyMedium,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        if (unmatched.isNotEmpty)
+         const SizedBox(height: 12),
+         if (report.cityCount == 0)
+           _emptyState(report)
+         else
+           _cityList(report),
+         if (unmatched.isNotEmpty)
           Card(
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -846,10 +829,47 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
           style: theme.textTheme.bodySmall,
         ),
         const SizedBox(height: 6),
-        for (final city in cities)
-          _cityRow(city, index.match(city.city, city.country)),
-      ],
-    );
+         ..._groupedCityRows(cities, index),
+       ],
+     );
+  }
+
+  /// Groups result cities into "on your list" vs "not on your list"
+  /// with subheadings (report f, 2026-10-17).
+  List<Widget> _groupedCityRows(List<CityResult> cities, CatalogueIndex index) {
+    final theme = Theme.of(context);
+    final known = <CityResult>[];
+    final unknown = <CityResult>[];
+    for (final city in cities) {
+      if (index.match(city.city, city.country) != null) {
+        known.add(city);
+      } else {
+        unknown.add(city);
+      }
+    }
+    final out = <Widget>[];
+    if (known.isNotEmpty) {
+      out.add(Padding(
+        padding: const EdgeInsets.only(top: 4, bottom: 2),
+        child: Text('Destination on your list:',
+            style: theme.textTheme.labelLarge),
+      ));
+      for (final city in known) {
+        out.add(_cityRow(city, index.match(city.city, city.country)));
+      }
+    }
+    if (unknown.isNotEmpty) {
+      out.add(Padding(
+        padding: const EdgeInsets.only(top: 8, bottom: 2),
+        child: Text('Destinations not on your list:',
+            style: theme.textTheme.labelLarge
+                ?.copyWith(fontWeight: FontWeight.bold)),
+      ));
+      for (final city in unknown) {
+        out.add(_cityRow(city, index.match(city.city, city.country)));
+      }
+    }
+    return out;
   }
 
   /// One result: the summary line (city, options, earliest
@@ -883,20 +903,27 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                   Icon(expanded ? Icons.expand_less : Icons.expand_more,
                       size: 20, color: theme.colorScheme.primary),
                   const SizedBox(width: 6),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(city.label,
-                            style: theme.textTheme.titleSmall,
-                            overflow: TextOverflow.ellipsis),
-                        Text(
-                          '${city.count} option${city.count == 1 ? '' : 's'} · '
-                          'earliest out ${_stamp(first.outFlight.departure)} · '
-                          '${first.nights} night${first.nights == 1 ? '' : 's'}',
-                          style: theme.textTheme.bodySmall,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                   Expanded(
+                     child: Column(
+                       crossAxisAlignment: CrossAxisAlignment.start,
+                       children: [
+                         Text('${CountryNames.flagFor(city.country)} ${city.label}',
+                             style: theme.textTheme.titleSmall,
+                             overflow: TextOverflow.ellipsis),
+                         Text(
+                           '${city.count} option${city.count == 1 ? '' : 's'} · '
+                           'earliest out ${_stamp(first.outFlight.departure)} · '
+                           '${first.nights}🛏',
+                           style: theme.textTheme.bodySmall,
+                           overflow: TextOverflow.ellipsis,
+                         ),
+                         if (catalogueName != null)
+                           Text(
+                             _finderFigures(catalogueName),
+                             style: theme.textTheme.labelSmall?.copyWith(
+                                 color: theme.colorScheme.onSurfaceVariant),
+                             overflow: TextOverflow.ellipsis,
+                           ),
                         Text(
                           _airlineList(city.options),
                           style: theme.textTheme.labelSmall?.copyWith(
@@ -923,13 +950,13 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Divider(),
-                  if (catalogueName != null)
-                    Text('in your catalogue as $catalogueName',
-                        style: theme.textTheme.bodySmall),
-                  Text(
-                    '${city.airports.toList()..sort()}',
-                    style: theme.textTheme.bodySmall,
-                  ),
+                  if (catalogueName != null &&
+                      catalogueName.trim().toLowerCase() !=
+                          city.city.trim().toLowerCase())
+                    Text(
+                      'Catalogue name: $catalogueName',
+                      style: theme.textTheme.bodySmall,
+                    ),
                   if (city.unmappedAirports.isNotEmpty)
                     Text(
                       '${city.unmappedAirports.toList()..sort()} could not be '
@@ -945,6 +972,33 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
         ],
       ),
     );
+  }
+
+  String _finderFigures(String catalogueName) {
+    Destination? match;
+    for (final d in _catalogue) {
+      if (d.name == catalogueName) {
+        match = d;
+        break;
+      }
+    }
+    if (match == null) return '';
+    final dest = match;
+    final reviews = dest.column('Reviews');
+    final prio = dest.prio;
+    final pop = dest.column('Population (Metro Area)');
+    final stay = dest.column('Recommended Stay');
+    final parts = <String>[];
+    if (reviews != null) parts.add('⭐$reviews');
+    if (prio != null && '$prio'.trim().isNotEmpty) parts.add('🎯$prio');
+    if (pop != null) {
+      final n = (pop is num) ? pop.toDouble() : double.tryParse('$pop');
+      if (n != null) {
+        parts.add('👥${(n / 1e6).toStringAsFixed(1)}m'.replaceAll('.0m', 'm'));
+      }
+    }
+    if (stay != null && '$stay'.trim().isNotEmpty) parts.add('🛏$stay');
+    return parts.join(' · ');
   }
 
   /// The distinct operating carriers across a city's
@@ -985,46 +1039,72 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   }
 
   Widget _optionTile(TripOption option) {
-    final out = option.outFlight;
-    final back = option.backFlight;
     final theme = Theme.of(context);
+    final stay = option.nights == 1 ? '1 night' : '${option.nights} nights';
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Out', style: theme.textTheme.labelSmall),
-                Text('${out.flightNo} · ${_carrierLabel(out)}',
-                    style: theme.textTheme.bodyMedium),
-                Text(
-                    '${_stamp(out.departure)} → ${_stamp(out.arrival)}'
-                    '${out.terminal.isEmpty ? '' : ' · T${out.terminal}'}',
-                    style: theme.textTheme.bodySmall),
-              ],
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                stay,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Back', style: theme.textTheme.labelSmall),
-                Text('${back.flightNo} · ${_carrierLabel(back)}',
-                    style: theme.textTheme.bodyMedium),
-                Text('${_stamp(back.departure)} → ${_stamp(back.arrival)}',
-                    style: theme.textTheme.bodySmall),
-              ],
-            ),
-          ),
-          Chip(
-            label: Text('${option.nights}n'),
-            visualDensity: VisualDensity.compact,
-          ),
-        ],
+            const SizedBox(height: 4),
+            _flightLeg('Outbound', option.outFlight, Icons.flight_takeoff),
+            const Divider(height: 16),
+            _flightLeg('Return', option.backFlight, Icons.flight_land),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _flightLeg(String label, Flight flight, IconData icon) {
+    final theme = Theme.of(context);
+    final terminal = flight.terminal.isEmpty ? '' : ' · T${flight.terminal}';
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Icon(icon, size: 18, color: theme.colorScheme.primary),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              Text('${flight.flightNo} · ${_carrierLabel(flight)}',
+                  style: theme.textTheme.bodyMedium),
+              Text(
+                '${_stamp(flight.departure)} → ${_stamp(flight.arrival)}$terminal',
+                style: theme.textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

@@ -1,27 +1,35 @@
-/// The monthly temperature & rainfall chart, drawn with a
-/// [CustomPainter].
-///
-/// The legacy dashboard uses a plotly dual-axis chart; this
-/// is its phone-sized equivalent, built without a chart
-/// dependency: per month a band from the low to the high,
-/// the highs and lows connected, and the rainfall as bars
-/// along the bottom on their own scale. Gaps (months with
-/// no data) stay gaps — the chart never invents a value to
-/// keep a line continuous.
-library;
-
 import 'package:flutter/material.dart';
 
 import '../models/destination_profile.dart';
 
-class ClimateChart extends StatelessWidget {
+class ClimateChart extends StatefulWidget {
   final ClimateData data;
 
   const ClimateChart({super.key, required this.data});
 
   @override
+  State<ClimateChart> createState() => _ClimateChartState();
+}
+
+class _ClimateChartState extends State<ClimateChart> {
+  int? _selected;
+
+  @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final data = widget.data;
+    String selectionText = '';
+    if (_selected != null) {
+      final i = _selected!;
+      final high = i < data.highs.length ? data.highs[i] : null;
+      final low = i < data.lows.length ? data.lows[i] : null;
+      final rain = i < data.rainMm.length ? data.rainMm[i] : null;
+      selectionText =
+          '${monthAbbreviations[i]}: '
+          'high ${high?.round() ?? '—'}°C, '
+          'low ${low?.round() ?? '—'}°C, '
+          'rain ${rain?.round() ?? '—'} mm';
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -34,23 +42,43 @@ class ClimateChart extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 8),
-        SizedBox(
-          height: 220,
-          child: CustomPaint(
-            painter: _ClimateChartPainter(
-              highs: data.highs,
-              lows: data.lows,
-              rain: data.rainMm,
-              rainyDays: data.rainyDays,
-              highColor: scheme.error,
-              lowColor: scheme.primary,
-              rainColor: Colors.lightBlue.withValues(alpha: 0.55),
-              axisColor: scheme.outlineVariant,
-              labelColor: scheme.onSurfaceVariant,
-            ),
-            child: const SizedBox.expand(),
-          ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final plotWidth = constraints.maxWidth - 30.0 - 4.0;
+            return GestureDetector(
+              onTapDown: (details) {
+                if (plotWidth <= 0) return;
+                final index =
+                    ((details.localPosition.dx - 30.0) / plotWidth * 12).floor();
+                if (index < 0 || index > 11) return;
+                setState(() => _selected = index);
+              },
+              child: SizedBox(
+                height: 220,
+                child: CustomPaint(
+                  painter: _ClimateChartPainter(
+                    highs: data.highs,
+                    lows: data.lows,
+                    rain: data.rainMm,
+                    rainyDays: data.rainyDays,
+                    highColor: scheme.error,
+                    lowColor: scheme.primary,
+                    rainColor: Colors.lightBlue.withValues(alpha: 0.55),
+                    axisColor: scheme.outlineVariant,
+                    labelColor: scheme.onSurfaceVariant,
+                  ),
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            );
+          },
         ),
+        if (selectionText.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(selectionText,
+                style: Theme.of(context).textTheme.bodySmall),
+          ),
       ],
     );
   }
@@ -315,3 +343,4 @@ bool _sameSeries(List<double?> a, List<double?> b) {
   }
   return true;
 }
+

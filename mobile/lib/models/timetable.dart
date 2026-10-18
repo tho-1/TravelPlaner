@@ -280,7 +280,8 @@ class FraportBoardProvider implements FlightBoardProvider {
       // wall-clock already carries the next day on overnight
       // legs, so a genuinely earlier arrival means the record
       // is wrong — keep the pair usable by pushing it a day.
-      arrival = arrival.add(const Duration(days: 1));
+      arrival = DateTime(arrival.year, arrival.month, arrival.day + 1,
+          arrival.hour, arrival.minute, arrival.second);
     }
     final flightNo = (record['fnr'] ?? '').toString().trim().replaceAll(' ', '');
     return Flight(

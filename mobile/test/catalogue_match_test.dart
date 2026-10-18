@@ -122,4 +122,45 @@ void main() {
           ['Basel', 'Geneva', 'zurich']);
     });
   });
+
+  group('CountryNames.flagFor', () {
+    setUp(() {
+      CountryNames.installForTesting({
+        'GB': 'United Kingdom',
+        'ES': 'Spain',
+        'IN': 'India',
+      });
+    });
+
+    test('returns emoji for a two-letter ISO code', () {
+      expect(CountryNames.flagFor('ES'), '🇪🇸');
+      expect(CountryNames.flagFor('GB'), '🇬🇧');
+    });
+
+    test('resolves a country name to its code', () {
+      expect(CountryNames.flagFor('Spain'), '🇪🇸');
+    });
+
+    test('returns empty for unknown input', () {
+      expect(CountryNames.flagFor(''), '');
+      expect(CountryNames.flagFor('Atlantis'), '');
+    });
+  });
+
+  group('CountryNames.allNames', () {
+    setUp(() {
+      CountryNames.installForTesting({
+        'GB': 'United Kingdom',
+        'ES': 'Spain',
+        'IN': 'India',
+      });
+    });
+
+    test('returns the sorted country names', () {
+      final names = CountryNames.allNames;
+      expect(names, contains('Spain'));
+      expect(names, contains('India'));
+      expect(names, orderedEquals([...names]..sort()));
+    });
+  });
 }

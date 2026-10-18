@@ -62,7 +62,7 @@ class TravelDay {
   /// only how far the board is walked.
   (DateTime, DateTime) fetchWindow() {
     final startOfDay = DateTime(day.year, day.month, day.day);
-    final endOfDay = startOfDay.add(const Duration(days: 1));
+    final endOfDay = _addDays(startOfDay, 1);
     switch (bound) {
       case DayBound.any:
         return (startOfDay, endOfDay);
@@ -152,7 +152,7 @@ class TravelPeriod {
   Iterable<DateTime> get days sync* {
     for (var day = _date(start);
         !day.isAfter(_date(end));
-        day = day.add(const Duration(days: 1))) {
+        day = _addDays(day, 1)) {
       yield day;
     }
   }
@@ -168,9 +168,9 @@ class TravelPeriod {
 /// after** (the flex days -- leave a day early, come back a
 /// day late).
 List<DateTime> candidateDays(TravelPeriod period) => [
-      for (var day = _date(period.start).subtract(const Duration(days: 1));
-          !day.isAfter(_date(period.end).add(const Duration(days: 1)));
-          day = day.add(const Duration(days: 1)))
+      for (var day = _addDays(_date(period.start), -1);
+          !day.isAfter(_addDays(_date(period.end), 1));
+          day = _addDays(day, 1))
         day,
     ];
 
@@ -185,12 +185,12 @@ bool isFlexDay(TravelPeriod period, DateTime day) =>
 DateTime fridayOf(DateTime day) {
   final weekday = day.weekday;
   if (weekday == DateTime.monday) {
-    return _date(day).add(const Duration(days: 4));
+    return _addDays(_date(day), 4);
   }
   if (weekday == DateTime.saturday || weekday == DateTime.sunday) {
-    return _date(day).add(Duration(days: DateTime.friday - weekday));
+    return _addDays(_date(day), DateTime.friday - weekday);
   }
-  return _date(day).add(Duration(days: DateTime.friday - weekday));
+  return _addDays(_date(day), DateTime.friday - weekday);
 }
 
 /// The first Friday at least `minimumDaysAhead` days after
@@ -202,14 +202,14 @@ DateTime nextFriday(DateTime today, {int minimumDaysAhead = 0}) {
   while (ahead < minimumDaysAhead) {
     ahead += 7;
   }
-  return _date(today).add(Duration(days: ahead));
+  return _addDays(_date(today), ahead);
 }
 
 /// The classic weekend period: the Friday through the
 /// Monday ("this weekend" / "next weekend").
 TravelPeriod weekendPeriod(DateTime friday) => TravelPeriod(
       friday,
-      friday.add(const Duration(days: 3)),
+      _addDays(friday, 3),
     );
 
 /// The legacy default plan for a Friday-through-Monday
@@ -218,9 +218,9 @@ TravelPeriod weekendPeriod(DateTime friday) => TravelPeriod(
 /// what the presets preselect -- the rules the finder
 /// shipped with.
 TravelPlan legacyWeekendPlan(DateTime friday, {String label = ''}) {
-  final saturday = friday.add(const Duration(days: 1));
-  final sunday = friday.add(const Duration(days: 2));
-  final monday = friday.add(const Duration(days: 3));
+  final saturday = _addDays(friday, 1);
+  final sunday = _addDays(friday, 2);
+  final monday = _addDays(friday, 3);
   return TravelPlan(
     label: label,
     outDays: [
@@ -248,3 +248,6 @@ TravelPlan periodPlan(TravelPeriod period) {
 }
 
 DateTime _date(DateTime day) => DateTime(day.year, day.month, day.day);
+
+DateTime _addDays(DateTime day, int days) =>
+    DateTime(day.year, day.month, day.day + days);

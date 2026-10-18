@@ -145,16 +145,10 @@ class DestinationMiniMap extends StatelessWidget {
                     filteredOut: true,
                   ),
                 ],
-                countryFills: fills,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                '${coordinate.lat.toStringAsFixed(3)}, '
-                '${coordinate.lon.toStringAsFixed(3)}'
-                '${coordinate.country.isEmpty ? '' : ' · ${coordinate.country}'}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
+               countryFills: fills,
+               ),
+               const SizedBox(height: 6),
+             ],
           );
         });
       },
@@ -1398,13 +1392,25 @@ class _MapBody extends StatelessWidget {
             _FlyToField(
               cities: cities,
               countries: countryNames,
-              onPickCity: (city) {
-                mapController.moveTo(city.latitude, city.longitude, 6);
-                final country = city.country;
-                if (country != null && byCountry.containsKey(country)) {
-                  onCountrySelected(country);
-                }
-              },
+               onPickCity: (city) {
+                  if (city.destination != null && city.repository != null) {
+                    onOpenDestination?.call(city.destination!.name);
+                   Navigator.of(context).push(MaterialPageRoute(
+                     settings: RouteSettings(
+                         name: 'destination/${city.destination!.name}'),
+                     builder: (_) => DestinationPage(
+                       repository: city.repository!,
+                       destination: city.destination!,
+                     ),
+                   ));
+                   return;
+                 }
+                 mapController.moveTo(city.latitude, city.longitude, 6);
+                 final country = city.country;
+                 if (country != null && byCountry.containsKey(country)) {
+                   onCountrySelected(country);
+                 }
+               },
               onPickCountry: (country) {
                 final centre = countryCentre(country, coordinates, cities);
                 if (centre != null) {
@@ -1831,11 +1837,14 @@ class _CountryCityRow extends StatelessWidget {
     // each only when the cell is populated.
     final prio = _prioText(destination.prio);
     final reviews = coerceNumber(destination.column('Reviews'))?.round();
-    final population = _populationText(destination.column('Population (Metro Area)'));
+    final popRaw = coerceNumber(destination.column('Population (Metro Area)'));
+    final population = popRaw == null
+        ? null
+        : '${(popRaw / 1e6).toStringAsFixed(1)}m'.replaceAll('.0m', 'm');
     final details = <String>[
-      if (prio != null) 'Prio: $prio/10',
-      if (reviews != null) 'Reviews: $reviews/10',
-      if (population != null) 'Population: $population',
+      if (prio != null) 'Prio $prio',
+      if (reviews != null) '⭐$reviews',
+      if (population != null) '👥$population',
     ];
     return Card(
       child: ListTile(
@@ -1844,11 +1853,7 @@ class _CountryCityRow extends StatelessWidget {
         title: Text(destination.toBeResearched
             ? '${destination.name} ❓'
             : destination.name),
-        subtitle: Text([
-          '${condition.label} in $month',
-          if (destination.country != null) destination.country!,
-          if (details.isNotEmpty) details.join(' · '),
-        ].join(' · ')),
+        subtitle: Text(details.join(' · ')),
         trailing: const Icon(Icons.chevron_right),
         onTap: () {
           onOpenDestination?.call(destination.name);
@@ -1875,22 +1880,6 @@ String? _prioText(Object? value) {
   if (number == null) return '$value'.trim();
   final rounded = number.round();
   return number == rounded ? '$rounded' : '$number';
-}
-
-/// The legacy city card's population text: an integer with
-/// thousands separators, or the raw text when it is not a
-/// number.
-String? _populationText(Object? value) {
-  if (isBlank(value)) return null;
-  final number = coerceNumber(value);
-  if (number == null) return '$value'.trim();
-  final digits = number.round().toString();
-  final grouped = StringBuffer();
-  for (var i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 == 0) grouped.write(',');
-    grouped.write(digits[i]);
-  }
-  return grouped.toString();
 }
 
 class _LegendDot extends StatelessWidget {

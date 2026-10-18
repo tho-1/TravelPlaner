@@ -46,7 +46,7 @@ cd mobile
 ```powershell
 cd mobile
 & "C:\src\flutter\bin\flutter.bat" analyze   # must be clean
-& "C:\src\flutter\bin\flutter.bat" test      # 417 tests, no credentials needed
+& "C:\src\flutter\bin\flutter.bat" test      # 430 tests, no credentials needed
 ```
 
 CI (`.github/workflows/ci.yml`) runs exactly these two on every push to
@@ -126,6 +126,11 @@ constructor parameters; keep it that way — a test that needs the real
 database is a flake waiting to happen. The app's unconfigured state (no
 `turso_config.json`) is a normal, rendered state, not a crash.
 
+**Solid testing is a requirement** (user, 2026-10-17): every change ships
+with regression tests where feasible, especially the finder (date/DST
+handling, report grouping). A flaky test guarding an invariant is still a
+problem; give it a real budget.
+
 ## 4. Architecture in one screen
 
 ```
@@ -148,7 +153,8 @@ mobile/                        the app (Flutter, desktop + Android)
     open_tabs.dart             the open-destination panel (desktop) /
                                chip strip (phone); settings_page.dart
                                holds the on/off switch
-  lib/data/                    repositories (Turso pipeline, caches,
+  lib/data/                    repositories (Turso pipeline, read-only
+                               FlightRoutes schedule boards, photo metadata,
                                open tabs, app settings)
   lib/models/                  pure models (destination, trip, weekend
                                match, timetable, geo, filters)
@@ -183,9 +189,10 @@ must not be touched** — it carries the sync journals.
 | 2 | **7 rainy-day rows use the old definition** | **Retired 2026-10-16 (PLAN §0t).** Thessaloniki, Ubud, Ulaanbaatar, Valencia, Valparaiso, Vientiane and Vung Tau keep their trace-precipitation values — a frozen quirk of the migrated workbook. No regeneration, no further tracking; do not re-open. |
 | 3 | **Planner → Map: the "Focus country" dropdown** | **Done 2026-10-16 (PLAN §0t).** Compact 240px control in a `Wrap` instead of a full-width Row cell. |
 | 4 | **Local commits not pushed** | Resolved 2026-10-14: everything through `085ec08` is on `origin/main`. |
+| 5 | **FlightRoutes shared departure cache setup** | Code done (2026-10-18, PLAN §0v). URL/token copied into the git-ignored config at the user's request; token scope and live remote schema remain unverified. Replace with a read-only token before distributing the app. |
 
-**Nothing is open as of 2026-10-16** — the table is kept as the history of
-what was tracked.
+At 2026-10-18 the only pending item is verifying the shared FlightRoutes
+read-only access; the earlier rows are closed history.
 
 Retired with the Streamlit Cloud app (2026-10-13): the "cloud persistence
 check" and the "open_destinations.json lost on redeploy" items — there is no
@@ -205,6 +212,10 @@ this repo; the archived code predates these paths.
   became an explicit, testable mapping.
 * **Run the app you changed.** The archive exists precisely so nobody
   "verifies" a change against the wrong app ever again.
+* **High-quality over low-effort.** Implement the full request, not just
+  enough to pass a smoke test; every new behavior ships with regression
+  tests, and the change must leave `flutter analyze` clean and `flutter test`
+  green before it is considered done.
 
 ## 6. Conventions
 

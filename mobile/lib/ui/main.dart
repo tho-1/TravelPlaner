@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 
 import '../data/app_dirs.dart';
 import '../data/app_settings.dart';
+import '../data/ai_config.dart';
 import '../data/benefits_repository.dart';
 import '../data/destination_repository.dart';
 import '../data/error_log.dart';
@@ -176,8 +177,13 @@ class _HomeShellState extends State<HomeShell> {
 
   /// The finder's second flight source (report j): built
   /// only when a FlightAware key is configured, and only
-  /// ever asked about windows that look broken.
+  /// ever asked about windows that look broken. Rebuilt
+  /// when the user rotates the key in settings.
   late final FlightBoardProvider? flightFallback;
+
+  /// The resolved Turso client, recreated when a key is
+  /// rotated so the new token takes effect immediately.
+  TursoClient? _client;
   var _tab = 0;
 
   /// The open-destination tabs (the legacy sidebar's
@@ -207,6 +213,11 @@ class _HomeShellState extends State<HomeShell> {
 
   static const _destinations = [
     NavigationDestination(
+      icon: NavIcon(NavTabIcon.map),
+      selectedIcon: NavIcon(NavTabIcon.map),
+      label: 'Map',
+    ),
+    NavigationDestination(
       icon: NavIcon(NavTabIcon.globe),
       selectedIcon: NavIcon(NavTabIcon.globe),
       label: 'Catalogue',
@@ -214,17 +225,12 @@ class _HomeShellState extends State<HomeShell> {
     NavigationDestination(
       icon: NavIcon(NavTabIcon.suitcase),
       selectedIcon: NavIcon(NavTabIcon.suitcase),
-      label: 'Planner',
+      label: 'Trip Planner',
     ),
     NavigationDestination(
       icon: NavIcon(NavTabIcon.compass),
       selectedIcon: NavIcon(NavTabIcon.compass),
       label: 'Finder',
-    ),
-    NavigationDestination(
-      icon: NavIcon(NavTabIcon.map),
-      selectedIcon: NavIcon(NavTabIcon.map),
-      label: 'Map',
     ),
   ];
 
@@ -233,6 +239,11 @@ class _HomeShellState extends State<HomeShell> {
   /// four tabs.
   static const _railDestinations = [
     NavigationRailDestination(
+      icon: NavIcon(NavTabIcon.map),
+      selectedIcon: NavIcon(NavTabIcon.map),
+      label: Text('Map'),
+    ),
+    NavigationRailDestination(
       icon: NavIcon(NavTabIcon.globe),
       selectedIcon: NavIcon(NavTabIcon.globe),
       label: Text('Catalogue'),
@@ -240,40 +251,124 @@ class _HomeShellState extends State<HomeShell> {
     NavigationRailDestination(
       icon: NavIcon(NavTabIcon.suitcase),
       selectedIcon: NavIcon(NavTabIcon.suitcase),
-      label: Text('Planner'),
+      label: Text('Trip Planner'),
     ),
     NavigationRailDestination(
       icon: NavIcon(NavTabIcon.compass),
       selectedIcon: NavIcon(NavTabIcon.compass),
       label: Text('Finder'),
     ),
-    NavigationRailDestination(
-      icon: NavIcon(NavTabIcon.map),
-      selectedIcon: NavIcon(NavTabIcon.map),
-      label: Text('Map'),
-    ),
   ];
 
   @override
   void initState() {
     super.initState();
-    final client = TursoClient(widget.config);
-    destinations = DestinationRepository(client);
-    trips = TripRepository(client);
-    benefits = BenefitsRepository(widget.config);
-    geocoder = GeocodeRepository(widget.config.geocodeCache);
-    openTabs = OpenTabsRepository(client);
-    flightFallback = widget.config.fallbackFlightsConfigured
-        ? AeroApiBoardProvider(apiKey: widget.config.flightAwareApiKey)
-        : null;
     // The configured state dir wins (the desktop's repo
     // root) — but only when it is absolute on *this*
     // platform: the bundled config carries the PC path,
     // which is unwritable on the phone. There the app's
     // documents dir holds the settings file.
     _settingsDir = stateDirFor(widget.config.stateDir);
-    _tabsEnabled = AppSettings.load(_settingsDir).openTabsEnabled;
+    final settings = AppSettings.load(_settingsDir);
+    setConfigOverrides(settings);
+    _tabsEnabled = settings.openTabsEnabled;
+    _rebuildClients();
     _loadTabs();
+  }
+
+  /// Recreate the Turso clients and the finder fallback from
+  /// the effective config (bundled values plus any per-device
+  /// key overrides the user has set in settings). Called at
+  /// startup and whenever the user rotates a key.
+  void _rebuildClients() {
+    final effective = _effectiveConfig();
+    _client = TursoClient(effective);
+    destinations = DestinationRepository(_client!);
+    trips = TripRepository(_client!);
+    benefits = BenefitsRepository(effective);
+    geocoder = GeocodeRepository(effective.geocodeCache);
+    openTabs = OpenTabsRepository(_client!);
+    flightFallback = effective.fallbackFlightsConfigured
+        ? AeroApiBoardProvider(apiKey: effective.flightAwareApiKey)
+        : null;
+  }
+
+  /// Bundled config with any per-device key overrides laid on
+  /// top. Synchronous -- no asset re-read -- so it is safe to
+  /// call from initState and from the settings callback.
+  TursoConfig _effectiveConfig() {
+    final bundled = widget.config;
+    final overrides = configOverrides;
+    return TursoConfig(
+      url: bundled.url,
+      token: (overrides?.tursoToken?.isNotEmpty == true
+              ? overrides!.tursoToken
+              : bundled.token) ??
+          '',
+      benefitsUrl: bundled.benefitsUrl,
+      benefitsToken: (overrides?.benefitsToken?.isNotEmpty == true
+              ? overrides!.benefitsToken
+              : bundled.benefitsToken) ??
+          '',
+      iqairSnapshot: bundled.iqairSnapshot,
+      picturesDir: bundled.picturesDir,
+      flightRoutesCache: bundled.flightRoutesCache,
+      geocodeCache: bundled.geocodeCache,
+      stateDir: bundled.stateDir,
+      flightAwareApiKey: (overrides?.flightAwareApiKey?.isNotEmpty == true
+              ? overrides!.flightAwareApiKey
+              : bundled.flightAwareApiKey) ??
+          '',
+    );
+  }
+
+  /// Rotate one API key: persist the override, make it the
+  /// effective value for every subsequently created client,
+  /// and rebuild the live clients so the change takes effect
+  /// without a restart. Returns whether the write persisted.
+  Future<bool> _rotateKey(String name, String value) async {
+    final current = AppSettings.load(_settingsDir);
+    // Preserve every other override: copyWith's null-means-clear
+    // semantics would otherwise wipe the rest on a single-key
+    // rotation.
+    String? tursoToken = current.tursoToken;
+    String? benefitsToken = current.benefitsToken;
+    String? deepseekApiKey = current.deepseekApiKey;
+    String? deepseekModel = current.deepseekModel;
+    String? flightAwareApiKey = current.flightAwareApiKey;
+    switch (name) {
+      case 'turso_token':
+        tursoToken = value.trim().isEmpty ? null : value.trim();
+        break;
+      case 'benefits_token':
+        benefitsToken = value.trim().isEmpty ? null : value.trim();
+        break;
+      case 'deepseek_api_key':
+        deepseekApiKey = value.trim().isEmpty ? null : value.trim();
+        break;
+      case 'deepseek_model':
+        deepseekModel = value.trim().isEmpty ? null : value.trim();
+        break;
+      case 'flight_aware_api_key':
+        flightAwareApiKey = value.trim().isEmpty ? null : value.trim();
+        break;
+      default:
+        return false;
+    }
+    final updated = AppSettings(
+      openTabsEnabled: current.openTabsEnabled,
+      tursoToken: tursoToken,
+      benefitsToken: benefitsToken,
+      deepseekApiKey: deepseekApiKey,
+      deepseekModel: deepseekModel,
+      flightAwareApiKey: flightAwareApiKey,
+    );
+    final saved = updated.save(_settingsDir);
+    if (!saved || !mounted) return false;
+    setConfigOverrides(updated);
+    _rebuildClients();
+    setState(() {});
+    return true;
   }
 
   /// Read the persisted tab list (and resolve its
@@ -375,22 +470,71 @@ class _HomeShellState extends State<HomeShell> {
 
   /// The settings page, reached from the catalogue's app
   /// bar. The shell owns the values; the page reports.
-  void _openSettings() {
+  Future<void> _openSettings() async {
+    final effective = _effectiveConfig(); // bundled Turso + overrides
+    final ai = await AiConfig.load(); // bundled DeepSeek + override
+    if (!mounted) return;
     Navigator.of(context).push(MaterialPageRoute(
       settings: const RouteSettings(name: 'settings'),
       builder: (_) => SettingsPage(
         openTabsEnabled: _tabsEnabled,
         onToggleTabs: _toggleTabs,
+        apiKeys: {
+          'turso_token': (
+            'Turso database token',
+            effective.token.isNotEmpty,
+            _mask(effective.token),
+          ),
+          'benefits_token': (
+            'Benefits database token',
+            effective.benefitsToken.isNotEmpty,
+            _mask(effective.benefitsToken),
+          ),
+          'deepseek_api_key': (
+            'DeepSeek AI key',
+            ai.apiKey.isNotEmpty,
+            _mask(ai.apiKey),
+          ),
+          'deepseek_model': (
+            'DeepSeek model',
+            ai.model.isNotEmpty,
+            ai.model,
+          ),
+          'flight_aware_api_key': (
+            'FlightAware fallback key',
+            effective.flightAwareApiKey.isNotEmpty,
+            _mask(effective.flightAwareApiKey),
+          ),
+        },
+        onRotateKey: _rotateKey,
       ),
     ));
+  }
+
+  /// Show a key as bullets with the last four characters
+  /// visible; empty when nothing is configured.
+  static String _mask(String? value) {
+    if (value == null || value.isEmpty) return '';
+    if (value.length <= 4) return '•' * value.length;
+    return '•' * (value.length - 4) + value.substring(value.length - 4);
   }
 
   /// Persist the settings switch; returns whether it was
   /// saved, so the page's switch only moves on a confirmed
   /// write. The Turso tab list itself is untouched by a
-  /// toggle -- switching back on restores the list.
+  /// toggle -- switching back on restores the list. Any
+  /// key overrides already in `app_settings.json` are kept.
   Future<bool> _toggleTabs(bool on) async {
-    final saved = AppSettings(openTabsEnabled: on).save(_settingsDir);
+    final current = AppSettings.load(_settingsDir);
+    final updated = AppSettings(
+      openTabsEnabled: on,
+      tursoToken: current.tursoToken,
+      benefitsToken: current.benefitsToken,
+      deepseekApiKey: current.deepseekApiKey,
+      deepseekModel: current.deepseekModel,
+      flightAwareApiKey: current.flightAwareApiKey,
+    );
+    final saved = updated.save(_settingsDir);
     if (!saved) {
       if (!mounted) return false;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -398,6 +542,7 @@ class _HomeShellState extends State<HomeShell> {
       ));
       return false;
     }
+    setConfigOverrides(updated);
     setState(() => _tabsEnabled = on);
     if (on && _openTabs.isEmpty) await _loadTabs();
     return true;
@@ -409,30 +554,30 @@ class _HomeShellState extends State<HomeShell> {
         MediaQuery.sizeOf(context).width >= _wideBreakpoint;
     final pages = IndexedStack(
       index: _tab,
-      children: [
-        CataloguePage(
-          repository: destinations,
-          // The recording callback is null while the
-          // feature is off, so the pages skip it.
-          onOpenDestination: _tabsEnabled ? _recordTab : null,
-          onOpenSettings: _openSettings,
-        ),
-        TripsPage(
-          repository: trips,
-          destinations: destinations,
-          geocoder: geocoder,
-        ),
-        WeekendFinderPage(
-          benefits: benefits,
-          destinations: destinations,
-          fallback: flightFallback,
-          onOpenDestination: _tabsEnabled ? _recordTab : null,
-        ),
-        WorldMapPage(
-          repository: destinations,
-          onOpenDestination: _tabsEnabled ? _recordTab : null,
-        ),
-      ],
+       children: [
+         WorldMapPage(
+           repository: destinations,
+           onOpenDestination: _tabsEnabled ? _recordTab : null,
+         ),
+         CataloguePage(
+           repository: destinations,
+           // The recording callback is null while the
+           // feature is off, so the pages skip it.
+           onOpenDestination: _tabsEnabled ? _recordTab : null,
+           onOpenSettings: _openSettings,
+         ),
+         TripsPage(
+           repository: trips,
+           destinations: destinations,
+           geocoder: geocoder,
+         ),
+         WeekendFinderPage(
+           benefits: benefits,
+           destinations: destinations,
+           fallback: flightFallback,
+           onOpenDestination: _tabsEnabled ? _recordTab : null,
+         ),
+       ],
     );
     return Scaffold(
       body: wide

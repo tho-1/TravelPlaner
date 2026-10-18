@@ -1702,6 +1702,50 @@ item labels for long country names. Layout only, no behaviour change.
 
 ---
 
+## 0u. Session 2026-10-17 — clearer expanded Finder options
+
+The attached phone screenshot showed expanded Finder results repeating the
+catalogue city name, printing the mapped airport code (for example `[AGP]`),
+and squeezing outbound, return, and night count into one narrow row. Remove the
+routine airport-code list and suppress the catalogue alias when it is the same
+city. Render each option as a compact, bordered block with a stay label and
+stacked outbound/return flight details. Keep the diagnostic for genuinely
+unmapped airport codes.
+
+A phone-width widget regression asserts the flight labels render without the
+mapped code and checks there is no layout exception. The shared Turso and
+picture-parity proposals are recorded separately in `PROPOSAL_SHARED_TURSO.md`
+and `PROPOSAL_PICTURES.md`.
+
+## 0v. Session 2026-10-18 — shared departure boards and destination photos
+
+**Shared boards.** FlightRoutes' existing `schedule_boards` / `schedule_provenance`
+format remains the source of truth. Both FlightRoutes writers now emit additive
+schema-v2 airport-local and UTC timestamps while retaining the legacy display
+fields. Travel Planner reads only exact-day, complete v2 boards through a
+separate read-only Turso setting; outbound cache hits use FRA, and candidate
+airport departure boards can supplement suspicious return windows. Legacy,
+partial, corrupt, and failed reads never become a false “no flights” answer.
+Filtered Fraport windows are not written as full airport-day boards. The target
+endpoint/token are not copied into source or remotely mutated; a read-only token
+must be configured in the ignored local config before live sharing is active.
+
+**Photos.** The detail page now offers explicit Unsplash search and per-image
+replace, stores attribution metadata in portable app documents storage, and
+hotlinks API image URLs rather than downloading photo bytes. Existing cached
+DuckDuckGo files remain viewable, but the app does not fetch new web-search
+images without reuse rights. A matching curated desktop banner wins over the
+first credited gallery photo; typography remains the fallback. Opening the page
+never searches the API.
+
+Regression coverage includes local/UTC serialization and DST duration, legacy
+and partial board rejection, cache/read-failure distinctions, phone Finder
+integration, photo attribution/hotlinking, no automatic searches, replace,
+portable metadata, and curated-hero precedence. See the updated proposal reports
+for setup details and remaining configuration requirements.
+
+---
+
 ## 1. Where things stood before the 2026-10-03 batch (historical)
 
 ### Committed and pushed (origin/main = `cff9c30`)
