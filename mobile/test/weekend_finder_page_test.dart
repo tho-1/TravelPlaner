@@ -277,5 +277,21 @@ void main() {
     );
     expect(tooltip.message, contains('Lufthansa City Airlines'));
     expect(tooltip.message, contains('Edelweiss'));
+    // The list is long: an unbounded box runs past the
+    // screen edge and both ends are cut (the phone,
+    // 2026-10-21), so the box is bounded by the view.
+    expect(tooltip.constraints, isNotNull);
+    expect(tooltip.constraints!.maxWidth, lessThanOrEqualTo(752),
+        reason: 'the surface is 800 wide: the box must wrap inside it');
+
+    // And the "?" actually shows them when asked (tap on a
+    // phone; hover on the desktop) -- a hint that never
+    // opens is not a hint.
+    expect(find.textContaining('Edelweiss'), findsNothing,
+        reason: 'the list is not on screen until it is asked for');
+    await tester.tap(hint);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.textContaining('Lufthansa City Airlines'), findsWidgets,
+        reason: 'the tapped hint shows the carriers');
   });
 }

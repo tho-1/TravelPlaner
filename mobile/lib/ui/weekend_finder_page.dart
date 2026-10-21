@@ -652,6 +652,14 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                 child: Tooltip(
                   triggerMode: TooltipTriggerMode.tap,
                   message: lufthansaGroupCaption(),
+                  // Without a width the box is laid out
+                  // unbounded and both ends of the list are
+                  // cut off the screen edge (the phone,
+                  // 2026-10-21). It wraps to the card's
+                  // width instead.
+                  constraints: BoxConstraints(
+                      maxWidth:
+                          MediaQuery.of(context).size.width - 48),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
