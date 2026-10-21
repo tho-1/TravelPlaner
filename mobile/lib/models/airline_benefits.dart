@@ -367,10 +367,33 @@ const airlineScopeLabels = <AirlineScope, String>{
   AirlineScope.all: 'All',
 };
 
-/// The Lufthansa Group's passenger carriers, by IATA code
-/// and by canonical name -- the explicit table the project
-/// prefers over a heuristic. (ITA Airways joined the group
-/// in 2025; SunExpress is a 50/50 venture and not listed.)
+/// The Lufthansa Group's passenger carriers, in the order the
+/// finder's caption lists them: the IATA code and the name a
+/// reader knows it by.
+///
+/// **One table, three readers**: the membership test below, the
+/// caption in the finder, and the test that keeps them in step.
+/// The list grew a carrier at a time and the caption lagged
+/// behind it (the user's report, 2026-10-21) — a caption that
+/// names a different set than the code filters on is a lie the
+/// reader cannot see.
+const lufthansaGroupCarriers = <(String, String)>[
+  ('LH', 'Lufthansa'),
+  ('LX', 'SWISS'),
+  ('OS', 'Austrian Airlines'),
+  ('SN', 'Brussels Airlines'),
+  ('AZ', 'ITA Airways'),
+  ('EW', 'Eurowings'),
+  ('4Y', 'Discover Airlines'),
+  ('WK', 'Edelweiss'),
+  ('EN', 'Air Dolomiti'),
+  ('VL', 'Lufthansa City Airlines'),
+  ('CL', 'Lufthansa CityLine'),
+];
+
+/// The membership test's codes. Kept as a literal set (a
+/// const set cannot call `canonicalAirlineKey`), with a test
+/// that pins it to [lufthansaGroupCarriers].
 const lufthansaGroupCodes = <String>{
   'LH', // Lufthansa (incl. CityLine-operated flights)
   'CL', // Lufthansa City / CityLine
@@ -382,6 +405,7 @@ const lufthansaGroupCodes = <String>{
   'SN', // Brussels Airlines
   'EN', // Air Dolomiti
   'AZ', // ITA Airways
+  'VL', // Lufthansa City Airlines
 };
 
 const lufthansaGroupNames = <String>{
@@ -398,7 +422,21 @@ const lufthansaGroupNames = <String>{
   'airdolomiti',
   'ita',
   'itaairways',
+  'lufthansacityairlines',
+  'discover',
+  'discoverairlines',
+  'austrianairlines',
+  'brusselsairlines',
+  'edelweissair',
+  'swissinternational',
+  'lufthansaairlines',
 };
+
+/// The caption the finder shows for the Lufthansa Group scope:
+/// the carriers, in the table's order. One source, so the
+/// caption cannot drift from the membership test.
+String lufthansaGroupCaption() =>
+    lufthansaGroupCarriers.map((carrier) => carrier.$2).join(', ');
 
 /// Whether one flight's carrier passes the scope.
 ///

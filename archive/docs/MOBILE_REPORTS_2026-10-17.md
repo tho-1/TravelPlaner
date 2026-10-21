@@ -12,18 +12,18 @@ touched · **decided** → design settled · **done** → implemented and tested
 | d | Finder time picker: caption too long on mobile | done |
 | e | Finder warnings: drop flight-length and airline-filter warnings | done |
 | f | Finder: subheadings for known / unknown destinations | done |
-| g | AeroAPI key: deferred (user will provide new key) | deferred |
+| g | AeroAPI key: deferred (user will provide new key) | closed — no AeroAPI account wanted (its free allowance is really pay-per-use); the fallbacks are AeroDataBox + AirLabs + the shared boards |
 | h | Finder result tap: show Rating, Prio Thorsten, Population, Recommended Stay (symbols) | done |
-| i | Finder expanded result visually broken; remove "[AGP]"; proposal | deferred (image model) |
+| i | Finder expanded result visually broken; remove "[AGP]"; proposal | closed 2026-10-20 — the report was about an older build; the raw airport code and the colliding option tiles are gone, and the user confirmed the complaint no longer applies. The one finding worth keeping was the *readability* of the result line: it was ellipsised on a phone ("earliest out Sat 09:20 · 1 n…"), so the facts are now one per line and wrap. |
 | j | Finder result: country flag; fix "1 night" truncation; bed symbol for nights | done |
-| k | Share Turso DB + retrieved departure data with "E:\VS Code - Flights\" | proposed |
+| k | Share Turso DB + retrieved departure data with "E:\VS Code - Flights\" | done — shared boards read *and* written back (`README.md` §"Shared FlightRoutes departure boards") |
 | l | Map: starting page; search box → destination page for cities | done |
 | m | Map: bottom result text shorter, symbols, population in millions, no country, no "ideal in X" | done |
 | n | Open destinations: flag symbol; remove clear all; Turso sync | done |
 | o | Map filters: minimum 0 = disabled | done |
 | p | Planner → Trip Planner; compare button wrap fix | done |
-| q | Destination details: pictures missing; proposal | proposed |
-| s | Destination details: top picture missing; proposal | proposed |
+| q | Destination details: pictures missing; proposal | done — the gallery and the hero photo are implemented (`README.md` §"Destination photos") |
+| s | Destination details: top picture missing; proposal | done — the header resolves the curated photo, then the gallery, then the typography fallback |
 | t | Destination details: first paragraph formatting | done |
 | u | Destination details: 5 stat boxes (Population & Recommended stay first) + Prio blue bubble + 3 toggles | done |
 | v | Destination details: name in back-arrow row; remove continent | done |
@@ -69,13 +69,18 @@ touched · **decided** → design settled · **done** → implemented and tested
    already has `photo_repository.dart` / `gallery_repository.dart` — are those
    wired into the destination page?
 
-## Notes on implementation order (proposed)
+## Notes on implementation order (as planned then, 2026-10-17)
 
 - Quick wins (no design needed): a, c, d, e, f, o, p, t, v, w, x, y.
 - Medium: h, i, j, l, m, n, z, aa, ab.
 - Proposals only (need your input): q, s, k, u.
 - Deferred: g.
 - (b) is a process/doc change plus adding tests for the finder regressions.
+
+*(Status since: everything above is implemented — including **i**, which was
+closed as outdated; g was closed by switching the fallbacks to
+AeroDataBox/AirLabs — no AeroAPI account. q, s and k were implemented as
+proposed.)*
 
 ## (a) Finder: Sunday 25.10 listed twice, Monday missing
 

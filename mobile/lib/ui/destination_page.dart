@@ -71,6 +71,13 @@ class DestinationPage extends StatefulWidget {
   /// every hop.
   final void Function(String name)? onOpenDestination;
 
+  /// Whether this destination is already in the open-tabs
+  /// drawer when the page opens.
+  final bool initiallyInOpenTabs;
+
+  /// Adds this destination to the open-tabs drawer.
+  final void Function(String name)? onAddToOpenTabs;
+
   const DestinationPage({
     super.key,
     required this.repository,
@@ -83,6 +90,8 @@ class DestinationPage extends StatefulWidget {
     this.photoSearchProvider,
     this.galleryCache,
     this.onOpenDestination,
+    this.initiallyInOpenTabs = false,
+    this.onAddToOpenTabs,
   });
 
   @override
@@ -98,6 +107,7 @@ class _DestinationPageState extends State<DestinationPage> {
   var _populating = false;
   var _populatingFood = false;
   var _aiConfigured = false;
+  var _inOpenTabs = false;
   GalleryRepository? _galleryRepository;
   List<GalleryEntry> _galleryEntries = const [];
   String? _bannerPhotoPath;
@@ -114,6 +124,7 @@ class _DestinationPageState extends State<DestinationPage> {
     _dest = widget.destination;
     _profile = DestinationProfile.from(_dest);
     _comment = TextEditingController(text: _dest.comment ?? '');
+    _inOpenTabs = widget.initiallyInOpenTabs;
     _loadCoordinate();
     _loadAiConfig();
     _loadPhotoServices();
@@ -427,10 +438,34 @@ class _DestinationPageState extends State<DestinationPage> {
               spacing: 8,
               runSpacing: 4,
               children: [
+                if (widget.onAddToOpenTabs != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4),
+                    child: FilledButton(
+                      onPressed: _inOpenTabs
+                          ? null
+                          : () {
+                              widget.onAddToOpenTabs!(widget.destination.name);
+                              setState(() => _inOpenTabs = true);
+                            },
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _inOpenTabs
+                            ? Theme.of(context).colorScheme.secondaryContainer
+                            : null,
+                        foregroundColor: _inOpenTabs
+                            ? Theme.of(context).colorScheme.onSecondaryContainer
+                            : null,
+                      ),
+                      child: Text(
+                          _inOpenTabs ? 'Shown on the drawer' : 'Add to drawer'),
+                    ),
+                  ),
                 IconButton(
                   tooltip: 'Visited',
                   icon: Icon(
-                    dest.visited ? Icons.check_circle : Icons.circle_outlined,
+                    dest.visited
+                        ? Icons.directions_walk
+                        : Icons.directions_walk_outlined,
                     color: dest.visited ? accentSafety : null,
                   ),
                   onPressed: _busy
@@ -551,7 +586,7 @@ class _DestinationPageState extends State<DestinationPage> {
             ] else
               const _EmptyNote(
                 icon: Icons.notes_outlined,
-                text: 'No overview text was found in the workbook.',
+                text: 'No overview text was found for this destination.',
               ),
             const _SectionTitle('Highlights'),
             if (profile.highlights != null && profile.highlights!.isNotEmpty)
@@ -559,7 +594,7 @@ class _DestinationPageState extends State<DestinationPage> {
             else
               const _EmptyNote(
                 icon: Icons.emoji_events_outlined,
-                text: 'No highlight notes were found in the workbook.',
+                text: 'No highlight notes were found for this destination.',
               ),
             const _SectionTitle('Logistics'),
             _LogisticsGrid(profile: profile),
@@ -948,7 +983,7 @@ class _BestMonths extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (profile.months.isEmpty) {
-      return const Text('No month ratings in the workbook.');
+      return const Text('No month ratings for this destination.');
     }
     final theme = Theme.of(context);
     return Column(

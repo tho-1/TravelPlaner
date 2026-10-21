@@ -195,12 +195,14 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    // The workbook is gone; the empty note names the
+    // destination, not a file the reader never had.
     await scrollTo(
       tester,
-      find.text('No overview text was found in the workbook.'),
+      find.text('No overview text was found for this destination.'),
     );
     expect(
-      find.text('No overview text was found in the workbook.'),
+      find.text('No overview text was found for this destination.'),
       findsOneWidget,
     );
     await scrollTo(tester, find.textContaining('being populated'));
@@ -636,5 +638,79 @@ void main() {
     expect(saved, hasLength(2));
     expect(saved!.first.photoId, 'replacement');
     expect(saved.first.caption, 'Photographer replacement');
+  });
+  testWidgets('the visited toggle writes the flag and shows a footstep',
+      (tester) async {
+    // The visited marker is a walking person, not a plain
+    // circle: a circle is what every other round icon on
+    // the page is, and the meaning was lost (the user, 2026-10-20).
+    var writes = 0;
+    final fake = FakeTurso((statements) {
+      final statement = statements.single;
+      if (statement.startsWith('SELECT')) {
+        return okRows(
+          ['destination', 'data'],
+          [
+            ['Alexandria', jsonEncode(const [])],
+          ],
+        );
+      }
+      writes++;
+      return okEmpty();
+    });
+    final repository = repositoryFor(fake);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DestinationPage(
+          repository: repository,
+          destination: alexandria(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Not visited yet: the outlined walker.
+    final visited = find.byTooltip('Visited');
+    expect(visited, findsOneWidget);
+    expect(
+      find.descendant(
+        of: visited,
+        matching: find.byIcon(Icons.directions_walk_outlined),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(visited);
+    await tester.pumpAndSettle();
+
+    expect(writes, greaterThanOrEqualTo(1), reason: 'the flag was written');
+    expect(
+      find.descendant(
+        of: find.byTooltip('Visited'),
+        matching: find.byIcon(Icons.directions_walk),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Add to drawer button toggles label', (tester) async {
+    final added = <String>[];
+    final repository = repositoryFor(FakeTurso((_) => okRows(['destination'], [])));
+    final dest = alexandria();
+    await tester.pumpWidget(MaterialApp(
+      home: DestinationPage(
+        repository: repository,
+        destination: dest,
+        initiallyInOpenTabs: false,
+        onAddToOpenTabs: added.add,
+      ),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Add to drawer'), findsOneWidget);
+    await tester.tap(find.text('Add to drawer'));
+    await tester.pumpAndSettle();
+    expect(find.text('Shown on the drawer'), findsOneWidget);
+    expect(added, ['Alexandria']);
   });
 }

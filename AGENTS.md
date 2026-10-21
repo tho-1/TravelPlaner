@@ -7,18 +7,17 @@ Streamlit app and the Phase-3 web prototype are **physically archived** under
 `archive/` (frozen reference, restorable via the git tag
 `legacy-streamlit`). Do not start them from the working tree — they are not
 maintained here any more. Decided 2026-10-10 (move off Streamlit), archived
-2026-10-13; the decision, phases and status are in `NATIVE_HTML_PLAN.md`.
+2026-10-13; the decision, phases and status are in
+`archive/docs/NATIVE_HTML_PLAN.md`.
 
 | Document | What it is for |
 |---|---|
 | **`AGENTS.md`** (this file) | orientation, invariants, open items |
-| `README.md` | how to run it, data locations, the Turso contract, offline-first, release signing |
+| `README.md` | how it works: how to run it, the data locations, the airline-benefits contract, the finder's rules, offline-first, release signing |
 | `PLAN.md` | the full history: every review finding, every fix, every decision, with dates and commit hashes |
-| `WEEKEND_FINDER_PLAN.md` | the weekend trip finder: spec, status, what is blocked and why |
-| `TURSO_PLAN.md` | the airline-benefits Turso database: access contract, fallback ladder, open items |
-| `OFFLINE_SYNC_PLAN.md` | offline-first Phase 5 (Option A): snapshot reads, the write journal, the drain contract |
-| `NATIVE_HTML_PLAN.md` | the architecture decision: off Streamlit, onto native desktop + Android on Turso — phases and status |
+| `testing-gaps-2026-10-20.md` | the coverage-driven test gaps and the test that now covers each |
 | `archive/README.md` | what is archived, why, and how to restore it |
+| `archive/docs/README.md` | the finished plans, proposals, reports and reviews — history, kept for the *why* |
 
 ---
 
@@ -46,7 +45,7 @@ cd mobile
 ```powershell
 cd mobile
 & "C:\src\flutter\bin\flutter.bat" analyze   # must be clean
-& "C:\src\flutter\bin\flutter.bat" test      # 518 tests, no credentials needed
+& "C:\src\flutter\bin\flutter.bat" test      # 620 tests, no credentials needed
 ```
 
 CI (`.github/workflows/ci.yml`) runs exactly these two on every push to
@@ -76,7 +75,9 @@ git switch legacy-streamlit    # the full old world, runnable as documented
   (`flightconnections-tz123`): 597 airlines, 7 qualifying
   (CX, JL, KC, LH, VL, VN, ZH). The contract that must not drift:
   **`unknown` never counts as a yes**, and **an empty read is a failure**,
-  never "nobody qualifies". Full contract: `TURSO_PLAN.md`.
+  never "nobody qualifies". Full contract: `README.md`
+  §"The airline-benefits database" (the history:
+  `archive/docs/TURSO_PLAN.md`).
 * **`Destinations-local.xlsx`** (git-ignored) is the reference workbook —
   the artifact the data was migrated *from* and the export target. It is no
   longer written at runtime. `Destinations-cloud.xlsx` (committed) was the
@@ -195,14 +196,29 @@ must not be touched** — it carries the sync journals.
 | 3 | **Planner → Map: the "Focus country" dropdown** | **Done 2026-10-16 (PLAN §0t).** Compact 240px control in a `Wrap` instead of a full-width Row cell. |
 | 4 | **Local commits not pushed** | Resolved 2026-10-14: everything through `085ec08` is on `origin/main`. |
 | 5 | **FlightRoutes shared departure cache setup** | **Done (2026-10-18, PLAN §0w).** Live remote verified with the sibling's own token (schema + payload shape; all remote boards are FRA/v1). The Finder now *writes* complete full-day FRA v2 boards back after each search (`flight_routes_schedule_writer.dart`), in the sibling's exact format with conditional `updated_at` upserts; arrivals stay read-only (no arrivals concept in their schema). The bundled token is the sibling's RW token by decision — the "replace with a read-only token" advice is retired; rotation remains the distribution knob. |
-| 6 | **Offline-first Phase 5 (Option A)** | **Done 2026-10-18, all three commits** (PLAN §0x, §0z; contract in `OFFLINE_SYNC_PLAN.md`). Snapshot reads, the write journal + drain, and the sync-state line are in `mobile/`. |
+| 6 | **Offline-first Phase 5 (Option A)** | **Done 2026-10-18, all three commits** (PLAN §0x, §0z; the contract was `archive/docs/OFFLINE_SYNC_PLAN.md`). Snapshot reads, the write journal + drain, and the sync-state line are in `mobile/`; the live description is `README.md` §"Offline-first". |
 | 7 | **Project review F1–F10** | **Closed 2026-10-18** (PLAN §0y). F2 stays a documented, surfaced partial-failure mode: the endpoint offers no usable transaction (probed — `BEGIN`/`COMMIT` run but errors do not halt the batch, conditional steps are rejected, `on_error` is ignored), and a test pins that `saveTrip` never sends a transaction. |
 | 8 | **Android release signing** | **Wired 2026-10-18.** `mobile/android/key.properties` (git-ignored, template `key.properties.example`) drives a real release key; without it the build stays debug-signed, exactly as before. *Still yours to do:* create the keystore, and decide the `applicationId` (still `com.example.travel_planner`). |
-| 9 | **F7 (i) finder expanded-result redesign** | **Open, blocked on input.** The raw airport-code line is already gone; nobody has described what "looks broken", and this model cannot read a screenshot. |
-| 10 | **F7 (g) AeroAPI key** | **Open, optional.** The fallback is implemented, wired into settings and tested; only a key is missing. Nothing to build. |
+| 9 | **F7 (i) finder expanded-result redesign** | **Closed 2026-10-20.** The report was about an older build; the expanded block is now the vertical option tiles, and the user confirmed the complaint no longer applies. The *readability* finding from the phone screenshot was kept and fixed: the result facts are one per line and wrap instead of being ellipsised into "earliest out Sat 09:20 · 1 n…". |
+| 10 | **F7 (g) AeroAPI key** | **Not needed any more (2026-10-20).** The user does not want an AeroAPI account (its free allowance is really pay-per-use). The finder's fallbacks are now AeroDataBox (RapidAPI) and AirLabs — the keys the *sibling* project already uses — plus the shared FlightRoutes boards, wired in `main.dart` and documented in `README.md` §"The finder's board providers". |
+| 11 | **F7 (b) finder result line** | **Done 2026-10-20.** The result line carries the latest Sunday return (takeoff) and the earliest Monday return (landing) next to the earliest departure, one fact per line so a phone can read it. The logic is pure and lives in the model (`cityDepartureSummary` / `cityReturnSummary` in `lib/models/weekend_match.dart`), with tests in `test/weekend_match_test.dart` and a 360 px layout test in `test/weekend_finder_page_test.dart`. |
+| 12 | **F7 (d) the drawer's "Add to drawer"** | **Done 2026-10-20.** Opening a destination no longer adds it to the drawer; the detail page's "Add to drawer" button does, and a destination already in the drawer shows "Shown on the drawer" on a different background. Wired through the catalogue, the map and the finder. |
+| 13 | **F7 (e) the visited marker** | **Done 2026-10-20.** The plain circle is now a walking person (`Icons.directions_walk`), outlined when unvisited and filled after the write. |
+| 14 | **Testing gaps** | **Done 2026-10-20, extended 2026-10-21.** `testing-gaps-2026-10-20.md` lists the coverage-driven gaps and, for each one, the test that now covers it; the finder's and trip planner's 2026-10-21 batches added `weekend_finder_behaviour_test.dart`, `weekend_finder_days_test.dart` and the add-panel/compare tests in `itinerary_plan_tab_test.dart`. 620 tests, `flutter analyze` clean. |
+| 15 | **TURSO_PLAN's two remaining items** | **Closed 2026-10-20.** The Excel rung never existed in the app (it survives only in the archived Python), and the "works with no network" point is now the *benefits snapshot* — the offline ladder is Turso → snapshot → seed list, so the finder uses the real table offline instead of the 24-carrier default. The plan is archived in `archive/docs/TURSO_PLAN.md`; the live contract is `README.md` §"The airline-benefits database". |
+| 16 | **The finder's report batch (a–n)** | **Done 2026-10-21** (PLAN "2026-10-21"). The "Out on" bug was a **DST** defect (`DateTime.add(Duration(days:))` lands an hour — and a day — off across the clock change); day arithmetic is now calendar arithmetic, and a selection change re-runs the search. Fraport boards are no longer written to Turso (they are free; the old `fraport` rows were deleted), only the *credentialed* fallback's days are shared, and those answers are cached per device so a repeat search spends no quota. The result line shows **both** ways home (Sunday takeoff *and* Monday landing). The Lufthansa Group is eleven carriers behind a **?**, with a test pinning the caption to the code. The trip planner's add-a-stop pickers wrap on a phone, and "workbook" is gone from the user-visible text. 620 tests. |
 
-The only genuinely open items are 9 and 10, and both wait on a person rather
-than on code. Earlier rows are closed history.
+The only open item is 8, and it waits on a person rather than on code: the
+Android keystore. Everything else in this table is closed history.
+
+**Deliberately not done** (decisions, not backlog — do not re-open without a
+reason): splitting the two large UI files (`world_map_page.dart`,
+`destination_page.dart` — the review's own advice is "only when a change
+touches them"); a persistent map-tile cache (measure first; Flutter's image
+cache already covers the common case); a conflict-*resolution* UI for the
+offline journal (conflicts are recorded, counted and named — merging is a
+product decision); a local write-through cache for queued writes (the queue
+is *owed*, not *shown* — `README.md` §"Offline-first" says why).
 
 Retired with the Streamlit Cloud app (2026-10-13): the "cloud persistence
 check" and the "open_destinations.json lost on redeploy" items — there is no

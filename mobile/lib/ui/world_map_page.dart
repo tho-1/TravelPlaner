@@ -280,6 +280,8 @@ class WorldMapView extends StatefulWidget {
   /// opens a page (null: no recording -- the mini-map
   /// passes nothing).
   final void Function(String name)? onOpenDestination;
+  final bool Function(String name)? isInOpenTabs;
+  final void Function(String name)? onAddToOpenTabs;
 
   const WorldMapView({
     super.key,
@@ -298,6 +300,8 @@ class WorldMapView extends StatefulWidget {
     this.onZoomChanged,
     this.overlayBuilder,
     this.onOpenDestination,
+    this.isInOpenTabs,
+    this.onAddToOpenTabs,
   });
 
   @override
@@ -812,13 +816,17 @@ class _WorldMapViewState extends State<WorldMapView> {
         child: GestureDetector(
           onTap: (city.destination != null && city.repository != null)
               ? () {
-                  widget.onOpenDestination?.call(city.destination!.name);
                   Navigator.of(context).push(MaterialPageRoute(
                     settings: RouteSettings(
                         name: 'destination/${city.destination!.name}'),
                     builder: (_) => DestinationPage(
                       repository: city.repository!,
                       destination: city.destination!,
+                      onOpenDestination: widget.onOpenDestination,
+                      initiallyInOpenTabs:
+                          widget.isInOpenTabs?.call(city.destination!.name) ??
+                              false,
+                      onAddToOpenTabs: widget.onAddToOpenTabs,
                     ),
                   ));
                 }
@@ -1019,11 +1027,15 @@ class WorldMapPage extends StatefulWidget {
   /// destination page, so the shell records the
   /// open-destination tab. Null when the feature is off.
   final void Function(String name)? onOpenDestination;
+  final bool Function(String name)? isInOpenTabs;
+  final void Function(String name)? onAddToOpenTabs;
 
   const WorldMapPage({
     super.key,
     required this.repository,
     this.onOpenDestination,
+    this.isInOpenTabs,
+    this.onAddToOpenTabs,
   });
 
   @override
@@ -1187,6 +1199,8 @@ class _WorldMapPageState extends State<WorldMapPage> {
             onZoomChanged: (zoom) => setState(() => _zoom = zoom),
             onDataChanged: _reload,
             onOpenDestination: widget.onOpenDestination,
+            isInOpenTabs: widget.isInOpenTabs,
+            onAddToOpenTabs: widget.onAddToOpenTabs,
           );
         },
       ),
@@ -1233,6 +1247,8 @@ class _MapBody extends StatelessWidget {
   /// Records the open-destination tab (null when the
   /// feature is off); the drill-down rows pass it on.
   final void Function(String name)? onOpenDestination;
+  final bool Function(String name)? isInOpenTabs;
+  final void Function(String name)? onAddToOpenTabs;
 
   const _MapBody({
     required this.destinations,
@@ -1251,6 +1267,8 @@ class _MapBody extends StatelessWidget {
     required this.onZoomChanged,
     required this.onDataChanged,
     this.onOpenDestination,
+    this.isInOpenTabs,
+    this.onAddToOpenTabs,
   });
 
   @override
@@ -1394,17 +1412,20 @@ class _MapBody extends StatelessWidget {
               countries: countryNames,
                onPickCity: (city) {
                   if (city.destination != null && city.repository != null) {
-                    onOpenDestination?.call(city.destination!.name);
-                   Navigator.of(context).push(MaterialPageRoute(
-                     settings: RouteSettings(
-                         name: 'destination/${city.destination!.name}'),
-                     builder: (_) => DestinationPage(
-                       repository: city.repository!,
-                       destination: city.destination!,
-                     ),
-                   ));
-                   return;
-                 }
+                    Navigator.of(context).push(MaterialPageRoute(
+                      settings: RouteSettings(
+                          name: 'destination/${city.destination!.name}'),
+                      builder: (_) => DestinationPage(
+                        repository: city.repository!,
+                        destination: city.destination!,
+                        onOpenDestination: onOpenDestination,
+                        initiallyInOpenTabs:
+                            isInOpenTabs?.call(city.destination!.name) ?? false,
+                        onAddToOpenTabs: onAddToOpenTabs,
+                      ),
+                    ));
+                    return;
+                  }
                  mapController.moveTo(city.latitude, city.longitude, 6);
                  final country = city.country;
                  if (country != null && byCountry.containsKey(country)) {
@@ -1439,6 +1460,8 @@ class _MapBody extends StatelessWidget {
                   controller: mapController,
                   onZoomChanged: onZoomChanged,
                   onOpenDestination: onOpenDestination,
+                  isInOpenTabs: isInOpenTabs,
+                  onAddToOpenTabs: onAddToOpenTabs,
                   highlightCountry: selectedCountry,
                   onCountryTap: (tapped) {
                     // The shapes carry the dataset's long names
@@ -1607,6 +1630,8 @@ class _MapBody extends StatelessWidget {
                     repository: repository,
                     onChanged: onDataChanged,
                     onOpenDestination: onOpenDestination,
+                    isInOpenTabs: isInOpenTabs,
+                    onAddToOpenTabs: onAddToOpenTabs,
                   ),
             ],
           ],
@@ -1815,6 +1840,8 @@ class _CountryCityRow extends StatelessWidget {
   /// Records the open-destination tab (null when the
   /// feature is off).
   final void Function(String name)? onOpenDestination;
+  final bool Function(String name)? isInOpenTabs;
+  final void Function(String name)? onAddToOpenTabs;
 
   /// The **selected** month's name. The caption must name
   /// the month the reader picked, not today's — selecting
@@ -1829,6 +1856,8 @@ class _CountryCityRow extends StatelessWidget {
     required this.repository,
     required this.onChanged,
     this.onOpenDestination,
+    this.isInOpenTabs,
+    this.onAddToOpenTabs,
   });
 
   @override
@@ -1856,13 +1885,16 @@ class _CountryCityRow extends StatelessWidget {
         subtitle: Text(details.join(' · ')),
         trailing: const Icon(Icons.chevron_right),
         onTap: () {
-          onOpenDestination?.call(destination.name);
           Navigator.of(context).push(MaterialPageRoute(
             settings: RouteSettings(name: 'destination/${destination.name}'),
             builder: (_) => DestinationPage(
               repository: repository,
               destination: destination,
               onChanged: onChanged,
+              onOpenDestination: onOpenDestination,
+              initiallyInOpenTabs:
+                  isInOpenTabs?.call(destination.name) ?? false,
+              onAddToOpenTabs: onAddToOpenTabs,
             ),
           ));
         },

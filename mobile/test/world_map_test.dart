@@ -318,4 +318,60 @@ void main() {
         findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('the drill-down passes the drawer state to the page',
+      (tester) async {
+    // The map's own push site: a destination opened from the
+    // map must know whether it is already in the drawer and
+    // must be able to add itself. The page decides what to
+    // show; the map only hands it the two facts.
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    await binding.setSurfaceSize(const Size(420, 1600));
+    addTearDown(() => binding.setSurfaceSize(null));
+    String months(String rating) => jsonEncode([
+          for (final month in [
+            'January', 'February', 'March', 'April', 'May', 'June', //
+            'July', 'August', 'September', 'October', 'November', 'December',
+          ])
+            [month, rating],
+        ]);
+    final fake = FakeTurso((_) => okRows(
+          ['destination', 'country', 'visited', 'data'],
+          [
+            ['Rome', 'Italy', null, months('ok')],
+          ],
+        ));
+    final added = <String>[];
+    await tester.pumpWidget(MaterialApp(
+      home: WorldMapPage(
+        repository: DestinationRepository(
+          TursoClient(
+            const TursoConfig(
+                url: 'https://travel-tz123.aws-eu-north-1.turso.io',
+                token: 'token'),
+            httpClient: fake.client(),
+          ),
+        ),
+        isInOpenTabs: (name) => name == 'Rome',
+        onAddToOpenTabs: added.add,
+      ),
+    ));
+    await tester.pumpAndSettle();
+    for (var i = 0; i < 5 && find.byType(WorldMapView).evaluate().isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+
+    // Drill into the country, then open the city.
+    final view = tester.widget<WorldMapView>(find.byType(WorldMapView));
+    view.onCountryTap!('Italy');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rome'));
+    await tester.pumpAndSettle();
+
+    // Rome is in the drawer, so the page says so instead of
+    // offering to add it again -- and nothing was added.
+    expect(find.text('Shown on the drawer'), findsOneWidget);
+    expect(added, isEmpty,
+        reason: 'opening a destination must not add it to the drawer');
+  });
 }

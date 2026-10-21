@@ -247,7 +247,21 @@ TravelPlan periodPlan(TravelPeriod period) {
   );
 }
 
+/// Adds **calendar** days to a date, keeping the time of day.
+///
+/// **Not** `DateTime.add(Duration(days: n))`: that adds
+/// absolute time, so across a DST change the clock time
+/// shifts by an hour. `2026-10-23 00:00` plus seven days is
+/// `2026-10-29 23:00` local -- a *Thursday*, one hour before
+/// midnight. A day-based selection that then keyed its rules
+/// by that time could not be deselected: the day chips hold
+/// midnight, so the chip looked unselected while the rule
+/// row stayed, and the search still ran with the day
+/// (the report, 2026-10-21, on the weekend of 23 October --
+/// the DST weekend).
+DateTime addCalendarDays(DateTime day, int days) =>
+    DateTime(day.year, day.month, day.day + days);
+
 DateTime _date(DateTime day) => DateTime(day.year, day.month, day.day);
 
-DateTime _addDays(DateTime day, int days) =>
-    DateTime(day.year, day.month, day.day + days);
+DateTime _addDays(DateTime day, int days) => addCalendarDays(day, days);

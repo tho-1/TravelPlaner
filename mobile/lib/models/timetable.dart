@@ -27,6 +27,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import 'weekend_match.dart';
+import 'travel_days.dart';
 
 class ProviderUnavailable implements Exception {
   final String message;
@@ -114,6 +115,18 @@ abstract interface class FlightBoardProvider {
     DateTime? since,
     DateTime? until,
   });
+
+  /// Whether **one unbounded call** answers a whole day.
+  ///
+  /// The credentialed fallbacks' device cache and the shared
+  /// board both need a *whole* day, and a provider that pages
+  /// (AeroAPI is asked for `max_pages: 1`) would hand back a
+  /// partial day that reads as complete -- which is how a
+  /// short board gets cached, or written into the sibling's
+  /// database, as if it were the whole day (2026-10-21).
+  /// FlightRoutes' own readers had the same rule. Abstract on
+  /// purpose: a new provider has to answer the question.
+  bool get answersWholeDay;
 }
 
 /// frankfurt-airport.com's own departure/arrival board.
@@ -125,6 +138,12 @@ abstract interface class FlightBoardProvider {
 /// legacy app 2026-10-08).
 class FraportBoardProvider implements FlightBoardProvider {
   static const name = 'fraport';
+
+  /// The board is walked to the end of the window (the
+  /// pagination cap reports a warning instead of stopping
+  /// silently), so an unbounded call is a whole day.
+  @override
+  bool get answersWholeDay => true;
 
   /// The endpoint is implemented and answers plain GETs. A
   /// failure is a *fetch* failure (surfaced as a note), not
@@ -393,6 +412,11 @@ class FraportBoardProvider implements FlightBoardProvider {
 class AeroApiBoardProvider implements FlightBoardProvider {
   static const name = 'flightaware';
 
+  /// `max_pages: 1` answers one page for the window it was
+  /// given -- never a whole day (see the protocol's note).
+  @override
+  bool get answersWholeDay => false;
+
   static const endpoint =
       'https://aeroapi.flightaware.com/aeroapi/airports/EDDF/flights';
 
@@ -616,4 +640,376 @@ List<String> airportsOf(Iterable<Flight> flights) {
   }
   final out = seen.toList()..sort();
   return out;
+}
+
+
+/// AeroDataBox (RapidAPI) fallback provider.
+///
+/// The free Basic plan allows 12 requests per hour, so a
+/// full day costs two. Used only as a fallback for the
+/// board windows the primary source lost.
+class AeroDataBoxBoardProvider implements FlightBoardProvider {
+  static const name = 'aerodatabox';
+
+  /// Both of the day's twelve-hour windows are walked in one
+  /// call, so an unbounded call *is* the whole day.
+  @override
+  bool get answersWholeDay => true;
+
+  final String apiKey;
+  final http.Client httpClient;
+
+  AeroDataBoxBoardProvider({
+    required this.apiKey,
+    http.Client? httpClient,
+  }) : httpClient = httpClient ?? http.Client();
+
+  @override
+  Future<FetchResult> fetch(
+    DateTime day,
+    String direction, {
+    DateTime? since,
+    DateTime? until,
+  }) async {
+    final start = since ?? DateTime(day.year, day.month, day.day);
+    final end = until ?? DateTime(day.year, day.month, day.day, 23, 59, 59);
+    final outbound = direction == 'departures';
+    final windows = <(String, String)>[
+      ('${_isoDate(day)}T00:00', '${_isoDate(day)}T12:00'),
+      ('${_isoDate(day)}T12:00', '${_nextIsoDate(day)}T00:00'),
+    ];
+    final collected = <Flight>[];
+    final seen = <String>{};
+    for (var i = 0; i < windows.length; i++) {
+      if (i > 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 1100));
+      }
+      final (from, to) = windows[i];
+      final uri = Uri.parse(
+        'https://aerodatabox.p.rapidapi.com/flights/airports/iata/'
+        'FRA/$from/$to',
+      ).replace(queryParameters: {
+        'direction': outbound ? 'Departure' : 'Arrival',
+        'withLeg': 'true',
+        'withCancelled': 'false',
+        'withCodeshared': 'true',
+        'withCargo': 'false',
+        'withPrivate': 'false',
+      });
+      final http.Response response;
+      try {
+        response = await httpClient.get(uri, headers: {
+          'X-RapidAPI-Key': apiKey,
+          'X-RapidAPI-Host': 'aerodatabox.p.rapidapi.com',
+        }).timeout(const Duration(seconds: 30));
+      } catch (error) {
+        throw ProviderUnavailable(
+            'aerodatabox: the provider could not be reached (${error.runtimeType})');
+      }
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        throw const ProviderUnavailable(
+            'aerodatabox: the API key was rejected (HTTP 401/403)');
+      }
+      if (response.statusCode == 429) {
+        throw const ProviderUnavailable(
+            'aerodatabox: rate limit reached (HTTP 429)');
+      }
+      if (response.statusCode != 200) {
+        throw ProviderUnavailable(
+            'aerodatabox: HTTP ${response.statusCode}');
+      }
+      final Object? body;
+      try {
+        body = jsonDecode(utf8.decode(response.bodyBytes));
+      } on FormatException {
+        throw const ProviderUnavailable(
+            'aerodatabox: non-JSON response');
+      }
+      if (body is Map && body['message'] is String) {
+        throw ProviderUnavailable(
+            'aerodatabox: ${body['message']}');
+      }
+      final rawRecords = body is Map
+          ? body[outbound ? 'departures' : 'arrivals']
+          : null;
+      if (rawRecords != null && rawRecords is! List) {
+        throw const ProviderUnavailable(
+            'aerodatabox: the response carries no flight list');
+      }
+      final records = rawRecords is List ? rawRecords : const <Object?>[];
+      for (final record in records) {
+        if (record is! Map) continue;
+        final flight = _flightFromAeroDataBox(record, outbound, start, end);
+        if (flight == null) continue;
+        final key =
+            '${flight.flightNo}|${flight.departure.toIso8601String()}|'
+            '${flight.destination}';
+        if (seen.contains(key)) continue;
+        seen.add(key);
+        collected.add(flight);
+      }
+    }
+    return FetchResult(
+      flights: collected,
+      source: name,
+      fetchedAt: DateTime.now().toIso8601String(),
+    );
+  }
+
+  static Flight? _flightFromAeroDataBox(
+      Map record, bool outbound, DateTime start, DateTime end) {
+    final depBlock = (record['departure'] ?? record['movement']) as Map?;
+    final arrBlock = record['arrival'] as Map?;
+    if (depBlock == null || arrBlock == null) return null;
+    final depAirport = (depBlock['airport'] as Map?) ?? const <String, dynamic>{};
+    final arrAirport = (arrBlock['airport'] as Map?) ?? const <String, dynamic>{};
+    final originCode = outbound
+        ? 'FRA'
+        : '${depAirport['iata'] ?? ''}'.trim().toUpperCase();
+    final destinationCode = outbound
+        ? '${arrAirport['iata'] ?? ''}'.trim().toUpperCase()
+        : 'FRA';
+    if (originCode.isEmpty || destinationCode.isEmpty) return null;
+
+    final depScheduled = depBlock['scheduledTime'] as Map?;
+    final arrScheduled = arrBlock['scheduledTime'] as Map?;
+    final departure = _wallClock(
+        (depScheduled?['local'] ?? depScheduled?['utc'])?.toString());
+    final arrival = _wallClock(
+        (arrScheduled?['local'] ?? arrScheduled?['utc'])?.toString());
+    if (departure == null || arrival == null) return null;
+    final relevant = outbound ? departure : arrival;
+    if (relevant.isBefore(start) || relevant.isAfter(end)) return null;
+
+    final airline = (record['airline'] as Map?) ?? const <String, dynamic>{};
+    final code = '${airline['iata'] ?? ''}'.trim().toUpperCase();
+    final carrierName = '${airline['name'] ?? ''}'.trim();
+    final number = '${record['number'] ?? ''}'.trim().replaceAll(' ', '');
+    final flightNo = number.isNotEmpty
+        ? number
+        : (code.isNotEmpty ? '$code$number' : '');
+    if (flightNo.isEmpty) return null;
+
+    return Flight(
+      flightNo: flightNo,
+      airline: code,
+      airlineName: carrierName,
+      origin: originCode,
+      destination: destinationCode,
+      airportName: outbound
+          ? '${arrAirport['name'] ?? ''}'.trim()
+          : '${depAirport['name'] ?? ''}'.trim(),
+      departure: departure,
+      arrival: arrival,
+      terminal: '${depBlock['terminal'] ?? ''}'.trim(),
+    );
+  }
+
+  static DateTime? _wallClock(String? value) {
+    if (value == null) return null;
+    final text = value.trim();
+    if (text.isEmpty) return null;
+    final naive = text.length >= 19 ? text.substring(0, 19) : text;
+    return DateTime.tryParse(naive);
+  }
+
+  static String _isoDate(DateTime day) =>
+      '${day.year.toString().padLeft(4, '0')}-'
+      '${day.month.toString().padLeft(2, '0')}-'
+      '${day.day.toString().padLeft(2, '0')}';
+
+  static String _nextIsoDate(DateTime day) {
+    // Calendar arithmetic, not `add(Duration(days: 1))`: the
+    // latter is absolute time, so across a DST change the
+    // clock shifts an hour and the *date* can come out one
+    // day early (2026-10-24 00:00 plus 24 hours is
+    // 2026-10-24 23:00 local, so the second board window
+    // would ask for the wrong day).
+    final next = addCalendarDays(day, 1);
+    return _isoDate(next);
+  }
+}
+
+/// AirLabs secondary provider (today only).
+class AirLabsBoardProvider implements FlightBoardProvider {
+  static const name = 'airlabs';
+
+  /// One request returns the schedule list, which the
+  /// provider then filters to the window -- so the whole day
+  /// costs the same request.
+  @override
+  bool get answersWholeDay => true;
+
+  final String apiKey;
+  final http.Client httpClient;
+
+  AirLabsBoardProvider({
+    required this.apiKey,
+    http.Client? httpClient,
+  }) : httpClient = httpClient ?? http.Client();
+
+  @override
+  Future<FetchResult> fetch(
+    DateTime day,
+    String direction, {
+    DateTime? since,
+    DateTime? until,
+  }) async {
+    final start = since ?? DateTime(day.year, day.month, day.day);
+    final end = until ?? DateTime(day.year, day.month, day.day, 23, 59, 59);
+    final outbound = direction == 'departures';
+    final uri = Uri.parse('https://airlabs.co/api/v9/schedules').replace(
+      queryParameters: {
+        if (outbound) 'dep_iata': 'FRA' else 'arr_iata': 'FRA',
+        'api_key': apiKey,
+      },
+    );
+    final http.Response response;
+    try {
+      response = await httpClient.get(uri).timeout(const Duration(seconds: 30));
+    } catch (error) {
+      throw ProviderUnavailable(
+          'airlabs: the provider could not be reached (${error.runtimeType})');
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw const ProviderUnavailable(
+          'airlabs: the API key was rejected (HTTP 401/403)');
+    }
+    if (response.statusCode != 200) {
+      throw ProviderUnavailable('airlabs: HTTP ${response.statusCode}');
+    }
+    final Object? body;
+    try {
+      body = jsonDecode(utf8.decode(response.bodyBytes));
+    } on FormatException {
+      throw const ProviderUnavailable('airlabs: non-JSON response');
+    }
+    final rawRecords = body is Map ? body['response'] : null;
+    if (rawRecords != null && rawRecords is! List) {
+      throw const ProviderUnavailable('airlabs: no flight list');
+    }
+    final records = rawRecords is List ? rawRecords : const <Object?>[];
+    final collected = <Flight>[];
+    for (final record in records) {
+      if (record is! Map) continue;
+      final flight = _flightFromAirLabs(record, outbound, day, start, end);
+      if (flight != null) collected.add(flight);
+    }
+    return FetchResult(
+      flights: collected,
+      source: name,
+      fetchedAt: DateTime.now().toIso8601String(),
+    );
+  }
+
+  static Flight? _flightFromAirLabs(
+      Map record, bool outbound, DateTime day, DateTime start, DateTime end) {
+    final originCode = outbound
+        ? 'FRA'
+        : '${record['dep_iata'] ?? ''}'.trim().toUpperCase();
+    final destinationCode = outbound
+        ? '${record['arr_iata'] ?? ''}'.trim().toUpperCase()
+        : 'FRA';
+    if (originCode.isEmpty || destinationCode.isEmpty) return null;
+
+    final depTime = _airLabsTime(record['dep_time'], day);
+    final arrTime = _airLabsTime(record['arr_time'], day);
+    if (depTime == null || arrTime == null) return null;
+    final relevant = outbound ? depTime : arrTime;
+    if (relevant.isBefore(start) || relevant.isAfter(end)) return null;
+
+    final code = '${record['airline_iata'] ?? ''}'.trim().toUpperCase();
+    final flightNoRaw = '${record['flight_iata'] ?? record['flight_number'] ?? ''}'
+        .trim()
+        .replaceAll(' ', '');
+    if (flightNoRaw.isEmpty) return null;
+    final carrierName = '${record['airline_name'] ?? ''}'.trim();
+
+    return Flight(
+      flightNo: flightNoRaw,
+      airline: code,
+      airlineName: carrierName,
+      origin: originCode,
+      destination: destinationCode,
+      airportName: '',
+      departure: depTime,
+      arrival: arrTime,
+    );
+  }
+
+  static DateTime? _airLabsTime(Object? value, DateTime day) {
+    if (value == null) return null;
+    final text = value.toString().trim();
+    if (text.isEmpty) return null;
+    if (text.contains('T')) {
+      final naive = text.length >= 19 ? text.substring(0, 19) : text;
+      return DateTime.tryParse(naive);
+    }
+    if (text.contains(':')) {
+      final parts = text.split(':');
+      if (parts.length < 2) return null;
+      final hour = int.tryParse(parts[0]);
+      final minute = int.tryParse(parts[1]);
+      if (hour == null || minute == null) return null;
+      return DateTime(day.year, day.month, day.day, hour, minute);
+    }
+    return null;
+  }
+}
+
+/// Tries several providers in order and returns the first
+/// non-empty result.
+class CompositeBoardProvider implements FlightBoardProvider {
+  final List<FlightBoardProvider> providers;
+
+  const CompositeBoardProvider(this.providers);
+
+  /// True when *some* provider can answer a whole day -- and
+  /// an unbounded call then only asks those, so a paging
+  /// provider's partial page can never be mistaken for one.
+  @override
+  bool get answersWholeDay => providers.any((p) => p.answersWholeDay);
+
+  @override
+  Future<FetchResult> fetch(
+    DateTime day,
+    String direction, {
+    DateTime? since,
+    DateTime? until,
+  }) async {
+    final wholeDay = since == null && until == null;
+    // When a provider *can* answer a whole day, an unbounded
+    // ask goes only to those -- a paging provider's partial
+    // page must not be mistaken for the day. When none can,
+    // the composite keeps its plain "ask in order" contract
+    // (its callers know, from [answersWholeDay], that the
+    // answer is not a whole day).
+    final capable = [
+      for (final provider in providers)
+        if (provider.answersWholeDay) provider,
+    ];
+    final candidates = wholeDay && capable.isNotEmpty ? capable : providers;
+    Object? lastError;
+    FetchResult? lastResult;
+    for (final provider in candidates) {
+      try {
+        final result =
+            await provider.fetch(day, direction, since: since, until: until);
+        if (result.flights.isNotEmpty) return result;
+        lastResult = result;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    if (lastResult != null) return lastResult;
+    if (lastError is ProviderUnavailable) throw lastError;
+    if (lastError != null) {
+      throw ProviderUnavailable('all fallback providers failed: $lastError');
+    }
+    return FetchResult(
+      flights: const <Flight>[],
+      source: 'none',
+      fetchedAt: DateTime.now().toIso8601String(),
+    );
+  }
 }

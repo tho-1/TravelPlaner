@@ -92,6 +92,14 @@ class TursoConfig {
   /// gallery photos. Opening a destination never makes a search request.
   final String unsplashAccessKey;
 
+  /// Optional AeroDataBox (RapidAPI) key for the weekend
+  /// finder's fallback board provider. Without it, the
+  /// finder relies on Fraport + the shared cache.
+  final String aeroDataBoxApiKey;
+
+  /// Optional AirLabs key (secondary fallback).
+  final String airLabsApiKey;
+
   /// The FlightAware AeroAPI key (report j, 2026-10-16).
   /// Optional: with it, the finder fills board windows that
   /// failed or look incomplete from the licensed API;
@@ -113,6 +121,8 @@ class TursoConfig {
     this.geocodeCache = '',
     this.stateDir = '',
     this.unsplashAccessKey = '',
+    this.aeroDataBoxApiKey = '',
+    this.airLabsApiKey = '',
     this.flightAwareApiKey = '',
   });
 
@@ -166,6 +176,9 @@ class TursoConfig {
             (map['unsplash_access_key'] as String?)?.trim() ?? '',
         flightAwareApiKey: _effective(
             map, 'flightaware_api_key', configOverrides?.flightAwareApiKey),
+        aeroDataBoxApiKey:
+            (map['aerodatabox_api_key'] as String?)?.trim() ?? '',
+        airLabsApiKey: (map['airlabs_api_key'] as String?)?.trim() ?? '',
       );
     } catch (_) {
       return const TursoConfig(

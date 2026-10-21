@@ -21,6 +21,7 @@ import 'package:flutter/services.dart'
 import '../data/benefits_repository.dart';
 import '../data/catalogue_match.dart';
 import '../data/destination_repository.dart';
+import '../data/flight_board_cache.dart';
 import '../data/error_log.dart';
 import '../data/flight_routes_schedule_repository.dart';
 import '../data/flight_routes_schedule_writer.dart';
@@ -46,10 +47,23 @@ class WeekendFinderPage extends StatefulWidget {
   /// incomplete. Null when no key is configured.
   final FlightBoardProvider? fallback;
 
+  /// Where the per-device board cache lives. Empty means no
+  /// cache: the credentialed fallback is then asked every
+  /// time (which is why the app wires a real directory here).
+  final String cacheDir;
+
+  /// The clock the presets and the period picker work from.
+  /// A test seam: the DST weekend is the case where the day
+  /// arithmetic has to be right, and it cannot be reached
+  /// by waiting for the calendar.
+  final DateTime Function()? now;
+
   /// Called when a result opens a destination page, so the
   /// shell records the open-destination tab. Null when the
   /// feature is off.
   final void Function(String name)? onOpenDestination;
+  final bool Function(String name)? isInOpenTabs;
+  final void Function(String name)? onAddToOpenTabs;
 
   const WeekendFinderPage({
     super.key,
@@ -57,7 +71,11 @@ class WeekendFinderPage extends StatefulWidget {
     required this.destinations,
     this.board,
     this.fallback,
+    this.cacheDir = '',
+    this.now,
     this.onOpenDestination,
+    this.isInOpenTabs,
+    this.onAddToOpenTabs,
   });
 
   @override
@@ -78,9 +96,18 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   /// The travel period and the days selected per side. A
   /// day is selected exactly when it has a rule entry; the
   /// entry also carries its any/after/before bound.
-  TravelPeriod _period = weekendPeriod(fridayOf(DateTime.now()));
+  late TravelPeriod _period = weekendPeriod(fridayOf(_now()));
   final Map<DateTime, TravelDay> _outRules = {};
   final Map<DateTime, TravelDay> _backRules = {};
+
+  /// The last rule each day carried, so a day that is
+  /// deselected and selected again comes back with its bound
+  /// instead of "any time" (the user's rule is not silently
+  /// reset -- the report, 2026-10-21).
+  final Map<DateTime, TravelDay> _rememberedRules = {};
+
+  /// The clock the presets work from.
+  late final DateTime Function() _now = widget.now ?? DateTime.now;
 
   /// Which preset (or "custom") produced the current
   /// selection -- the chips show it as selected.
@@ -154,6 +181,22 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
         label: _period.describe(),
       );
 
+  /// The day selection changed: the results on screen belong to
+  /// the *old* selection, and a reader who deselects a day
+  /// must not still see it in the results (the report,
+  /// 2026-10-21). So the search runs again.
+  ///
+  /// Fraport is free and unlimited, so a repeated search
+  /// costs nothing there; the credentialed fallbacks are
+  /// asked only about windows we do not already have (the
+  /// local and Turso caches), so a repeated search does not
+  /// burn their budget either.
+  void _selectionChanged() {
+    if (_result == null) return; // nothing on screen to be stale
+    if (_outRules.isEmpty || _backRules.isEmpty) return; // not searchable
+    _find();
+  }
+
   Future<void> _find() async {
     if (_outRules.isEmpty || _backRules.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -171,6 +214,11 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     final repository = WeekendRepository(
       _liveBoard,
       fallback: widget.fallback,
+      // The credentialed fallback's answers are cached on the
+      // device, so a repeated search (the user changed a day)
+      // does not spend its quota again (2026-10-21).
+      fallbackCache:
+          FlightBoardCache(widget.cacheDir.isEmpty ? '' : widget.cacheDir),
       sharedSchedules: sharedSchedules,
       // The write side shares the reader's client: one
       // configured endpoint, one token, both directions.
@@ -242,8 +290,6 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                 _daysCard(),
                 const SizedBox(height: 12),
                 _sourceCard(),
-                const SizedBox(height: 12),
-                _benefitsCard(),
                 const SizedBox(height: 16),
                 FilledButton.icon(
                   icon: const Icon(Icons.travel_explore_outlined),
@@ -307,13 +353,13 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
               children: [
                 ChoiceChip(
                   label: Text('This weekend '
-                      '(${_isoShort(weekendPeriod(fridayOf(DateTime.now())).start)})'),
+                      '(${_isoShort(weekendPeriod(fridayOf(_now())).start)})'),
                   selected: _preset == 'this',
                   onSelected: (_) => setState(() => _applyPreset('this')),
                 ),
                 ChoiceChip(
                   label: Text('Next weekend '
-                      '(${_isoShort(weekendPeriod(fridayOf(DateTime.now()).add(const Duration(days: 7))).start)})'),
+                      '(${_isoShort(weekendPeriod(addCalendarDays(fridayOf(_now()), 7)).start)})'),
                   selected: _preset == 'next',
                   onSelected: (_) => setState(() => _applyPreset('next')),
                 ),
@@ -343,8 +389,8 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   /// touched.
   void _applyPreset(String which) {
     final friday = which == 'this'
-        ? fridayOf(DateTime.now())
-        : fridayOf(DateTime.now()).add(const Duration(days: 7));
+        ? fridayOf(_now())
+        : addCalendarDays(fridayOf(_now()), 7);
     final period = weekendPeriod(friday);
     final plan = legacyWeekendPlan(friday, label: period.describe());
     setState(() {
@@ -356,10 +402,11 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   }
 
   Future<void> _pickPeriod() async {
+    final today = _now();
     final picked = await showDateRangePicker(
       context: context,
-      firstDate: DateTime.now().subtract(const Duration(days: 30)),
-      lastDate: DateTime.now().add(const Duration(days: 300)),
+      firstDate: addCalendarDays(today, -30),
+      lastDate: addCalendarDays(today, 300),
       initialDateRange: DateTimeRange(start: _period.start, end: _period.end),
       helpText: 'When do you consider travel?',
     );
@@ -395,8 +442,6 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Out on / Back on', style: theme.textTheme.titleSmall),
-            const SizedBox(height: 4),
-            Text(_plan().describe(), style: theme.textTheme.bodySmall),
             const SizedBox(height: 10),
             ..._daySide(
               title: 'Out on',
@@ -410,14 +455,6 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
               rules: _backRules,
               candidates: candidates,
               outbound: false,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Tap a day to select or deselect it. A day\'s time rule is '
-              'about the departure (out) or the landing (back). Days '
-              'outside your period are the flex days -- leave a day '
-              'early, come back a day late.',
-              style: theme.textTheme.bodySmall,
             ),
           ],
         ),
@@ -445,13 +482,23 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
             FilterChip(
               label: Text(_dayLabel(day)),
               selected: rules.containsKey(day),
-              onSelected: (on) => setState(() {
-                if (on) {
-                  rules[day] = TravelDay(day);
-                } else {
-                  rules.remove(day);
-                }
-              }),
+              onSelected: (on) {
+                setState(() {
+                  if (on) {
+                    // A day that comes back keeps the rule it
+                    // had: selecting it afresh used to reset it
+                    // to "any time" and silently throw the
+                    // user's bound away. The rule is remembered
+                    // here because removing the day's entry
+                    // from the map takes the bound with it.
+                    rules[day] = _rememberedRules[day] ?? TravelDay(day);
+                  } else {
+                    final rule = rules.remove(day);
+                    if (rule != null) _rememberedRules[day] = rule;
+                  }
+                });
+                _selectionChanged();
+              },
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
               visualDensity: VisualDensity.compact,
             ),
@@ -595,6 +642,61 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
             ),
             const SizedBox(height: 4),
             Text(_scopeCaption(), style: theme.textTheme.bodySmall),
+            // The group is eleven carriers now: the list
+            // goes behind a question mark (hover on the
+            // desktop, a tap on the phone) so the card stays
+            // short.
+            if (_airlineScope == AirlineScope.lufthansaGroup)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Tooltip(
+                  triggerMode: TooltipTriggerMode.tap,
+                  message: lufthansaGroupCaption(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.help_outline,
+                          size: 15, color: theme.colorScheme.primary),
+                      const SizedBox(width: 4),
+                      Text('Which carriers?',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.primary)),
+                    ],
+                  ),
+                ),
+              ),
+            const SizedBox(height: 10),
+            // The benefits answer belongs with the airline
+            // filter -- it is the other half of the same
+            // question -- so it lives here rather than in a
+            // box of its own.
+            Row(
+              children: [
+                Expanded(
+                  child: Text('Airlines with benefits',
+                      style: theme.textTheme.labelLarge),
+                ),
+                // The legacy's re-read: the Dart side
+                // holds no cache, so a re-read is a
+                // fresh fetch of the same query.
+                if (!_loadingBenefits)
+                  IconButton(
+                    icon: const Icon(Icons.refresh_outlined, size: 20),
+                    tooltip: 'Re-read the benefits database',
+                    onPressed: _loadBenefits,
+                  ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            if (_loadingBenefits)
+              const Text('Reading the benefits database…')
+            else
+              Text(
+                benefitSummary(
+                    _benefits.flags, _benefits.records, _benefits.sourceLabel,
+                    _benefits.problems),
+                style: theme.textTheme.bodySmall,
+              ),
             const SizedBox(height: 10),
             Wrap(
               spacing: 12,
@@ -649,13 +751,6 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              'Flights longer than the cap produce no options, on either '
-              'leg. Options with fewer nights than the minimum are dropped '
-              '-- the report says how many.',
-              style: theme.textTheme.bodySmall,
-            ),
           ],
         ),
       ),
@@ -666,9 +761,7 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
   String _scopeCaption() {
     switch (_airlineScope) {
       case AirlineScope.lufthansaGroup:
-        return 'Lufthansa Group carriers: Lufthansa, Lufthansa City, '
-            'Eurowings, SWISS, Austrian, Brussels Airlines, Air Dolomiti, '
-            'ITA Airways.';
+        return 'Only the Lufthansa Group carriers.';
       case AirlineScope.lufthansa:
         return 'Every airline with "Lufthansa" in its name.';
       case AirlineScope.allWithBenefits:
@@ -679,45 +772,6 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     }
   }
 
-  Widget _benefitsCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text('Airlines with benefits',
-                      style: Theme.of(context).textTheme.titleSmall),
-                ),
-                // The legacy's re-read: the Dart side
-                // holds no cache, so a re-read is a
-                // fresh fetch of the same query.
-                if (!_loadingBenefits)
-                  IconButton(
-                    icon: const Icon(Icons.refresh_outlined, size: 20),
-                    tooltip: 'Re-read the benefits database',
-                    onPressed: _loadBenefits,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            if (_loadingBenefits)
-              const Text('Reading the benefits database…')
-            else
-              Text(
-                benefitSummary(
-                    _benefits.flags, _benefits.records, _benefits.sourceLabel,
-                    _benefits.problems),
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _report(WeekendSearch search) {
     final report = search.report;
@@ -887,7 +941,6 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
     final theme = Theme.of(context);
     final key = '${city.city}|${city.country}';
     final expanded = _expandedCities.contains(key);
-    final first = city.options.first;
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: Column(
@@ -916,13 +969,23 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                          Text('${CountryNames.flagFor(city.country)} ${city.label}',
                              style: theme.textTheme.titleSmall,
                              overflow: TextOverflow.ellipsis),
+                         // The facts, one per line and *not*
+                         // ellipsised: a phone has no room for
+                         // them side by side, and a truncated
+                         // "earliest out Sat 09:20 · 1 n…" says
+                         // nothing (the phone screenshot,
+                         // 2026-10-20).
                          Text(
                            '${city.count} option${city.count == 1 ? '' : 's'} · '
-                           'earliest out ${_stamp(first.outFlight.departure)} · '
-                           '${first.nights}🛏',
+                           '${cityDepartureSummary(city)}',
                            style: theme.textTheme.bodySmall,
-                           overflow: TextOverflow.ellipsis,
                          ),
+                         if (cityReturnSummary(city).isNotEmpty)
+                           Text(
+                             cityReturnSummary(city),
+                             style: theme.textTheme.bodySmall?.copyWith(
+                                 color: theme.colorScheme.primary),
+                           ),
                          if (catalogueName != null)
                            Text(
                              _finderFigures(catalogueName),
@@ -930,15 +993,15 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
                                  color: theme.colorScheme.onSurfaceVariant),
                              overflow: TextOverflow.ellipsis,
                            ),
-                        Text(
-                          _airlineList(city.options),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
-                  ),
+                         Text(
+                           _airlineList(city.options),
+                           style: theme.textTheme.labelSmall?.copyWith(
+                               color: theme.colorScheme.onSurfaceVariant),
+                           overflow: TextOverflow.ellipsis,
+                         ),
+                       ],
+                     ),
+                   ),
                   if (catalogueName != null)
                     IconButton(
                       icon: const Icon(Icons.open_in_new, size: 18),
@@ -1034,12 +1097,14 @@ class _WeekendFinderPageState extends State<WeekendFinderPage> {
       }
     }
     if (match == null) return;
-    widget.onOpenDestination?.call(match.name);
     Navigator.of(context).push(MaterialPageRoute(
       settings: RouteSettings(name: 'destination/${match.name}'),
       builder: (_) => DestinationPage(
         repository: widget.destinations,
         destination: match!,
+        onOpenDestination: widget.onOpenDestination,
+        initiallyInOpenTabs: widget.isInOpenTabs?.call(match.name) ?? false,
+        onAddToOpenTabs: widget.onAddToOpenTabs,
       ),
     ));
   }

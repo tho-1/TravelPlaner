@@ -25,6 +25,7 @@ import '../data/geocode_repository.dart';
 import '../models/destination.dart';
 import '../models/trip.dart';
 import '../models/trip_ops.dart';
+import '../models/travel_days.dart';
 import 'theme.dart';
 
 /// The stop roles, with the legacy's badge
@@ -584,7 +585,10 @@ class _StopEditorState extends State<_StopEditor> {
     final nights = int.tryParse(_nights.text.trim());
     if (arrival != null && nights != null && nights > 0) {
       setState(() {
-        _departureDate = _iso(arrival.add(Duration(days: nights)));
+        // Calendar arithmetic: `add(Duration(days: n))` is
+        // absolute time, so across a DST change the date
+        // comes out one day early.
+        _departureDate = _iso(addCalendarDays(arrival, nights));
         _nights.text = '$nights';
       });
     } else {
@@ -858,8 +862,8 @@ class _LegRow extends StatelessWidget {
 
 // ── add-stop panel ───────────────────────────────────────────
 
-/// The "➕ Add a stop" panel: workbook
-/// destination, custom city (geocoded) or the
+/// The "➕ Add a stop" panel: a catalogue
+/// destination, a custom city (geocoded) or the
 /// home gateway, with the stop's role and nights.
 class _AddStopPanel extends StatefulWidget {
   final Variant variant;
@@ -888,7 +892,7 @@ class _AddStopPanelState extends State<_AddStopPanel> {
     lon: 8.6821,
   );
 
-  var _source = 0; // 0 workbook, 1 custom, 2 gateway
+  var _source = 0; // 0 catalogue, 1 custom, 2 gateway
   var _role = 'stop';
   var _nights = 0;
   var _destination = '';
@@ -934,9 +938,55 @@ class _AddStopPanelState extends State<_AddStopPanel> {
         : (names.isNotEmpty ? names.first : '');
   }
 
+  /// A row of choices that fits the width it is given.
+  ///
+  /// A segmented button cannot wrap: on a phone its captions
+  /// wrapped *inside* the button ("Custom\ncity"), which
+  /// reads as a bug (the report, 2026-10-21). Where the
+  /// segments do not fit, they become chips that wrap onto a
+  /// second line -- a layout the reader understands.
+  Widget _choiceRow<T>({
+    required List<(T, String, IconData)> options,
+    required T selected,
+    required ValueChanged<T> onChanged,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth >= 380) {
+          return SegmentedButton<T>(
+            segments: [
+              for (final option in options)
+                ButtonSegment(
+                  value: option.$1,
+                  label: Text(option.$2),
+                  icon: Icon(option.$3),
+                ),
+            ],
+            selected: {selected},
+            showSelectedIcon: false,
+            onSelectionChanged: (selection) => onChanged(selection.first),
+          );
+        }
+        return Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final option in options)
+              ChoiceChip(
+                label: Text(option.$2),
+                avatar: Icon(option.$3, size: 18),
+                selected: selected == option.$1,
+                onSelected: (on) => onChanged(option.$1),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
   void _add() {
     switch (_source) {
-      case 0: // workbook destination
+      case 0: // catalogue destination
         final destination = _effectiveDestination;
         if (destination.isEmpty) return;
         widget.onAddStop(
@@ -987,45 +1037,25 @@ class _AddStopPanelState extends State<_AddStopPanel> {
             Text('Add a stop', style: theme.textTheme.titleMedium),
             const SizedBox(height: 8),
             Text('Source', style: theme.textTheme.labelLarge),
-            SegmentedButton<int>(
-              segments: const [
-                ButtonSegment(
-                    value: 0,
-                    label: Text('Workbook'),
-                    icon: Icon(Icons.book_outlined)),
-                ButtonSegment(
-                    value: 1,
-                    label: Text('Custom city'),
-                    icon: Icon(Icons.edit_location_outlined)),
-                ButtonSegment(
-                    value: 2,
-                    label: Text('Home gateway'),
-                    icon: Icon(Icons.home_outlined)),
+            _choiceRow<int>(
+              options: const [
+                (0, 'Catalogue', Icons.book_outlined),
+                (1, 'Custom city', Icons.edit_location_outlined),
+                (2, 'Home gateway', Icons.home_outlined),
               ],
-              selected: {_source},
-              onSelectionChanged: (selection) =>
-                  setState(() => _source = selection.first),
+              selected: _source,
+              onChanged: (value) => setState(() => _source = value),
             ),
             const SizedBox(height: 8),
             Text('Role', style: theme.textTheme.labelLarge),
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(
-                    value: 'stop',
-                    label: Text('Stop'),
-                    icon: Icon(Icons.place_outlined)),
-                ButtonSegment(
-                    value: 'origin',
-                    label: Text('Origin'),
-                    icon: Icon(Icons.north_east)),
-                ButtonSegment(
-                    value: 'return',
-                    label: Text('Return'),
-                    icon: Icon(Icons.flag_outlined)),
+            _choiceRow<String>(
+              options: const [
+                ('stop', 'Stop', Icons.place_outlined),
+                ('origin', 'Origin', Icons.north_east),
+                ('return', 'Return', Icons.flag_outlined),
               ],
-              selected: {_role},
-              onSelectionChanged: (selection) =>
-                  setState(() => _role = selection.first),
+              selected: _role,
+              onChanged: (value) => setState(() => _role = value),
             ),
             const SizedBox(height: 8),
             if (_staysOvernight)
@@ -1107,7 +1137,7 @@ class _AddStopPanelState extends State<_AddStopPanel> {
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
                   child: Text('No geocode match — check spelling or add '
-                      'the city to the workbook first.'),
+                      'the city to the catalogue first.'),
                 ),
               if (_matches.isNotEmpty) ...[
                 const SizedBox(height: 8),
@@ -1290,7 +1320,7 @@ class _Metric extends StatelessWidget {
 
 /// The variant meta editor (E5): rating, the
 /// months multiselect pre-filled with the
-/// workbook suggestion, comment and notes.
+/// catalogue suggestion, comment and notes.
 class _VariantMetaPanel extends StatefulWidget {
   final Variant variant;
   final List<Destination> catalogue;
@@ -1318,7 +1348,7 @@ class _VariantMetaPanelState extends State<_VariantMetaPanel> {
     super.initState();
     _rating = widget.variant.rating?.toString();
     // The multiselect's default: the stored
-    // months, else the workbook suggestion for
+    // months, else the catalogue suggestion for
     // the whole route -- the legacy's
     // `default=stored_months or
     // _trip_wide_suggestion(...)`. Saving
@@ -1408,7 +1438,7 @@ class _VariantMetaPanelState extends State<_VariantMetaPanel> {
             if (suggestions.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
-                'Workbook says good: ${suggestions.entries.map((entry) => '${entry.key}: ${entry.value.map((m) => m.substring(0, 3)).join(', ')}').join(' · ')}',
+                'The catalogue says good: ${suggestions.entries.map((entry) => '${entry.key}: ${entry.value.map((m) => m.substring(0, 3)).join(', ')}').join(' · ')}',
                 style: theme.textTheme.bodySmall,
               ),
             ],

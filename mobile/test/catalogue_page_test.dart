@@ -149,4 +149,135 @@ void main() {
     expect(find.textContaining('2 of 2 destinations'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  // ── the search and the empty states ─────────────────────────
+  //
+  // An empty list must always say *why* it is empty. "The
+  // database holds no destinations", "No destination matches
+  // ..." and "no unvisited destination matches ... (3 matched
+  // before the filter)" are three different facts, and a user
+  // who cannot tell them apart thinks the data is gone.
+
+  testWidgets('a failed read is a problem, not an empty catalogue',
+      (tester) async {
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    await binding.setSurfaceSize(const Size(420, 1200));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final fake = FakeTurso((_) => httpStatus(503));
+    await tester.pumpWidget(MaterialApp(
+      home: CataloguePage(
+        repository:
+            DestinationRepository(TursoClient(_config, httpClient: fake.client())),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('The database holds no destinations.'), findsNothing,
+        reason: 'a failed read is never an empty catalogue');
+    expect(find.text('Could not load destinations'), findsOneWidget);
+    expect(find.text('Retry'), findsOneWidget);
+  });
+
+  testWidgets('an empty database says so', (tester) async {
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    await binding.setSurfaceSize(const Size(420, 1200));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final fake = FakeTurso((_) => okRows(
+          ['destination', 'country', 'visited', 'data'],
+          const [],
+        ));
+    await tester.pumpWidget(MaterialApp(
+      home: CataloguePage(
+        repository:
+            DestinationRepository(TursoClient(_config, httpClient: fake.client())),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('The database holds no destinations.'), findsOneWidget);
+  });
+
+  testWidgets('the search narrows the list by name and by country',
+      (tester) async {
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    await binding.setSurfaceSize(const Size(420, 1200));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final fake = FakeTurso((_) => okRows(
+          ['destination', 'country', 'visited', 'data'],
+          [
+            ['Rome', 'Italy', null, jsonEncode(const [])],
+            ['Kyoto', 'Japan', null, jsonEncode(const [])],
+          ],
+        ));
+    await tester.pumpWidget(MaterialApp(
+      home: CataloguePage(
+        repository:
+            DestinationRepository(TursoClient(_config, httpClient: fake.client())),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Rome'), findsOneWidget);
+    expect(find.text('Kyoto'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'kyoto');
+    await tester.pumpAndSettle();
+    expect(find.text('Rome'), findsNothing);
+    expect(find.text('Kyoto'), findsOneWidget);
+
+    // The country counts too.
+    await tester.enterText(find.byType(TextField), 'japan');
+    await tester.pumpAndSettle();
+    expect(find.text('Rome'), findsNothing);
+    expect(find.text('Kyoto'), findsOneWidget);
+  });
+
+  testWidgets('a search that matches nothing says what it searched for',
+      (tester) async {
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    await binding.setSurfaceSize(const Size(420, 1200));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final fake = FakeTurso((_) => okRows(
+          ['destination', 'country', 'visited', 'data'],
+          [
+            ['Rome', 'Italy', null, jsonEncode(const [])],
+          ],
+        ));
+    await tester.pumpWidget(MaterialApp(
+      home: CataloguePage(
+        repository:
+            DestinationRepository(TursoClient(_config, httpClient: fake.client())),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextField), 'atlantis');
+    await tester.pumpAndSettle();
+
+    expect(find.text('No destination matches "atlantis".'), findsOneWidget);
+  });
+
+  testWidgets('the groups are per country', (tester) async {
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    await binding.setSurfaceSize(const Size(420, 1200));
+    addTearDown(() => binding.setSurfaceSize(null));
+    final fake = FakeTurso((_) => okRows(
+          ['destination', 'country', 'visited', 'data'],
+          [
+            ['Rome', 'Italy', null, jsonEncode(const [])],
+            ['Milan', 'Italy', null, jsonEncode(const [])],
+            ['Kyoto', 'Japan', null, jsonEncode(const [])],
+          ],
+        ));
+    await tester.pumpWidget(MaterialApp(
+      home: CataloguePage(
+        repository:
+            DestinationRepository(TursoClient(_config, httpClient: fake.client())),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Italy'), findsOneWidget);
+    expect(find.text('Japan'), findsOneWidget);
+  });
 }

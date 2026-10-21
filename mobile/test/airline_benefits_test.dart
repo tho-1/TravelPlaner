@@ -4,9 +4,13 @@
 /// table (yes / no / unknown spellings).
 library;
 
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:travel_planner/data/benefits_repository.dart';
+import 'package:travel_planner/data/offline_cache.dart';
 import 'package:travel_planner/models/airline_benefits.dart';
 import 'package:travel_planner/turso/config.dart';
 
@@ -172,6 +176,44 @@ void main() {
       );
     });
 
+    test('lufthansaGroup includes the newly added carriers', () {
+      expect(
+        airlineInScope('VL', 'Lufthansa City Airlines',
+            AirlineScope.lufthansaGroup, flags),
+        isTrue,
+      );
+      expect(
+        airlineInScope('4Y', 'Discover Airlines',
+            AirlineScope.lufthansaGroup, flags),
+        isTrue,
+      );
+    });
+
+    test('the caption names exactly the carriers the code filters on',
+        () {
+      // The caption and the membership test are one table
+      // (the user's report, 2026-10-21: the caption lagged
+      // behind the code and named fewer carriers than the
+      // filter accepted). This pins the two together.
+      final caption = lufthansaGroupCaption();
+      for (final carrier in lufthansaGroupCarriers) {
+        expect(caption, contains(carrier.$2),
+            reason: '${carrier.$2} is in the group and in the caption');
+        expect(lufthansaGroupCodes, contains(carrier.$1),
+            reason: '${carrier.$1} is in the group');
+        expect(
+          airlineInScope(carrier.$1, carrier.$2, AirlineScope.lufthansaGroup,
+              flags),
+          isTrue,
+          reason: '${carrier.$2} passes the filter',
+        );
+      }
+      // And the caption does not name a carrier the filter
+      // would reject.
+      final names = lufthansaGroupCarriers.map((carrier) => carrier.$2);
+      expect(caption.split(', ').length, names.length);
+    });
+
     test('lufthansa is name membership ("all with Lufthansa in the name")',
         () {
       expect(
@@ -274,6 +316,95 @@ void main() {
       expect(source.problems.single, contains('not configured'));
       expect(source.sourceLabel, 'built-in defaults');
       expect(hasBenefits('Lufthansa', source.flags), isTrue);
+    });
+
+    group('the offline snapshot', () {
+      late Directory temp;
+
+      setUp(() => temp = Directory.systemTemp.createTempSync('benefits'));
+      tearDown(() => temp.deleteSync(recursive: true));
+
+      OfflineCache newCache() => OfflineCache(p.join(temp.path, 'offline'));
+
+      test('a full read fills the snapshot', () async {
+        final fake = FakeTurso((_) => okRows(
+              ['iata', 'name', 'discount_eligible'],
+              [
+                ['LH', 'Lufthansa', 'yes'],
+                ['BA', 'British Airways', 'no'],
+              ],
+            ));
+        final repository = BenefitsRepository(_configured(),
+            httpClient: fake.client(), offline: newCache());
+        await repository.loadFlags();
+        expect(newCache().load('benefits'), isNotNull);
+      });
+
+      test('a failed read answers from the snapshot, labelled', () async {
+        // The point of the snapshot: offline the finder must
+        // use the *real* table, not the 24-airline default list
+        // -- the default would qualify carriers the database
+        // says are 'unknown'.
+        final cache = newCache();
+        final online = FakeTurso((_) => okRows(
+              ['iata', 'name', 'discount_eligible'],
+              [
+                ['LH', 'Lufthansa', 'yes'],
+                ['BA', 'British Airways', 'no'],
+              ],
+            ));
+        await BenefitsRepository(_configured(),
+                httpClient: online.client(), offline: cache)
+            .loadFlags();
+
+        final offline = FakeTurso((_) => httpStatus(503));
+        final source = await BenefitsRepository(_configured(),
+                httpClient: offline.client(), offline: cache)
+            .loadFlags();
+
+        expect(source.records.length, 2);
+        expect(source.flags['LH'], isTrue);
+        expect(source.flags['british'], isFalse);
+        expect(source.sourceLabel, contains('offline snapshot'));
+        expect(source.problems.single, contains('offline:'));
+      });
+
+      test('a failed read without a snapshot uses the seed list', () async {
+        final offline = FakeTurso((_) => httpStatus(503));
+        final source = await BenefitsRepository(_configured(),
+                httpClient: offline.client(), offline: newCache())
+            .loadFlags();
+        expect(source.sourceLabel, 'built-in defaults');
+        expect(source.records, isEmpty);
+        expect(source.problems.single, contains('503'));
+      });
+
+      test('an empty table is a failure, and does not read the snapshot',
+          () async {
+        // The table being emptied is a signal, not a network
+        // problem: answering from the snapshot would hide it.
+        final cache = newCache();
+        final online = FakeTurso((_) => okRows(
+              ['iata', 'name', 'discount_eligible'],
+              [
+                ['LH', 'Lufthansa', 'yes'],
+              ],
+            ));
+        await BenefitsRepository(_configured(),
+                httpClient: online.client(), offline: cache)
+            .loadFlags();
+
+        final emptied = FakeTurso((_) => okRows(
+              ['iata', 'name', 'discount_eligible'],
+              const [],
+            ));
+        final source = await BenefitsRepository(_configured(),
+                httpClient: emptied.client(), offline: cache)
+            .loadFlags();
+
+        expect(source.sourceLabel, 'built-in defaults');
+        expect(source.problems.single, contains('treated as a failure'));
+      });
     });
   });
 }

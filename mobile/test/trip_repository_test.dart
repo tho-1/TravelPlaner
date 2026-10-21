@@ -256,6 +256,39 @@ void main() {
     expect(fake.requests.first.single, contains('INSERT INTO trips'));
   });
 
+  test('a mid-batch failure is reported as failed, never as saved',
+      () async {
+    // The live pipeline keeps going after a statement error
+    // (`ok, error, ok`), so a variant batch can land
+    // half-written. The save must surface that as `failed`:
+    // reporting `saved` would tell the user the trip is
+    // complete when its stops are missing.
+    var call = 0;
+    final fake = FakeTurso((_) {
+      call++;
+      // Request 1: the trip upsert lands.
+      if (call == 1) return okEmpty(1, 1);
+      // Request 2: the variant batch -- one statement
+      // failed among the others.
+      return pipelinePartialFailure(3, 'constraint failed');
+    });
+    final trip = const Trip(
+      id: 't-1',
+      name: 'Japan',
+      activeVariantId: 'v-1',
+      variants: [
+        Variant(
+          id: 'v-1',
+          name: 'Spring',
+          stops: [Stop(id: 's-1', ref: StopRef(kind: 'stop', name: 'Kyoto'))],
+        ),
+      ],
+    );
+    final status = await _repo(fake).saveTrip(trip);
+    expect(status, TripSaveStatus.failed);
+    expect(fake.requests, hasLength(2));
+  });
+
   test('a copy that never saw a stamp guards with IS NULL', () async {
     // `= NULL` never matches in SQL: the guard for a
     // stamp-less copy must be IS NULL, or every one of

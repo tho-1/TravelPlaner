@@ -31,7 +31,7 @@ Exact filter rules:
 The finder the user actually runs is `mobile/lib/ui/weekend_finder_page.dart`
 now; this document's Python sections below describe the retired Streamlit
 original and stay as the rule book the port was built from. What changed in
-the mobile app on 2026-10-16 (details: `MOBILE_REPORTS_2026-10-16.md`,
+the mobile app on 2026-10-16 (details: `archive/docs/MOBILE_REPORTS_2026-10-16.md`,
 `PLAN.md` §0s):
 
 * **Day model (report b):** the fixed Thu/Fri/Sat/Sun/Mon/Tue slots are
@@ -58,9 +58,17 @@ the mobile app on 2026-10-16 (details: `MOBILE_REPORTS_2026-10-16.md`,
   233–366; the board's data is missing, not the search. AIRail station
   codes (QKL, ZWS, MKF, …) are an explicit table now; unknown codes get
   the board's own name and a log entry, never a `?CODE` label.
-* **Fallback source (report j):** optional FlightAware AeroAPI
-  (`flightaware_api_key` in the config), consulted only for failed or
-  implausible windows. No scraping sources (FL24 terms forbid it).
+* **Fallback sources (report j):** consulted only for failed or implausible
+  windows, never for healthy ones. In order: the shared FlightRoutes boards
+  (the sibling's database, read *and* written back), then the optional
+  licensed APIs — AeroDataBox (RapidAPI), AirLabs, and the original
+  FlightAware AeroAPI (`flightaware_api_key` in the config). No scraping
+  sources (FL24's terms forbid it). Each key is optional; without any of them
+  the Fraport board is the only source.
+* **The result line (2026-10-20):** under each city the finder now shows the
+  earliest departure *and* the latest Sunday return (its takeoff) plus, when
+  one exists, the earliest Monday return (its landing). The logic is pure and
+  lives in `lib/models/weekend_match.dart` (`citySummary`).
 
 ## STATUS 2026-10-08: complete — Fraport provider implemented and tested
 
@@ -219,10 +227,14 @@ weekend_match.py          pure, tested matcher: flights × windows → city list
 
 ## Still needs from the user
 
-1. **Go-ahead to implement `FraportBoardProvider`** — the endpoint is verified, so
-   this is now ordinary work rather than an open question. No credentials needed.
-2. Confirm the Monday-return reading is right: *land Monday before 09:00*
-   (i.e. Sunday-night/Monday-early flights home), Sunday itself unbounded.
+*Nothing blocking the build.* The two questions this section used to hold are
+settled: the Fraport board provider was implemented and tested (2026-10-07),
+and the Monday-return reading ("land Monday before 09:00", Sunday itself
+unbounded) is the rule the matcher applies. The expanded-result complaint
+(`MOBILE_REPORTS_2026-10-17.md`, item (i)) was closed on 2026-10-20: it was
+about an older build, and the part worth keeping — a result line that a phone
+could actually read — is fixed (the facts are one per line and wrap instead of
+being ellipsised).
 
 ## Airline benefits: where the answers come from
 

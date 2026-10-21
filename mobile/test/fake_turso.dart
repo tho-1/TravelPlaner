@@ -242,5 +242,35 @@ http.Response pipelineError(String message) => http.Response.bytes(
       headers: {'content-type': 'application/json; charset=utf-8'},
     );
 
+/// A 200 pipeline response whose batch holds several
+/// statements and where one of them failed: the others
+/// reported `ok`, the failed one an error. The live
+/// endpoint keeps going after a statement error, so a batch
+/// can land half-written -- which is why the caller has to
+/// treat the whole batch as failed.
+http.Response pipelinePartialFailure(
+  int okCount,
+  String message, {
+  int failedAt = 0,
+}) =>
+    http.Response.bytes(
+      utf8.encode(
+        jsonEncode({
+          'results': [
+            for (var i = 0; i < okCount; i++)
+              {
+                'type': 'ok',
+                'response': {
+                  'result': {'cols': [], 'rows': [], 'rows_affected': 1},
+                },
+              },
+            {'type': 'error', 'error': {'message': message}},
+          ],
+        }),
+      ),
+      200,
+      headers: {'content-type': 'application/json; charset=utf-8'},
+    );
+
 http.Response httpStatus(int status) =>
     http.Response('{"error": "unexpected status"}', status);

@@ -15,6 +15,7 @@ import 'package:http/testing.dart';
 import 'package:travel_planner/data/geocode_repository.dart';
 import 'package:travel_planner/models/destination.dart';
 import 'package:travel_planner/models/trip.dart';
+import 'package:travel_planner/ui/itinerary_compare_tab.dart';
 import 'package:travel_planner/ui/itinerary_plan_tab.dart';
 
 Variant _variant(List<Stop> stops) => Variant(
@@ -200,5 +201,231 @@ void main() {
     expect(added, hasLength(1));
     expect(added.single.$1.name, 'Kyoto');
     expect(added.single.$1.kind, 'destination');
+  });
+
+  group('the add-stop panel', () {
+    Future<void> pumpPanel(
+      WidgetTester tester, {
+      List<Destination> catalogue = const [],
+      void Function(StopRef ref, String role, int? nights)? onAddStop,
+    }) async {
+      final binding = TestWidgetsFlutterBinding.ensureInitialized();
+      await binding.setSurfaceSize(const Size(380, 1600));
+      addTearDown(() => binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ItineraryPlanTab(
+            trip: _trip(_variant([_kyoto])),
+            variant: _variant([_kyoto]),
+            catalogue: catalogue,
+            geocoder: GeocodeRepository('',
+                httpClient: MockClient((_) async => http.Response('[]', 200))),
+            onRemoveStop: (_) {},
+            onMoveStop: (_, _) {},
+            onUpdateStop: (_, _) {},
+            onSetLegMode: (_, _) {},
+            onAddStop: onAddStop ?? (_, _, _) {},
+            onUpdateVariant: (_) {},
+            onExport: () {},
+            selectedStopId: null,
+            onToggleHighlight: (_) {},
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the pickers fit a phone without wrapping their captions',
+        (tester) async {
+      // The segmented buttons could not fit a phone: their
+      // captions wrapped *inside* the button ("Custom\ncity"),
+      // which reads as a bug (the report, 2026-10-21). Where
+      // they do not fit they become chips that wrap onto a
+      // second line.
+      await pumpPanel(tester);
+
+      final source = find.text('Source');
+      expect(source, findsOneWidget);
+      // The narrow layout: chips, not a segmented button.
+      expect(find.byType(SegmentedButton<int>), findsNothing);
+      expect(find.widgetWithText(ChoiceChip, 'Catalogue'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'Custom city'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'Home gateway'), findsOneWidget);
+      // Nothing overflowed.
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('a wide layout keeps the segmented buttons', (tester) async {
+      final binding = TestWidgetsFlutterBinding.ensureInitialized();
+      await binding.setSurfaceSize(const Size(1200, 1600));
+      addTearDown(() => binding.setSurfaceSize(null));
+      await tester.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: ItineraryPlanTab(
+            trip: _trip(_variant([_kyoto])),
+            variant: _variant([_kyoto]),
+            catalogue: const [],
+            geocoder: GeocodeRepository('',
+                httpClient: MockClient((_) async => http.Response('[]', 200))),
+            onRemoveStop: (_) {},
+            onMoveStop: (_, _) {},
+            onUpdateStop: (_, _) {},
+            onSetLegMode: (_, _) {},
+            onAddStop: (_, _, _) {},
+            onUpdateVariant: (_) {},
+            onExport: () {},
+            selectedStopId: null,
+            onToggleHighlight: (_) {},
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(SegmentedButton<int>), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'Catalogue'), findsNothing);
+    });
+
+    testWidgets('the source is called the catalogue, not the workbook',
+        (tester) async {
+      // The workbook is gone: the app's list of destinations is
+      // the catalogue (the report, 2026-10-21).
+      await pumpPanel(tester);
+      expect(find.textContaining('Workbook'), findsNothing);
+      expect(find.widgetWithText(ChoiceChip, 'Catalogue'), findsOneWidget);
+    });
+
+    testWidgets('the home gateway can be added', (tester) async {
+      final added = <(StopRef, String, int?)>[];
+      await pumpPanel(tester, onAddStop: (ref, role, nights) {
+        added.add((ref, role, nights));
+      });
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Home gateway'));
+      await tester.pumpAndSettle();
+      final add = find.widgetWithText(FilledButton, 'Add stop');
+      await tester.ensureVisible(add);
+      await tester.tap(add);
+      await tester.pumpAndSettle();
+
+      expect(added, hasLength(1));
+      expect(added.single.$1.kind, 'gateway');
+      expect(added.single.$1.name, 'Frankfurt');
+    });
+
+    testWidgets('a custom city is added with its coordinates', (tester) async {
+      final added = <(StopRef, String, int?)>[];
+      await pumpPanel(tester, onAddStop: (ref, role, nights) {
+        added.add((ref, role, nights));
+      });
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Custom city'));
+      await tester.pumpAndSettle();
+      // No match: the Add button stays disabled.
+      final add = find.widgetWithText(FilledButton, 'Add stop');
+      await tester.ensureVisible(add);
+      expect(tester.widget<FilledButton>(add).onPressed, isNull);
+    });
+  });
+
+  group('the compare tab', () {
+    Trip tripWith(List<Variant> variants) => Trip(
+          id: 't-1',
+          name: 'Japan',
+          created: '2026-10-10T21:00:00+00:00',
+          activeVariantId: variants.first.id,
+          variants: variants,
+        );
+
+    Widget compare(Trip trip, void Function(String) onActivate) =>
+        MaterialApp(
+          home: Scaffold(
+            body: ItineraryCompareTab(trip: trip, onActivate: onActivate),
+          ),
+        );
+
+    testWidgets('every variant gets a row and the totals', (tester) async {
+      final trip = tripWith([
+        const Variant(
+          id: 'v-1',
+          name: 'Spring',
+          months: ['April'],
+          stops: [_kyoto, _osaka],
+          legs: [Leg(mode: 'flight')],
+        ),
+        const Variant(id: 'v-2', name: 'Autumn', months: ['October']),
+      ]);
+      await tester.pumpWidget(compare(trip, (_) {}));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Spring'), findsWidgets);
+      expect(find.text('Autumn'), findsWidgets);
+      // The totals: two stops, one flight.
+      expect(find.text('2'), findsWidgets);
+      expect(find.text('1'), findsWidgets);
+      expect(find.text('Months'), findsOneWidget);
+      expect(find.text('Warnings'), findsOneWidget);
+    });
+
+    testWidgets('a trip without variants says so', (tester) async {
+      await tester.pumpWidget(compare(
+        Trip(
+          id: 't-1',
+          name: 'Japan',
+          created: '2026-10-10T21:00:00+00:00',
+          activeVariantId: 'v-1',
+          variants: const [],
+        ),
+        (_) {},
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('No variants yet.'), findsOneWidget);
+    });
+
+    testWidgets('the activate button makes the chosen variant active',
+        (tester) async {
+      final activated = <String>[];
+      final trip = tripWith([
+        const Variant(id: 'v-1', name: 'Spring', months: ['April']),
+        const Variant(id: 'v-2', name: 'Autumn', months: ['October']),
+      ]);
+      await tester.pumpWidget(compare(trip, activated.add));
+      await tester.pumpAndSettle();
+
+      // Pick the other variant in the selector, then activate
+      // it.
+      await tester.tap(find.byType(DropdownButtonFormField<int>));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Autumn').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, 'Activate'));
+      await tester.pumpAndSettle();
+
+      expect(activated.last, 'v-2');
+    });
+
+    testWidgets('a duplicate name is disambiguated by its id',
+        (tester) async {
+      // Two variants with the same name: the selector must
+      // never target the wrong one.
+      final trip = tripWith([
+        const Variant(id: 'v-1', name: 'Spring', months: ['April']),
+        const Variant(id: 'v-2', name: 'Spring', months: ['October']),
+      ]);
+      await tester.pumpWidget(compare(trip, (_) {}));
+      await tester.pumpAndSettle();
+
+      // The selector carries both, and the two labels differ
+      // (the id suffix).
+      await tester.tap(find.byType(DropdownButtonFormField<int>));
+      await tester.pumpAndSettle();
+      final items = find.byType(DropdownMenuItem<int>);
+      expect(items, findsAtLeastNWidgets(2));
+      final labels = <String>{};
+      for (final item in items.evaluate()) {
+        labels.add((item.widget as DropdownMenuItem<int>).child.toString());
+      }
+      expect(labels.length, greaterThan(1),
+          reason: 'the two variants are told apart');
+    });
   });
 }

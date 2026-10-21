@@ -1,6 +1,6 @@
 # Travel Planner — Plan & Handoff
 
-Last updated: 2026-10-12.
+Last updated: 2026-10-21.
 
 **Read `AGENTS.md` first** (orientation, invariants, open items), then
 `README.md` (how to run it, where runtime data is written, the data-safety
@@ -13,6 +13,207 @@ Sections §1–§4 below are historical (they describe the state *before* the
 
 ---
 
+## 2026-10-21 — the weekend finder's report (a–n), and the trip planner's first review
+
+The user sent fourteen items in one batch: four bugs, four removed texts, a
+better airline list, and two "review the tests properly" requests. The ones
+that changed behaviour:
+
+**(c) "Out on doesn't work reliably" — a DST bug, not a UI bug.** The user's
+own clue was "only sometimes, I think the weekend of 23 October". That weekend
+*is* the DST weekend (the clock goes back on Sunday the 25th), and the preset
+computed "next weekend" as `fridayOf(now).add(const Duration(days: 7))`.
+`DateTime.add` adds *absolute* time: 2026-10-23 00:00 plus seven days is
+**Thursday the 29th at 23:00 local**, and a `TravelDay` keyed by that time
+matches none of the day chips (they carry midnight), so the chip looked
+unselected while the rule row stayed -- and the plan, built from the same map,
+still contained the day. `models/travel_days.dart` now exports
+`addCalendarDays` (calendar arithmetic, the same shape as the existing private
+`_addDays`) and every day-arithmetic call site uses it (the finder's presets
+and range picker, the timetable's next-day stamp, the trip planner's
+auto-departure date). The finder's clock became an injectable seam so the DST
+weekend is reachable in a test at all.
+
+The second half of the report -- "and the results included Thursday" -- was a
+separate defect: an answer drawn for the old selection stayed on screen under
+the new chips. The finder now re-runs the search when the selection changes
+(`_selectionChanged`), which is affordable precisely because the boards are
+free (Fraport) or cached (the credentialed fallbacks).
+
+**(a) and (b) the board sources' budget.** Fraport is free and unlimited, so
+its boards are never written to Turso any more -- the four `fraport` rows the
+old rule had written were deleted from the shared database (the sibling's own
+seven AeroDataBox rows were left alone), and the write-back now shares only
+the days the **fallback** answered for, labelled with the fallback's own
+source. The credentialed fallbacks got a per-device cache
+(`data/flight_board_cache.dart`, `<state_dir>/board_cache`): one answer per
+`(day, direction, window)`, asked **once** and reused -- the share reads the
+cache before it spends the credential again, a truncated walk is never cached
+as the day's answer, and a repeat search (the user changed a day) costs no
+quota. AeroDataBox and AirLabs charge per *call*, not per hour, so for them the
+whole day costs what one window did and covers every window of that day; the
+provider protocol grew `answersWholeDay` to say so (abstract on purpose, so a
+new provider has to answer it). AeroAPI is asked for `max_pages: 1`, which is
+a **page**, not a day: it is asked for the window only and is never shared --
+writing a page as a whole-day board would tell the sibling's readers that a
+short board is the day.
+
+**(b), second half** — the result line now shows *both* ways home:
+`latest return Sunday 19:00 (takeoff) or Monday 08:00 (landing)`. The facts
+come from the city's whole return list (the matcher keeps it as
+`CityResult.returns`), not from the paired options, so a city that can only
+come home on Monday still says so.
+
+**(e), (f), (g) the Lufthansa Group list.** Eleven carriers, one table
+(`lufthansaGroupCarriers` in `models/airline_benefits.dart`) with three
+readers: the membership test, the caption, and a test that pins the first two
+together -- the caption had drifted from the code, which is a lie the reader
+cannot see. The list no longer fits under the filter, so the card says "Only
+the Lufthansa Group carriers." with a **?** next to it; hovering (desktop) or
+tapping (phone) shows the carriers.
+
+**(h), (i), (j), (k)** — removed the paragraph that repeated the selection
+back to the user, the "Tap a day to select…" help text, and the
+"flights longer than the cap…" explanation; and the benefits answer moved
+*into* the flight-data-source card, under the airline filter it belongs to,
+instead of a box of its own.
+
+**(l), (n) the trip planner.** The add-a-stop panel's source and role pickers
+were `SegmentedButton`s, which cannot wrap -- on a phone the captions wrapped
+*inside* the buttons ("Custom\ncity"). Where the segments do not fit they are
+now chips that wrap on a whole line (`_choiceRow`, a `LayoutBuilder` at 380
+px), and above that width the segmented buttons stay. The source is called
+**Catalogue**, not "Workbook", and the same clean-up went through the
+destination page's empty notes ("No overview text was found for this
+destination."), because the workbook has not existed for a while.
+
+**(d), (m) the tests.** Three new files hold the finder's behaviour
+(`weekend_finder_behaviour_test.dart`: which source is asked, the device
+cache, what is shared, the return summary; `weekend_finder_days_test.dart`:
+the day selection, the DST regression and "the results follow the selection";
+`weekend_finder_page_test.dart`: the page's own texts and the **?**) and one
+holds the trip planner's (`itinerary_plan_tab_test.dart`: the add panel, the
+phone captions, the compare tab). No test spends API budget: every provider is
+a fixture, and the quota cases are fakes that *count* their calls -- including
+"the source ran out of quota" (a `ProviderUnavailable` that leaves the answer
+standing, with a note). The old Fraport write-back tests were rewritten to the
+new contract, including the race the guard exists for (a complete board that
+arrived between the search and the share).
+
+One incoherence fell out of the new tests and was fixed: the short-stay note
+said "1 option(s) in 0 cit(y/ies) dropped", which mixes two different counts.
+It now says how many *options* were too short and, separately, how many
+*cities* had nothing longer.
+
+**Test count:** 587 → 620. `flutter analyze` clean.
+
+---
+
+## 2026-10-20 — the open points closed: TURSO_PLAN, the finder's plan, the phone report
+
+Three documents still carried open points. All three are closed now.
+
+**archive/docs/TURSO_PLAN.md's "Remaining" (both items).** The plan described the
+*Python* ladder; the Flutter app never had the Excel rung at all, so there was
+nothing to remove — the `airlines_benefits.xlsx` handling and the
+`TRAVEL_PLANNER_AIRLINE_BENEFITS` variable live only in
+`archive/streamlit/airline_benefits.py` (frozen legacy code). The second item
+— "so the finder keeps working with no network at all" — was implemented in
+the app's own way: the Dart equivalent of the local `flightroutes.db` is the
+**offline snapshot**, because reading SQLite would mean a native driver
+(against the "no new dependency" rule, and awkward on Android). The benefits
+table is now snapshotted (`offline_benefits.json`) on every full read and
+answers a *transport* failure with the real table.
+
+That last part was not only a convenience: offline the finder used to fall
+back to the **24-carrier seed list**, which qualifies carriers the database
+says are `unknown` — a quiet break of the "unknown is never a yes" rule. The
+snapshot makes the offline answer the real one. An *empty* table is still a
+failure and is still answered with the seed list, because a table that was
+emptied is a signal, not a network problem.
+
+**archive/docs/WEEKEND_FINDER_PLAN.md's "Still needs from the user".** Both questions
+were already settled (the Fraport provider since 2026-10-07, the
+Monday-return reading long since the rule the matcher applies); the section
+was stale and has been rewritten.
+
+**archive/docs/MOBILE_REPORTS_2026-10-17.md's item (i)** — the expanded result that
+"looks broken". The report was about an older build: the raw airport code and
+the colliding option tiles are gone, and the user confirmed the complaint no
+longer applies. One finding from it was worth keeping, though, and was fixed:
+the result line was **ellipsised on a phone** ("earliest out Sat 09:20 · 1 n…"
+says nothing), and the new return text would have made it worse. The facts
+are now one per line and wrap; the logic is pure
+(`cityDepartureSummary` / `cityReturnSummary` in
+`lib/models/weekend_match.dart`), and a widget test at 360 px pins that
+nothing is cut.
+
+While there, the return line learned one more case: a city whose only return
+is a Saturday one used to say nothing at all about the way home. It now names
+the latest return under its own day.
+
+---
+
+## 2026-10-20 — the last three documents archived
+
+With the open points closed (above), the last three documents in the root
+joined the others in `archive/docs/`:
+
+| Document | Why it was safe |
+|---|---|
+| `TURSO_PLAN.md` | Both "Remaining" items are closed (2026-10-20): the Excel rung never existed in the app, and the offline copy is now the benefits snapshot. The contract that must not drift moved into `README.md` §"The airline-benefits database" — the semantics, the ladder and the failure table. |
+| `WEEKEND_FINDER_PLAN.md` | "Still needs from the user" is empty; the rule book moved into `README.md` §"The weekend finder" — the day model, the six bounds, the matcher semantics and the edge cases. |
+| `MOBILE_REPORTS_2026-10-17.md` | Every item (a–ab) is closed. |
+
+The repository root is now four documents: `AGENTS.md` (the entry point),
+`README.md` (how it works), `PLAN.md` (the history) and
+`testing-gaps-2026-10-20.md`. Everything else is in `archive/`.
+
+---
+
+## 2026-10-20 — the document sweep
+
+The repository root had accumulated nine finished documents next to the live
+ones, which made "what do I read?" a question in itself. The rule applied
+here: **a plan or a proposal is archived only when every item on it is
+done**; a document with an open item stays in the root.
+
+**Archived to `archive/docs/`** (all items complete, superseded by the
+README/AGENTS/this file):
+
+| Document (now in `archive/docs/`) | Why it was safe to archive |
+|---|---|
+| [`NATIVE_HTML_PLAN.md`](archive/docs/NATIVE_HTML_PLAN.md) | All six phases executed (the cutover on 2026-10-13). The decision itself is one line in `AGENTS.md` §1. |
+| [`OFFLINE_SYNC_PLAN.md`](archive/docs/OFFLINE_SYNC_PLAN.md) | All three commits shipped (2026-10-18). Its still-true *known limits* were copied into `README.md` §"Offline-first" first — the journal is not a write-through cache, conflicts are recorded not resolved, a partial batch is not repairable, derived caches stay online. |
+| [`PROPOSAL_SHARED_TURSO.md`](archive/docs/PROPOSAL_SHARED_TURSO.md) | Implemented and live-verified against the sibling's remote (2026-10-18); `README.md` §"Shared FlightRoutes departure boards" describes it. |
+| [`PROPOSAL_PICTURES.md`](archive/docs/PROPOSAL_PICTURES.md) | Implemented; `README.md` §"Destination photos" carries the provider/rights position. |
+| [`PROJECT_REVIEW.md`](archive/docs/PROJECT_REVIEW.md) | F1–F10 all closed (see `AGENTS.md` §5 row 7 and §0y below). |
+| [`MOBILE_REPORTS_2026-10-16.md`](archive/docs/MOBILE_REPORTS_2026-10-16.md) | Items a–j all implemented. |
+| [`PLAN_TO_FINISH.md`](archive/docs/PLAN_TO_FINISH.md) | Its three open items live in `AGENTS.md` §5 (rows 8, 9, 10), and its "deliberately not done" list is now in `AGENTS.md` §5. |
+| [`codereview.md`](archive/docs/codereview.md) | The 2026-10-10 review *prompt*, not a report. Never committed (git-ignored). |
+
+**Also archived:** the two raw session transcripts (`session-ses_*.md`) into
+`archive/chat-logs/`, next to the JSON chats they came from.
+
+**Kept in the root, and why:**
+
+* `PLAN.md` (this file) — the history, still appended to.
+* `archive/docs/TURSO_PLAN.md` — the benefits-database contract, with **two items still
+  waiting for the user** (retire the Excel fallback; point
+  `TRAVEL_PLANNER_FLIGHTROUTES_DB` at the local database).
+* `archive/docs/WEEKEND_FINDER_PLAN.md` — the finder's rule book. Its "Still needs from
+  the user" section was stale (it still asked for a go-ahead on a provider
+  that has been implemented since 2026-10-07) and has been rewritten.
+* `archive/docs/MOBILE_REPORTS_2026-10-17.md` — **item (i), the finder's expanded-result
+  layout, is still open.** Its status table was brought up to date (g, k, q
+  and s are now closed).
+* `testing-gaps-2026-10-20.md` — fresh, and the record of the coverage work.
+
+`archive/docs/README.md` indexes the archived documents and says where each
+one's live content went.
+
+---
+
 ## Status 2026-10-10 — the Streamlit version is legacy
 
 Decision (user, 2026-10-10): the Streamlit app in this repository is
@@ -21,10 +222,10 @@ implementation of the feature set and its data-safety rules) and as a
 **potential fall-back** in case the native development does not go as
 planned. The **target architecture moves away from Streamlit** — a
 native desktop + Android app on the Turso data layer, per
-`NATIVE_HTML_PLAN.md` (decision in §5–§6 there; Phase 1, the Turso
+`archive/docs/NATIVE_HTML_PLAN.md` (decision in §5–§6 there; Phase 1, the Turso
 data layer, is already done and verified).
 
-Post-plan audit (same day): the only commit after `NATIVE_HTML_PLAN.md`
+Post-plan audit (same day): the only commit after `archive/docs/NATIVE_HTML_PLAN.md`
 was created (`e3c4191`, 2026-10-09) is `a980690` "Map Fraport rail
 station codes to city names" — a weekend-finder improvement
 (`airport_city.py`, +21 lines) that the plan explicitly keeps. Nothing
@@ -33,14 +234,14 @@ tree was clean apart from the untracked `.kilo/` tooling directory.
 
 Documentation updated to match: `AGENTS.md` (the entry point now states the
 legacy status and the target architecture), `README.md` (intro and
-"Running it" marked legacy), `NATIVE_HTML_PLAN.md` (status block: decided,
+"Running it" marked legacy), `archive/docs/NATIVE_HTML_PLAN.md` (status block: decided,
 Phase 1 done, Phases 2–6 not started).
 
 ---
 
 ## Native rebuild 2026-10-10 — Phases 2 to 5 in flight
 
-Work continues on `NATIVE_HTML_PLAN.md` §7 (the user asked for it
+Work continues on `archive/docs/NATIVE_HTML_PLAN.md` §7 (the user asked for it
 autonomously; the full record is the sections below).
 
 **Phase 2 — backend API** (`2a066fb`). `api.py`: a FastAPI app over the
@@ -205,7 +406,7 @@ Validation: `ruff check .` clean, **233 pytest tests pass**, `tests/run_all.py -
 
 ### Batch 6 (2026-10-05) — weekend trip finder (plan-driven, unsupervised)
 
-Built from `WEEKEND_FINDER_PLAN.md`. 339 tests, all passing; `streamlit run`
+Built from `archive/docs/WEEKEND_FINDER_PLAN.md`. 339 tests, all passing; `streamlit run`
 boots healthy (HTTP 200).
 
 | Area | State |
@@ -365,7 +566,7 @@ Validation: `ruff check .` clean, `compileall` clean, **405 pytest tests pass**,
 
 ### 2026-10-08 batch: the main data layer moves to Turso (native rebuild, Phase 1)
 
-Built from `NATIVE_HTML_PLAN.md` §7 Phase 1. The user's decisions
+Built from `archive/docs/NATIVE_HTML_PLAN.md` §7 Phase 1. The user's decisions
 (2026-10-08): last-push-wins for conflicts (no conflict list), the
 workbook survives as an *export* artifact, the PC goes native (Flutter)
 eventually but **the Streamlit version is retained as the fallback**
@@ -550,7 +751,7 @@ Facts worth keeping:
 ## 0c. Parity session 2026-10-11 (2) - the month choropleth and the shared filter model
 
 The gap review (chat2026-10-11.json) compared the legacy pages against the
-Flutter app and produced the plan in `NATIVE_HTML_PLAN.md` §8 (responsive
+Flutter app and produced the plan in `archive/docs/NATIVE_HTML_PLAN.md` §8 (responsive
 shell, the month/condition map, the detail-page gaps, trips editing, the
 finder CSV override, export/backup). This batch is the map half of it:
 
@@ -1150,7 +1351,7 @@ Flutter app: it is the **Phase-3 web
 prototype** (`web/` + `api.py`,
 `python -m uvicorn api:app --port 8508`),
 started by hand. It never had a map —
-by decision (`NATIVE_HTML_PLAN.md` §11:
+by decision (`archive/docs/NATIVE_HTML_PLAN.md` §11:
 "the web/ and api.py frontends from
 Phases 2-3 stay as they are"), and
 `web/app.js` (18 KB) contains no map
@@ -1262,7 +1463,8 @@ now:
    (one "Running it", the three-UIs table
    replaced by a pointer to the archive),
    `HANDOFF.md` (phase 6: executed in its
-   safe form), `NATIVE_HTML_PLAN.md`
+   safe form; the file itself was deleted once it had
+   served its purpose), `archive/docs/NATIVE_HTML_PLAN.md`
    (phase 6 state).
 
 **Deliberately kept at the root:**
@@ -1626,7 +1828,7 @@ to the map width. 410 → 411 tests.
 
 Ten reports from phone testing (2026-10-16): nine in the first batch (a–i)
 plus (j), the flight-fallback source asked for later the same day. They are
-written up in **`MOBILE_REPORTS_2026-10-16.md`** — that file holds the
+written up in **`archive/docs/MOBILE_REPORTS_2026-10-16.md`** — that file holds the
 answers to the questions in them (the (b) and (i) redesign proposals with
 the requested brainstorm/challenge, the (f) diagnosis with live evidence,
 the (j) source research) and the autonomous decisions flagged there for
@@ -1639,7 +1841,7 @@ the items land.
 | b | Finder "out on"/"back on": free day selection | period picker → candidate days (period ± 1) → per-day select + any/after/before + time; presets keep the legacy defaults | done |
 | c | "CSV override" is incomprehensible | remove the UI, `CsvBoardProvider`, `parseCsvFlights`, template | done |
 | d | Airlines filter → dropdown | `AirlineScope`: Lufthansa Group (default) / Lufthansa (name contains) / All with benefits / All | done |
-| e | Drop 1-night results (clarified: a **visible** "Min. nights" dropdown, default â€” at least 1 night) | `minNights` in the matcher (default 1), finder dropdown Any/1/2/3/4, drop count reported | done |
+| e | Drop 1-night results (clarified: a **visible** "Min. nights" dropdown, default — at least 1 night) | `minNights` in the matcher (default 1), finder dropdown Any/1/2/3/4, drop count reported | done |
 | f | Error log; Sunday returns had no data; `?MKF`/`?QKL`/`?ZWS` entries | `error_log.jsonl` + Settings viewer; per-window failure/implausibility notes; rail-station table + board-name fallback labels | done |
 | g | Card text truncated/irrelevant | Review Rating, Prio (when set), Population — wrapped, never cut | done |
 | h | "Trips" menu → "Planner" | nav labels + app bar | done |
@@ -1713,8 +1915,8 @@ unmapped airport codes.
 
 A phone-width widget regression asserts the flight labels render without the
 mapped code and checks there is no layout exception. The shared Turso and
-picture-parity proposals are recorded separately in `PROPOSAL_SHARED_TURSO.md`
-and `PROPOSAL_PICTURES.md`.
+picture-parity proposals are recorded separately in `archive/docs/PROPOSAL_SHARED_TURSO.md`
+and `archive/docs/PROPOSAL_PICTURES.md`.
 
 ## 0v. Session 2026-10-18 — shared departure boards and destination photos
 
@@ -1825,7 +2027,7 @@ it is genuinely complete, one `schedule_boards` +
 ## 0x. Session 2026-10-18 (3) — offline-first Phase 5, Option A, commit 1
 
 The user's decision (2026-10-18): hand-rolled full local-first, no new
-dependencies — the plan lives in `OFFLINE_SYNC_PLAN.md` (new). Commit 1 is
+dependencies — the plan lives in `archive/docs/OFFLINE_SYNC_PLAN.md` (new). Commit 1 is
 the **snapshot read layer** (`data/offline_cache.dart` + injections into
 `destination_repository.dart` / `trip_repository.dart` / `ui/main.dart`):
 
@@ -1854,7 +2056,7 @@ notes, the no-snapshot passthroughs.
 
 ## 0y. Session 2026-10-18 (4) — the review batch: F1–F10
 
-`PROJECT_REVIEW.md` (2026-10-18) raised ten findings. All ten are closed;
+`archive/docs/PROJECT_REVIEW.md` (2026-10-18) raised ten findings. All ten are closed;
 three of its premises were checked against the live database rather than
 assumed, and one did not survive.
 
@@ -1911,7 +2113,7 @@ text that merely contains an `x`.
 
 ## 0z. Session 2026-10-18 (5) — offline-first Phase 5, commits 2–3
 
-The plan for this phase (`OFFLINE_SYNC_PLAN.md`) had "append an operation
+The plan for this phase (`archive/docs/OFFLINE_SYNC_PLAN.md`) had "append an operation
 with the guard material they ran with" for commit 2 — a sentence, not a
 contract. It was rewritten **before** any code, because the under-specified
 part (which material, and what makes replay safe) is exactly where a queue

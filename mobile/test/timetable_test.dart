@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:travel_planner/models/timetable.dart';
+import 'package:travel_planner/models/weekend_match.dart';
 
 void main() {
   group('wallClock', () {
@@ -232,6 +233,36 @@ void main() {
       expect(result.warning, isEmpty);
     });
 
+    test('a walk that never reaches the window end says so', () async {
+      // The safety net: a board that keeps offering records
+      // inside the window for 64 pages means the walk is
+      // broken. The provider must say so rather than
+      // silently truncating the answer.
+      final client = MockClient((request) async {
+        return http.Response(
+          jsonEncode({
+            'data': [
+              {
+                'al': 'LH',
+                'fnr': 'LH1',
+                'iata': 'LHR',
+                'sched': '2026-10-16T15:00:00+0200',
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        );
+      });
+      final result = await provider(client).fetch(
+        DateTime(2026, 10, 16),
+        'departures',
+        since: DateTime(2026, 10, 16, 14),
+        until: DateTime(2026, 10, 17),
+      );
+      expect(result.warning, contains('without reaching the end of the window'));
+    });
+
     test('a response without a data array fails loudly', () async {
       final client = MockClient((request) async => http.Response(
             jsonEncode({'unexpected': true}),
@@ -410,4 +441,185 @@ void main() {
       expect(icaoToIata.containsKey('XYZ'), isFalse);
     });
   });
+
+  group('AeroDataBoxBoardProvider', () {
+  test('parses departures', () async {
+    final client = MockClient((request) async {
+      return http.Response(
+        jsonEncode({
+          'departures': [
+            {
+              'number': 'LH 123',
+              'airline': {'iata': 'LH', 'name': 'Lufthansa'},
+              'departure': {
+                'airport': {'iata': 'FRA', 'name': 'Frankfurt'},
+                'scheduledTime': {'local': '2026-10-09T14:00:00+02:00'},
+                'terminal': '1',
+              },
+              'arrival': {
+                'airport': {'iata': 'JFK', 'name': 'New York'},
+                'scheduledTime': {'local': '2026-10-09T18:00:00-04:00'},
+              },
+            },
+          ],
+        }),
+        200,
+      );
+    });
+    final provider = AeroDataBoxBoardProvider(apiKey: 'key', httpClient: client);
+    final result = await provider.fetch(
+      DateTime(2026, 10, 9),
+      'departures',
+    );
+    expect(result.flights, hasLength(1));
+    expect(result.flights.first.flightNo, 'LH123');
+    expect(result.flights.first.destination, 'JFK');
+  });
+
+  test('rejects a bad key', () async {
+    final client = MockClient((request) async {
+      return http.Response('nope', 401);
+    });
+    final provider = AeroDataBoxBoardProvider(apiKey: 'bad', httpClient: client);
+    expect(
+      () => provider.fetch(DateTime(2026, 10, 9), 'departures'),
+      throwsA(isA<ProviderUnavailable>()),
+    );
+  });
+
+  test('parses arrivals as a flight into FRA', () async {
+    // The return leg: the board reports the arrival at FRA,
+    // so the flight's far end is the departure airport.
+    final client = MockClient((request) async {
+      return http.Response(
+        jsonEncode({
+          'arrivals': [
+            {
+              'number': 'LH 456',
+              'airline': {'iata': 'LH', 'name': 'Lufthansa'},
+              'departure': {
+                'airport': {'iata': 'JFK', 'name': 'New York'},
+                'scheduledTime': {'local': '2026-10-09T14:00:00-04:00'},
+              },
+              'arrival': {
+                'airport': {'iata': 'FRA', 'name': 'Frankfurt'},
+                'scheduledTime': {'local': '2026-10-09T04:00:00+02:00'},
+              },
+            },
+          ],
+        }),
+        200,
+      );
+    });
+    final provider = AeroDataBoxBoardProvider(apiKey: 'key', httpClient: client);
+    final result = await provider.fetch(
+      DateTime(2026, 10, 9),
+      'arrivals',
+    );
+    expect(result.flights, hasLength(1));
+    expect(result.flights.first.origin, 'JFK');
+    expect(result.flights.first.destination, 'FRA');
+  });
+
+  test('a flight on both windows is only counted once', () async {
+    // The day is fetched in two windows; a flight that
+    // belongs to both must not appear twice, or the finder
+    // would offer the same connection twice.
+    final client = MockClient((request) async {
+      return http.Response(
+        jsonEncode({
+          'departures': [
+            {
+              'number': 'LH 123',
+              'airline': {'iata': 'LH', 'name': 'Lufthansa'},
+              'departure': {
+                'airport': {'iata': 'FRA', 'name': 'Frankfurt'},
+                'scheduledTime': {'local': '2026-10-09T14:00:00+02:00'},
+              },
+              'arrival': {
+                'airport': {'iata': 'JFK', 'name': 'New York'},
+                'scheduledTime': {'local': '2026-10-09T18:00:00-04:00'},
+              },
+            },
+          ],
+        }),
+        200,
+      );
+    });
+    final provider = AeroDataBoxBoardProvider(apiKey: 'key', httpClient: client);
+    final result = await provider.fetch(
+      DateTime(2026, 10, 9),
+      'departures',
+    );
+    expect(result.flights, hasLength(1));
+  });
+});
+
+group('CompositeBoardProvider', () {
+  test('returns the first non-empty result', () async {
+    final empty = _FakeBoard(const []);
+    final nonEmpty = _FakeBoard([
+      Flight(
+        flightNo: 'LH1',
+        airline: 'LH',
+        origin: 'FRA',
+        destination: 'JFK',
+        airportName: 'New York',
+        departure: DateTime(2026, 10, 9, 14),
+        arrival: DateTime(2026, 10, 9, 18),
+      ),
+    ]);
+    final composite = CompositeBoardProvider([empty, nonEmpty]);
+    final result = await composite.fetch(DateTime(2026, 10, 9), 'departures');
+    expect(result.flights, hasLength(1));
+  });
+
+  test('throws when every provider fails', () async {
+    final failing = _ThrowingBoard();
+    final composite = CompositeBoardProvider([failing]);
+    expect(
+      () => composite.fetch(DateTime(2026, 10, 9), 'departures'),
+      throwsA(isA<ProviderUnavailable>()),
+    );
+  });
+});
+
+
+}
+
+class _FakeBoard implements FlightBoardProvider {
+  @override
+  bool get answersWholeDay => false;
+
+  final List<Flight> _flights;
+  const _FakeBoard(this._flights);
+
+  @override
+  Future<FetchResult> fetch(
+    DateTime day,
+    String direction, {
+    DateTime? since,
+    DateTime? until,
+  }) async {
+    return FetchResult(
+      flights: _flights,
+      source: 'fake',
+      fetchedAt: DateTime.now().toIso8601String(),
+    );
+  }
+}
+
+class _ThrowingBoard implements FlightBoardProvider {
+  @override
+  bool get answersWholeDay => false;
+
+  @override
+  Future<FetchResult> fetch(
+    DateTime day,
+    String direction, {
+    DateTime? since,
+    DateTime? until,
+  }) async {
+    throw const ProviderUnavailable('boom');
+  }
 }

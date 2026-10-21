@@ -82,6 +82,17 @@ class CityResult {
   final List<TripOption> options;
   final List<Flight> outOnly;
   final List<Flight> backOnly;
+
+  /// Every return flight the board offered for this city on
+  /// the selected back days -- the ones that paired with an
+  /// outbound *and* the ones that did not.
+  ///
+  /// The summary line needs them: a city whose only Monday
+  /// return never paired with an outbound is still a city the
+  /// reader can come home from on Monday, and hiding that
+  /// because the pairing failed would make the line say
+  /// "Sunday 19:00" and stop there (the report, 2026-10-21).
+  final List<Flight> returns;
   final Set<String> airports;
   final Set<String> unmappedAirports;
 
@@ -92,6 +103,7 @@ class CityResult {
     this.options = const [],
     this.outOnly = const [],
     this.backOnly = const [],
+    this.returns = const [],
     this.airports = const {},
     this.unmappedAirports = const {},
   });
@@ -121,6 +133,112 @@ class CityResult {
     return city.compareTo(other.city);
   }
 }
+
+/// The one-line summary under a city's name in the finder's
+/// result list: when the traveller can leave, and how late
+/// they can come back.
+///
+/// The return line is the part the user asked for (2026-10-20):
+/// the latest Sunday return (its *takeoff* -- the moment they
+/// have to leave the far end) and, when one exists, the
+/// earliest Monday return (its *landing* in Frankfurt). A
+/// Sunday-only return is the common case; a Monday morning
+/// landing is the one that turns the weekend into a proper
+/// three-day one.
+///
+/// The summary is two facts, and the page shows them on two
+/// lines: a phone ellipsises a long line into uselessness
+/// ("earliest out Sat 09:20 · 1 n…" says nothing), and the
+/// return fact is the one the reader is looking for.
+String citySummary(CityResult city) {
+  final departure = cityDepartureSummary(city);
+  final returnLine = cityReturnSummary(city);
+  if (departure.isEmpty) return returnLine;
+  if (returnLine.isEmpty) return departure;
+  return '$departure · $returnLine';
+}
+
+/// The first half of the summary: when the traveller can leave,
+/// and how long they stay.
+String cityDepartureSummary(CityResult city) {
+  if (city.options.isEmpty) return '';
+  final earliestOut = city.options
+      .map((option) => option.outFlight.departure)
+      .reduce((a, b) => a.isBefore(b) ? a : b);
+  return 'earliest out ${_stamp(earliestOut)} · ${city.options.first.nights}🛏';
+}
+
+/// The second half: how late they can come back.
+///
+/// The two facts the reader asked for (2026-10-20, again on
+/// 2026-10-21): the latest **Sunday** return -- its *takeoff*,
+/// the moment they have to leave the far end -- and the
+/// earliest **Monday** return, its *landing* in Frankfurt. A
+/// Sunday-only return is the common case; a Monday morning
+/// landing is the one that turns the weekend into a proper
+/// three-day one. **Both** are shown when both exist: they are
+/// the two ways home, not one or the other.
+///
+/// The facts come from the city's *return flights*, not from
+/// its matched options: a city that can only come home on
+/// Monday still says so, even when no outbound paired with
+/// that Monday flight.
+///
+/// When a city has neither (its only return is a Saturday
+/// one), the latest return is named anyway: a reader who is
+/// told nothing about the way home is worse off than one who
+/// is told "Saturday 19:00".
+String cityReturnSummary(CityResult city) {
+  final returns = city.returns.isNotEmpty
+      ? city.returns
+      : [for (final option in city.options) option.backFlight];
+  if (returns.isEmpty) return '';
+  final sundayTakeoffs = returns
+      .where((flight) => flight.departure.weekday == DateTime.sunday)
+      .map((flight) => flight.departure)
+      .toList();
+  final mondayLandings = returns
+      .where((flight) => flight.arrival.weekday == DateTime.monday)
+      .map((flight) => flight.arrival)
+      .toList();
+  final returnParts = <String>[];
+  if (sundayTakeoffs.isNotEmpty) {
+    final latest = sundayTakeoffs.reduce((a, b) => a.isAfter(b) ? a : b);
+    returnParts.add('Sunday ${_clock(latest)} (takeoff)');
+  }
+  if (mondayLandings.isNotEmpty) {
+    final earliest = mondayLandings.reduce((a, b) => a.isBefore(b) ? a : b);
+    returnParts.add('Monday ${_clock(earliest)} (landing)');
+  }
+  if (returnParts.isEmpty) {
+    // Neither Sunday nor Monday: name the latest return there
+    // is, whatever day it is.
+    final takeoffs = returns.map((flight) => flight.departure).toList();
+    if (takeoffs.isEmpty) return '';
+    final latest = takeoffs.reduce((a, b) => a.isAfter(b) ? a : b);
+    returnParts.add(
+        '${_weekdayName(latest.weekday)} ${_clock(latest)} (takeoff)');
+  }
+  return 'latest return ${returnParts.join(' or ')}';
+}
+
+String _clock(DateTime moment) =>
+    '${moment.hour.toString().padLeft(2, '0')}:'
+    '${moment.minute.toString().padLeft(2, '0')}';
+
+String _stamp(DateTime moment) =>
+    '${_weekdayName(moment.weekday)} ${moment.hour.toString().padLeft(2, '0')}:'
+    '${moment.minute.toString().padLeft(2, '0')}';
+
+String _weekdayName(int weekday) => const [
+      'Mon',
+      'Tue',
+      'Wed',
+      'Thu',
+      'Fri',
+      'Sat',
+      'Sun',
+    ][weekday - 1];
 
 class MatchReport {
   final TravelPlan plan;
@@ -386,6 +504,17 @@ MatchReport findWeekends({
     }
   }
 
+  // Every return flight the board offered for a city, paired
+  // or not: the summary line names the Sunday and the Monday
+  // return from these, so a city that can only come home on
+  // Monday still says so (the report, 2026-10-21).
+  for (final entry in backByAirport.entries) {
+    final location = cityLookup(entry.key);
+    final result = cities[_cityKeyOf(entry.key, location)];
+    if (result == null) continue;
+    result.returns = entry.value;
+  }
+
   final full = <CityResult>[];
   final partial = <CityResult>[];
   for (final result in cities.values) {
@@ -427,6 +556,10 @@ class _MutableCity {
   List<Flight> outOnly = [];
   List<Flight> backOnly = [];
 
+  /// Every qualifying return flight for this city, paired or
+  /// not -- the summary line reads them.
+  List<Flight> returns = [];
+
   _MutableCity({
     required this.city,
     required this.country,
@@ -440,6 +573,7 @@ class _MutableCity {
         options: List.of(options),
         outOnly: List.of(outOnly),
         backOnly: List.of(backOnly),
+        returns: List.of(returns),
         airports: Set.of(airports),
         unmappedAirports: Set.of(unmappedAirports),
       );

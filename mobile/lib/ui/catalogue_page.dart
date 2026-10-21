@@ -30,6 +30,8 @@ class CataloguePage extends StatefulWidget {
   /// feature is off -- the open then pushes without
   /// recording, exactly the pre-tabs behavior.
   final void Function(String name)? onOpenDestination;
+  final bool Function(String name)? isInOpenTabs;
+  final void Function(String name)? onAddToOpenTabs;
 
   /// Opens the settings page. Null hides the gear (the
   /// widget tests pump the catalogue standalone).
@@ -39,6 +41,8 @@ class CataloguePage extends StatefulWidget {
     super.key,
     required this.repository,
     this.onOpenDestination,
+    this.isInOpenTabs,
+    this.onAddToOpenTabs,
     this.onOpenSettings,
   });
 
@@ -236,7 +240,6 @@ class _CataloguePageState extends State<CataloguePage> {
   /// push; the named route lets the shell mark the tab
   /// active and pop it on close.
   void _openDestination(Destination dest) {
-    widget.onOpenDestination?.call(dest.name);
     Navigator.of(context).push(
       MaterialPageRoute(
         settings: RouteSettings(name: 'destination/${dest.name}'),
@@ -245,6 +248,8 @@ class _CataloguePageState extends State<CataloguePage> {
           destination: dest,
           onChanged: _reload,
           onOpenDestination: widget.onOpenDestination,
+          initiallyInOpenTabs: widget.isInOpenTabs?.call(dest.name) ?? false,
+          onAddToOpenTabs: widget.onAddToOpenTabs,
         ),
       ),
     );

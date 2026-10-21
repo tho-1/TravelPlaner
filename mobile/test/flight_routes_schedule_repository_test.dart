@@ -172,4 +172,86 @@ void main() {
     expect(result.ok, isFalse);
     expect(result.boards, isEmpty);
   });
+
+  test('a board whose payload does not match its key is rejected',
+      () async {
+    // The row says FRA, the payload says MUC. Accepting it
+    // would put a Munich board in the Frankfurt slot, and
+    // every reader downstream would be wrong.
+    final result = await _repository(
+      FakeTurso(
+        (_) => okRows(
+          ['iata', 'day', 'payload', 'updated_at'],
+          [
+            [
+              'FRA',
+              '2026-10-16',
+              _payload(airport: 'MUC', day: '2026-10-16'),
+              '2026-10-15T10:00:00Z',
+            ],
+          ],
+        ),
+      ),
+    ).loadBoards(day: '2026-10-16', airports: const ['FRA']);
+    expect(result.ok, isFalse);
+    expect(result.boards, isEmpty);
+    expect(result.problems, isNotEmpty);
+  });
+
+  test('a flight count that disagrees with the records is not a full day',
+      () async {
+    // The meta claims three flights, the payload carries
+    // one. The board is then not a full-day cache and must
+    // not be treated as one.
+    final payload = jsonDecode(
+          _payload(airport: 'FRA', day: '2026-10-16', flights: [_flight()]),
+        ) as Map<String, dynamic>;
+    (payload['meta'] as Map<String, dynamic>)['n_flights'] = 3;
+    final result = await _repository(
+      FakeTurso(
+        (_) => okRows(
+          ['iata', 'day', 'payload', 'updated_at'],
+          [
+            [
+              'FRA',
+              '2026-10-16',
+              jsonEncode(payload),
+              '2026-10-15T10:00:00Z',
+            ],
+          ],
+        ),
+      ),
+    ).loadBoards(day: '2026-10-16', airports: const ['FRA']);
+    expect(result.ok, isTrue);
+    expect(result.boards.single.isCompleteV2, isFalse);
+  });
+
+  test('a flight without an arrival stamp still has its departure half',
+      () async {
+    // The Fraport-sourced full-day boards the app writes
+    // carry the departure pair but leave the arrival UTC
+    // blank. Such a flight is still usable for an outbound
+    // match -- it just has no leg duration.
+    final flight = _flight()..remove('arr_at_utc');
+    final result = await _repository(
+      FakeTurso(
+        (_) => okRows(
+          ['iata', 'day', 'payload', 'updated_at'],
+          [
+            [
+              'FRA',
+              '2026-10-16',
+              _payload(airport: 'FRA', day: '2026-10-16', flights: [flight]),
+              '2026-10-15T10:00:00Z',
+            ],
+          ],
+        ),
+      ),
+    ).loadBoards(day: '2026-10-16', airports: const ['FRA']);
+    expect(result.ok, isTrue);
+    final record = result.boards.single.flights.single;
+    expect(record.hasTimestamps, isFalse);
+    expect(record.hasDepartureTimeline, isTrue);
+    expect(record.hasArrivalTimeline, isFalse);
+  });
 }

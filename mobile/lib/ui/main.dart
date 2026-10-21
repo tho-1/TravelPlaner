@@ -10,6 +10,7 @@ import 'dart:async' show unawaited;
 import 'dart:ui' show PlatformDispatcher;
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import '../data/app_dirs.dart';
@@ -106,7 +107,17 @@ Future<void> main() async {
 class TravelPlannerApp extends StatelessWidget {
   final TursoConfig config;
 
-  const TravelPlannerApp({super.key, required this.config});
+  /// Test seam: the HTTP client the repositories talk
+  /// through. Null uses the real one (the running app);
+  /// a test injects a fake so the shell can be exercised
+  /// without a network.
+  final http.Client? httpClient;
+
+  const TravelPlannerApp({
+    super.key,
+    required this.config,
+    this.httpClient,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -122,7 +133,7 @@ class TravelPlannerApp extends StatelessWidget {
       // (the user's call, 2026-10-12).
       themeMode: ThemeMode.light,
       home: config.isConfigured
-          ? HomeShell(config: config)
+          ? HomeShell(config: config, httpClient: httpClient)
           : const UnconfiguredScreen(),
     );
   }
@@ -168,7 +179,15 @@ class UnconfiguredScreen extends StatelessWidget {
 class HomeShell extends StatefulWidget {
   final TursoConfig config;
 
-  const HomeShell({super.key, required this.config});
+  /// Test seam: the HTTP client the repositories talk
+  /// through. Null uses the real one (the running app).
+  final http.Client? httpClient;
+
+  const HomeShell({
+    super.key,
+    required this.config,
+    this.httpClient,
+  });
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -305,7 +324,7 @@ class _HomeShellState extends State<HomeShell> {
   /// startup and whenever the user rotates a key.
   void _rebuildClients() {
     final effective = _effectiveConfig();
-    _client = TursoClient(effective);
+    _client = TursoClient(effective, httpClient: widget.httpClient);
     // The offline-first snapshot store (Phase 5, Option A):
     // next to the settings file in the per-device state
     // dir; null when there is no writable home (tests).
@@ -317,13 +336,25 @@ class _HomeShellState extends State<HomeShell> {
     destinations =
         DestinationRepository(_client!, offline: offline, journal: journal);
     trips = TripRepository(_client!, offline: offline, journal: journal);
-    benefits = BenefitsRepository(effective);
+    benefits = BenefitsRepository(effective, offline: offline);
     geocoder = GeocodeRepository(effective.geocodeCache);
     openTabs =
         OpenTabsRepository(_client!, offline: offline, journal: journal);
-    flightFallback = effective.fallbackFlightsConfigured
-        ? AeroApiBoardProvider(apiKey: effective.flightAwareApiKey)
-        : null;
+    final fallbacks = <FlightBoardProvider>[];
+    if (effective.fallbackFlightsConfigured) {
+      fallbacks.add(AeroApiBoardProvider(apiKey: effective.flightAwareApiKey));
+    }
+    if (effective.aeroDataBoxApiKey.trim().isNotEmpty) {
+      fallbacks.add(AeroDataBoxBoardProvider(apiKey: effective.aeroDataBoxApiKey));
+    }
+    if (effective.airLabsApiKey.trim().isNotEmpty) {
+      fallbacks.add(AirLabsBoardProvider(apiKey: effective.airLabsApiKey));
+    }
+    flightFallback = fallbacks.isEmpty
+        ? null
+        : (fallbacks.length == 1
+            ? fallbacks.first
+            : CompositeBoardProvider(fallbacks));
     _pendingWrites = journal?.pendingCount ?? 0;
   }
 
@@ -356,6 +387,8 @@ class _HomeShellState extends State<HomeShell> {
               ? overrides!.flightAwareApiKey
               : bundled.flightAwareApiKey) ??
           '',
+      aeroDataBoxApiKey: bundled.aeroDataBoxApiKey,
+      airLabsApiKey: bundled.airLabsApiKey,
     );
   }
 
@@ -544,8 +577,12 @@ class _HomeShellState extends State<HomeShell> {
     if (dest == null || !mounted) return;
     Navigator.of(context).push(MaterialPageRoute(
       settings: RouteSettings(name: 'destination/${dest.name}'),
-      builder: (_) =>
-          DestinationPage(repository: destinations, destination: dest!),
+      builder: (_) => DestinationPage(
+        repository: destinations,
+        destination: dest!,
+        initiallyInOpenTabs: _openTabs.contains(dest.name),
+        onAddToOpenTabs: _tabsEnabled ? _recordTab : null,
+      ),
     ));
   }
 
@@ -654,28 +691,40 @@ class _HomeShellState extends State<HomeShell> {
     final pages = IndexedStack(
       index: _tab,
        children: [
-         WorldMapPage(
-           repository: destinations,
-           onOpenDestination: _tabsEnabled ? _recordTab : null,
-         ),
-         CataloguePage(
-           repository: destinations,
-           // The recording callback is null while the
-           // feature is off, so the pages skip it.
-           onOpenDestination: _tabsEnabled ? _recordTab : null,
-           onOpenSettings: _openSettings,
-         ),
+          WorldMapPage(
+            repository: destinations,
+            onOpenDestination: null,
+            isInOpenTabs: (name) => _openTabs.contains(name),
+            onAddToOpenTabs: _tabsEnabled ? _recordTab : null,
+          ),
+          CataloguePage(
+            repository: destinations,
+            // The recording callback is null while the
+            // feature is off, so the pages skip it.
+            onOpenDestination: null,
+            isInOpenTabs: (name) => _openTabs.contains(name),
+            onAddToOpenTabs: _tabsEnabled ? _recordTab : null,
+            onOpenSettings: _openSettings,
+          ),
          TripsPage(
            repository: trips,
            destinations: destinations,
            geocoder: geocoder,
          ),
-         WeekendFinderPage(
-           benefits: benefits,
-           destinations: destinations,
-           fallback: flightFallback,
-           onOpenDestination: _tabsEnabled ? _recordTab : null,
-         ),
+          WeekendFinderPage(
+            benefits: benefits,
+            destinations: destinations,
+            fallback: flightFallback,
+            // The credentialed fallback's answers are cached
+            // here, so a repeated search does not spend the
+            // fallback's quota again (2026-10-21).
+            cacheDir: _settingsDir.isEmpty
+                ? ''
+                : p.join(_settingsDir, 'board_cache'),
+            onOpenDestination: null,
+            isInOpenTabs: (name) => _openTabs.contains(name),
+            onAddToOpenTabs: _tabsEnabled ? _recordTab : null,
+          ),
        ],
     );
     return Scaffold(

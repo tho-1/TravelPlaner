@@ -93,6 +93,9 @@ http.Client _board({int downFrom = 99, Set<String> empty = const {}}) {
 /// A board that answers from a fixture map, for the
 /// fallback tests (no HTTP shape involved).
 class _FakeBoard implements FlightBoardProvider {
+  @override
+  bool get answersWholeDay => false;
+
   _FakeBoard(this.flightsByWindow, {this.fail = const {}});
 
   final Map<String, List<Flight>> flightsByWindow;
@@ -123,15 +126,23 @@ class _FakeBoard implements FlightBoardProvider {
 // both window bounds omitted -- the exact call the sharing
 // pass makes.
 class _SplitBoard implements FlightBoardProvider {
+  /// It answers a whole day when asked without bounds (the
+  /// `fullDay` map), which is what the fallback contract and
+  /// the share pass need.
+  @override
+  bool get answersWholeDay => true;
+
   _SplitBoard({
     this.windows = const {},
     this.fullDay = const {},
     this.fullDayWarning = '',
+    this.source = 'fraport',
   });
 
   final Map<String, List<Flight>> windows;
   final Map<String, List<Flight>> fullDay;
   final String fullDayWarning;
+  final String source;
   final List<String> calls = [];
 
   @override
@@ -146,7 +157,7 @@ class _SplitBoard implements FlightBoardProvider {
         (full ? fullDay[label] : windows[label]) ?? const <Flight>[];
     return FetchResult(
       flights: flights,
-      source: 'fraport',
+      source: source,
       warning: full ? fullDayWarning : '',
       fetchedAt: DateTime.now().toIso8601String(),
     );
@@ -452,9 +463,11 @@ void main() {
     WeekendRepository repoFor(
       _SplitBoard board, {
       required FlightRoutesScheduleRepository shared,
+      FlightBoardProvider? fallback,
     }) =>
         WeekendRepository(
           board,
+          fallback: fallback,
           sharedSchedules: shared,
           sharedBoardWriter: FlightRoutesScheduleWriter(
             shared.client,
@@ -463,24 +476,11 @@ void main() {
           clock: () => DateTime(2026, 10, 18, 21, 9, 40),
         );
 
-    // The write request's captured args, or a failing
-    // expectation when nothing was written.
-    List<Object?> writeArgs(FakeTurso fakeTurso, {int statement = 0}) {
-      final index = fakeTurso.requests
-          .indexWhere((s) => s.any((sql) => sql.startsWith('INSERT INTO')));
-      expect(index, isNonNegative, reason: 'the write never travelled');
-      final argsList = fakeTurso.requestArgs[index]!;
-      expect(argsList.length, greaterThanOrEqualTo(statement + 1),
-          reason: 'the write pipeline only carried '
-              '${argsList.length} arg lists');
-      return argsList[statement] as List<Object?>;
-    }
-
-    // One captured arg is the typed Hrana Value the wire
-    // carried; text args are read out through here.
-    String argText(Object? arg) => (arg as Map)['value'] as String;
-
-    test('a live search shares the full-day FRA board back', () async {
+    test('a live Fraport search shares nothing to the shared cache', () async {
+      // Fraport is free and unlimited, so its boards can be
+      // re-grabbed any time and never spend Turso space; the
+      // whole-day walk is not even run (the user's decision,
+      // 2026-10-21).
       const day = '2026-10-16';
       const otherOut = '2026-10-17';
       final fakeTurso = FakeTurso((statements) {
@@ -503,8 +503,7 @@ void main() {
           ],
         },
         fullDay: {
-          // The whole day the sharing pass walks: two more
-          // departures than the window's one.
+          // A whole day ready to go -- must never be walked.
           '$day departures': [
             _flight(
                 no: 'LH1000',
@@ -516,11 +515,6 @@ void main() {
                 from: 'FRA',
                 to: 'MUC',
                 departure: DateTime(2026, 10, 16, 9, 30)),
-            _flight(
-                no: 'LH1014',
-                from: 'FRA',
-                to: 'LIS',
-                departure: DateTime(2026, 10, 16, 23, 05)),
           ],
         },
       );
@@ -528,76 +522,47 @@ void main() {
       final repository = repoFor(board, shared: shared);
 
       final result = await repository.search(plan, _benefits);
+      for (final write in result.pendingWrites) {
+        await write;
+      }
 
-      // One share attempt per out day, spawned after the
-      // answer, in out-day order.
-      expect(result.pendingWrites, hasLength(2));
-      await Future.wait(result.pendingWrites);
-
-      // The windowed query came first, the full-day walk
-      // after the search had returned.
-      expect(board.calls, contains('$otherOut departures (full day)'));
-      final dayCalls = board.calls.where((c) => c.startsWith(day)).toList();
-      expect(dayCalls.first, '$day departures');
-      expect(dayCalls, contains('$day departures (full day)'));
-
-      final boardArgs = writeArgs(fakeTurso);
-      expect(argText(boardArgs[0]), 'FRA');
-      expect(argText(boardArgs[1]), day);
-      final payload = jsonDecode(argText(boardArgs[2]))
-          as Map<String, dynamic>;
-      final meta = payload['meta'] as Map<String, dynamic>;
-      expect(meta['schema_version'], 2);
-      expect(meta['source'], 'fraport');
-      expect(meta['n_flights'], 3);
-      expect(meta['obtained_at'], '2026-10-18T21:09:40');
-      expect(meta.containsKey('coverage'), false,
-          reason: 'a full day carries no coverage window');
-      final first = (payload['flights'] as List).first as Map<String, dynamic>;
-      // Berlin CEST: the wall-clock minus the real offset.
-      expect(first['dep_at_utc'], '2026-10-16T13:10:00Z');
-      expect(first['dep_at_local'], '2026-10-16T15:10:00+02:00');
-      // The far end's zone is unknown: AirLabs-style blanks.
-      expect(first['arr_at_local'], '2026-10-16T16:55:00');
-      expect(first['arr_at_utc'], '');
-      final prov = writeArgs(fakeTurso, statement: 1);
-      expect(argText(prov[0]), 'FRA|$day');
-      expect(argText(prov[1]), 'fraport');
-      expect(prov[3], {'type': 'integer', 'value': '3'});
-      // updated_at: the sibling's db.now_iso() format from
-      // the frozen writer clock.
-      expect(argText(boardArgs[3]), '2026-10-18T20:09:40+00:00');
+      expect(result.pendingWrites, isEmpty,
+          reason: 'a free board is never shared');
       expect(
-        ErrorLog.instance.entries
-            .where((entry) => entry.message.contains(
-                'board for $day was shared with FlightRoutes')),
-        isNotEmpty,
+        board.calls.where((call) => call.endsWith('(full day)')),
+        isEmpty,
+        reason: 'no share means no whole-day walk',
       );
-      // The second out day answered nothing live and its
-      // full-day walk came back empty: a nothing answer is
-      // never shared.
-      final inserted = fakeTurso.requests
-          .where((s) => s.any((sql) => sql.startsWith('INSERT INTO')))
-          .length;
-      expect(inserted, 1);
       expect(
-        ErrorLog.instance.entries.where((entry) => entry.message
-            .contains('board for $otherOut was not shared')),
-        isNotEmpty,
+        fakeTurso.requests.where(
+            (s) => s.any((sql) => sql.startsWith('INSERT INTO'))),
+        isEmpty,
+        reason: 'nothing cost a credential, so nothing is written',
       );
+      expect(otherOut, isNotEmpty); // the second out day is untouched too
     });
 
-    test('a complete cached board is never overwritten by a share', () async {
+    test('a board that arrived while the search ran is not overwritten',
+        () async {
+      // The race the guard exists for: the out day's board was
+      // a cache miss when the search started, and another
+      // device wrote a complete board before the share ran. A
+      // second writer must not replace a complete board.
       const day = '2026-10-16';
-      const returnDay = '2026-10-17';
+      var sharedReads = 0;
       final fakeTurso = FakeTurso((statements) {
         final sql = statements.first;
         if (sql.startsWith('INSERT INTO')) {
           return okWrites(const [1, 1]);
         }
-        // The cache already holds the complete AeroDataBox
-        // board for the outbound day (their own fixture).
         if (sql.contains("day = '$day'")) {
+          sharedReads++;
+          // The search's read: nothing there yet.
+          if (sharedReads == 1) {
+            return okRows(
+                ['iata', 'day', 'payload', 'updated_at'], const []);
+          }
+          // The share's read: a complete board now exists.
           return okRows([
             'iata',
             'day',
@@ -638,46 +603,43 @@ void main() {
         return okRows(
             ['iata', 'day', 'payload', 'updated_at'], const []);
       });
+      // The primary answers nothing for the out day, so the
+      // fallback is asked -- and its answer is what a share
+      // would come from.
       final board = _SplitBoard(
         windows: {
-          '$returnDay arrivals': [
-            _flight(
-                no: 'LH2000',
-                from: 'LHR',
-                to: 'FRA',
-                departure: DateTime(2026, 10, 17, 17, 30)),
-          ],
-        },
-        fullDay: {
-          // A whole alternative board ready to go -- must
-          // never reach the wire, because the cache's row
-          // already covers this day.
           '$day departures': const [],
         },
+      );
+      final fallback = _SplitBoard(
+        fullDay: {
+          '$day departures': [
+            _flight(
+                no: 'LH1000',
+                from: 'FRA',
+                to: 'LHR',
+                departure: DateTime(2026, 10, 16, 15, 10)),
+          ],
+        },
+        source: 'aerodatabox',
       );
       final selectedDays = TravelPlan(
         outDays: [TravelDay(DateTime(2026, 10, 16))],
         backDays: [TravelDay(DateTime(2026, 10, 17))],
       );
       final shared = sharedRepo(fakeTurso);
-      final repository = repoFor(board, shared: shared);
+      final repository =
+          repoFor(board, shared: shared, fallback: fallback);
 
       final result = await repository.search(selectedDays, _benefits);
       await Future.wait(result.pendingWrites);
 
-      // The outbound day ran from the cache: the provider
-      // was never asked for a departures window or a full
-      // day, and no board row was written.
       expect(result.report.outboundTotal, 1);
-      expect(
-        board.calls.where((call) => call.contains('departures')),
-        isEmpty,
-        reason: 'a cached day needs no departure fetches at all',
-      );
       expect(
         fakeTurso.requests.where(
             (s) => s.any((sql) => sql.startsWith('INSERT INTO'))),
         isEmpty,
+        reason: 'a complete board is never replaced by a share',
       );
       expect(
         ErrorLog.instance.entries.where((entry) => entry.message
@@ -686,7 +648,7 @@ void main() {
       );
     });
 
-    test('a truncated full-day walk is never shared', () async {
+    test('a truncated fallback day is never shared', () async {
       const day = '2026-10-16';
       final fakeTurso = FakeTurso((statements) {
         if (statements.any((sql) => sql.startsWith('INSERT INTO'))) {
@@ -695,16 +657,14 @@ void main() {
         return okRows(
             ['iata', 'day', 'payload', 'updated_at'], const []);
       });
+      // The primary answers nothing, so the fallback is asked;
+      // its whole-day walk stops without covering the day.
       final board = _SplitBoard(
         windows: {
-          '$day departures': [
-            _flight(
-                no: 'LH1000',
-                from: 'FRA',
-                to: 'LHR',
-                departure: DateTime(2026, 10, 16, 15, 10)),
-          ],
+          '$day departures': const [],
         },
+      );
+      final fallback = _SplitBoard(
         fullDay: {
           '$day departures': [
             _flight(
@@ -714,16 +674,17 @@ void main() {
                 departure: DateTime(2026, 10, 16, 15, 10)),
           ],
         },
-        // The walk stopped without covering the day.
         fullDayWarning:
             'stopped after 64 pages without reaching the end of the window',
+        source: 'aerodatabox',
       );
       final selectedDays = TravelPlan(
         outDays: [TravelDay(DateTime(2026, 10, 16))],
         backDays: [TravelDay(DateTime(2026, 10, 17))],
       );
       final shared = sharedRepo(fakeTurso);
-      final repository = repoFor(board, shared: shared);
+      final repository =
+          repoFor(board, shared: shared, fallback: fallback);
 
       final result = await repository.search(selectedDays, _benefits);
       await Future.wait(result.pendingWrites);

@@ -374,6 +374,174 @@ void main() {
       expect(report.cities, isEmpty);
     });
   });
+
+  group('the result summary line', () {
+    CityResult cityWith(List<TripOption> options) => CityResult(
+          city: 'Rome',
+          country: 'IT',
+          options: options,
+        );
+
+    TripOption option({
+      required DateTime outDeparture,
+      required DateTime backDeparture,
+      required DateTime backArrival,
+      int nights = 2,
+    }) =>
+        TripOption(
+          city: 'Rome',
+          country: 'IT',
+          outFlight: Flight(
+            flightNo: 'LH1000',
+            airline: 'LH',
+            origin: 'FRA',
+            destination: 'FCO',
+            departure: outDeparture,
+            arrival: outDeparture.add(const Duration(hours: 2)),
+          ),
+          backFlight: Flight(
+            flightNo: 'LH2000',
+            airline: 'LH',
+            origin: 'FCO',
+            destination: 'FRA',
+            departure: backDeparture,
+            arrival: backArrival,
+          ),
+          nights: nights,
+        );
+
+    test('it names the earliest departure and the latest Sunday return',
+        () {
+      // "Earliest out Fr, 13:30. Latest return Sunday, 19:00 (takeoff)."
+      final summary = citySummary(cityWith([
+        option(
+          outDeparture: DateTime(2026, 10, 16, 13, 30),
+          backDeparture: DateTime(2026, 10, 18, 19),
+          backArrival: DateTime(2026, 10, 18, 21),
+        ),
+      ]));
+      expect(summary, contains('earliest out Fri 13:30'));
+      expect(summary, contains('latest return Sunday 19:00 (takeoff)'));
+      expect(summary, contains('2🛏'));
+      expect(summary, isNot(contains('Monday')),
+          reason: 'no Monday return, so no Monday line');
+    });
+
+    test('it adds the earliest Monday landing when there is one', () {
+      final summary = citySummary(cityWith([
+        option(
+          outDeparture: DateTime(2026, 10, 16, 13, 30),
+          backDeparture: DateTime(2026, 10, 18, 19),
+          backArrival: DateTime(2026, 10, 18, 21),
+        ),
+        option(
+          outDeparture: DateTime(2026, 10, 16, 15),
+          backDeparture: DateTime(2026, 10, 19, 6),
+          backArrival: DateTime(2026, 10, 19, 8),
+        ),
+      ]));
+      expect(summary, contains('latest return Sunday 19:00 (takeoff)'));
+      expect(summary, contains('Monday 08:00 (landing)'));
+      expect(summary, contains(' or '),
+          reason: 'the two return options are alternatives');
+    });
+
+    test('the latest Sunday takeoff wins over an earlier one', () {
+      final summary = citySummary(cityWith([
+        option(
+          outDeparture: DateTime(2026, 10, 16, 13, 30),
+          backDeparture: DateTime(2026, 10, 18, 15),
+          backArrival: DateTime(2026, 10, 18, 17),
+        ),
+        option(
+          outDeparture: DateTime(2026, 10, 16, 15),
+          backDeparture: DateTime(2026, 10, 18, 19),
+          backArrival: DateTime(2026, 10, 18, 21),
+        ),
+      ]));
+      expect(summary, contains('Sunday 19:00 (takeoff)'));
+      expect(summary, isNot(contains('Sunday 15:00')));
+    });
+
+    test('the earliest departure wins over a later one', () {
+      final summary = citySummary(cityWith([
+        option(
+          outDeparture: DateTime(2026, 10, 16, 15),
+          backDeparture: DateTime(2026, 10, 18, 19),
+          backArrival: DateTime(2026, 10, 18, 21),
+        ),
+        option(
+          outDeparture: DateTime(2026, 10, 16, 13, 30),
+          backDeparture: DateTime(2026, 10, 18, 19),
+          backArrival: DateTime(2026, 10, 18, 21),
+        ),
+      ]));
+      expect(summary, contains('earliest out Fri 13:30'));
+    });
+
+    test('a Saturday return is not a Sunday one', () {
+      // The return line is about the *Sunday* return; a
+      // Saturday return says nothing about it. It is still
+      // named, though -- just under its own day.
+      final summary = citySummary(cityWith([
+        option(
+          outDeparture: DateTime(2026, 10, 16, 13, 30),
+          backDeparture: DateTime(2026, 10, 17, 19),
+          backArrival: DateTime(2026, 10, 17, 21),
+        ),
+      ]));
+      expect(summary, contains('earliest out Fri 13:30'));
+      expect(summary, isNot(contains('Sunday')));
+      expect(summary, contains('Sat 19:00 (takeoff)'));
+    });
+
+    test('a city without options has no summary', () {
+      expect(citySummary(const CityResult(city: 'Rome', country: 'IT')), '');
+    });
+
+    test('the summary is two facts, and each is readable on its own', () {
+      // A phone ellipsises one long line into uselessness, so
+      // the page shows the two facts on two lines.
+      final city = cityWith([
+        option(
+          outDeparture: DateTime(2026, 10, 16, 13, 30),
+          backDeparture: DateTime(2026, 10, 18, 19),
+          backArrival: DateTime(2026, 10, 18, 21),
+        ),
+      ]);
+      expect(cityDepartureSummary(city), 'earliest out Fri 13:30 · 2🛏');
+      expect(cityReturnSummary(city),
+          'latest return Sunday 19:00 (takeoff)');
+      expect(citySummary(city),
+          'earliest out Fri 13:30 · 2🛏 · latest return Sunday 19:00 (takeoff)');
+    });
+
+    test('the return fact is empty when there is no return', () {
+      final city = cityWith([
+        option(
+          outDeparture: DateTime(2026, 10, 16, 13, 30),
+          backDeparture: DateTime(2026, 10, 17, 19),
+          backArrival: DateTime(2026, 10, 17, 21),
+        ),
+      ]);
+      expect(cityReturnSummary(city), 'latest return Sat 19:00 (takeoff)');
+    });
+
+    test('a return on another day is named rather than left out', () {
+      // A reader told nothing about the way home is worse off
+      // than one told "Saturday 19:00" -- so the line always
+      // says when they are back.
+      final city = cityWith([
+        option(
+          outDeparture: DateTime(2026, 10, 16, 13, 30),
+          backDeparture: DateTime(2026, 10, 17, 19),
+          backArrival: DateTime(2026, 10, 17, 21),
+        ),
+      ]);
+      expect(cityReturnSummary(city), contains('Sat 19:00'));
+      expect(cityReturnSummary(city), startsWith('latest return'));
+    });
+  });
 }
 
 /// A tiny seam so the origin can be changed in one test

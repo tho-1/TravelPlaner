@@ -20,6 +20,7 @@ import '../models/weekend_match.dart';
 import 'benefits_repository.dart';
 import 'catalogue_match.dart';
 import 'error_log.dart';
+import 'flight_board_cache.dart';
 import 'flight_routes_schedule_repository.dart';
 import 'flight_routes_schedule_writer.dart';
 
@@ -142,6 +143,14 @@ class WeekendRepository {
   /// about healthy ones.
   final FlightBoardProvider? fallback;
 
+  /// The per-device cache of the **fallback's** answers.
+  ///
+  /// The fallback needs a credential, and credentials come with
+  /// request limits, so the same window must not be asked for
+  /// twice (the user's request, 2026-10-21). The Fraport board
+  /// is free and unlimited, so it is never cached.
+  final FlightBoardCache? fallbackCache;
+
   /// Exact-day FlightRoutes boards supplement the live
   /// provider; only full v2 boards with timezone-aware
   /// timestamps are usable here.
@@ -159,9 +168,17 @@ class WeekendRepository {
   /// so tests can freeze the format.
   final DateTime Function() clock;
 
+  /// The days the **fallback** answered for in this search.
+  ///
+  /// Only those days are worth sharing to the shared cache:
+  /// their data cost a credential. Fraport's data is free and
+  /// re-grabbable, so it is never shared (2026-10-21).
+  final Set<String> fallbackServedDays = <String>{};
+
   WeekendRepository(
     this.provider, {
     this.fallback,
+    this.fallbackCache,
     this.sharedSchedules,
     this.sharedBoardWriter,
     DateTime Function()? clock,
@@ -295,10 +312,18 @@ class WeekendRepository {
       // Report e: a filter that can empty a list says what
       // it dropped and why. The floor is the user's choice
       // ("Min. nights"), so the note names it.
-      notes.add('${report.shortStaysDropped} option(s) in '
-          '${report.shortStayCities} cit(y/ies) dropped for staying '
-          'fewer than ${options.minNights} '
-          'night(s).');
+      //
+      // The two counts are different questions -- how many
+      // *options* were too short, and how many *cities* had
+      // nothing longer -- so they are said apart: "1 option
+      // in 0 cities" (a city that kept a longer stay) is a
+      // sentence that reads like a bug (2026-10-21).
+      final only = report.shortStayCities == 1
+          ? '1 city had no longer stay at all'
+          : '${report.shortStayCities} cities had no longer stay at all';
+      notes.add('${report.shortStaysDropped} option(s) dropped for staying '
+          'fewer than ${options.minNights} night(s)'
+          '${report.shortStayCities > 0 ? ' ($only)' : ''}.');
     }
 
     // Unknown airport/station codes become log lines with
@@ -316,16 +341,26 @@ class WeekendRepository {
       }
     }
 
-    // The feed-back pass (2026-10-18): every out day this
-    // search touched gets its complete FRA departure board
-    // shared to the FlightRoutes cache, so the sibling app's
-    // next sync adopts it. Runs off the result path -- the
-    // futures land in `pendingWrites` for the tests to await;
-    // the production UI never waits on a share.
+    // The feed-back pass (2026-10-21): the **fallback's**
+    // full departure board is shared to the FlightRoutes
+    // cache -- not Fraport's. The Fraport board is free and
+    // unlimited, so it can always be re-grabbed and there is
+    // no reason to spend Turso space on it (the user's
+    // decision). A board that *cost* a credential is worth
+    // sharing: the next search reads it from the cache
+    // instead of paying for it again.
+    //
+    // Runs off the result path -- the futures land in
+    // `pendingWrites` for the tests to await; the production
+    // UI never waits on a share.
     final pendingWrites = <Future<List<String>>>[];
-    if (sharedSchedules != null && sharedBoardWriter != null) {
+    if (sharedSchedules != null &&
+        sharedBoardWriter != null &&
+        fallback != null &&
+        fallbackServedDays.isNotEmpty) {
       var chain = Future<void>.value();
       for (final rule in plan.outDays) {
+        if (!fallbackServedDays.contains(_isoDate(rule.day))) continue;
         pendingWrites.add(chain.then((_) => _shareFullDayBoard(rule)));
         chain = pendingWrites.last;
       }
@@ -343,12 +378,30 @@ class WeekendRepository {
   /// provider's throttle stays polite, and turns every
   /// failure into its problems list plus an ErrorLog line --
   /// never an error thrown into the background.
+  ///
+  /// The board comes from the **fallback**, not from Fraport:
+  /// Fraport is free and can be re-grabbed any time, while a
+  /// fallback answer cost a credential -- so that is the data
+  /// worth sharing (the user's decision, 2026-10-21).
   Future<List<String>> _shareFullDayBoard(TravelDay rule) async {
     final shared = sharedSchedules!;
     final writer = sharedBoardWriter!;
     final day = _isoDate(rule.day);
     final problems = <String>[];
     try {
+      final source = fallback!;
+      if (!source.answersWholeDay) {
+        // A paging provider's single call is a page, not a
+        // day: writing it would tell the sibling's readers
+        // that a short board is the whole day (2026-10-21).
+        // Checked before the shared read, so nothing travels.
+        ErrorLog.instance.record(
+            'weekend-finder',
+            'the FRA board for $day was not shared: the fallback '
+            '(${source.runtimeType}) cannot answer a whole day.');
+        return problems;
+      }
+
       // Their own rule, extended to this side of the
       // handshake: a partial source never overwrites full-day
       // data cached by another provider. A complete board in
@@ -371,26 +424,43 @@ class WeekendRepository {
         return problems;
       }
 
-      // Only a whole day counts as a complete board: a full
-      // day's walk (the whole-day fetch is the provider's
-      // default) is the one shape that may be written. Stops
-      // on a truncation warning, on zero flights (a "nothing
-      // flies" answer is never cached as truth), and on any
-      // write problem.
-      final result = await provider.fetch(rule.day, 'departures');
-      if (result.warning.isNotEmpty) {
-        problems.add('the full-day walk stopped early (${result.warning})');
-      } else if (result.flights.isEmpty) {
-        problems.add('the board walked the whole day and answered '
+      // The whole day from the fallback -- the shape a shared
+      // board has. A partial answer is never dressed up as a
+      // full day, and a "nothing flies" answer is never cached
+      // as truth.
+      //
+      // The device cache is read first: it holds the same
+      // whole day the search already paid for, so a share
+      // must never spend the credential a second time (the
+      // user's rule, 2026-10-21).
+      final cache = fallbackCache;
+      final List<Flight> flights;
+      final String sourceName;
+      var warning = '';
+      final cached = cache?.load(rule.day, 'departures');
+      if (cached != null) {
+        flights = cached.flights;
+        sourceName = cached.source;
+      } else {
+        final result = await source.fetch(rule.day, 'departures');
+        flights = result.flights;
+        sourceName = result.source;
+        warning = result.warning;
+        cache?.save(rule.day, 'departures', flights, source: sourceName);
+      }
+      if (warning.isNotEmpty) {
+        problems.add('the full-day walk stopped early ($warning)');
+      } else if (flights.isEmpty) {
+        problems.add('the fallback walked the whole day and answered '
             'no flights');
       } else {
         final payload = scheduleBoardPayload(
           airport: 'FRA',
           day: day,
-          source: FraportBoardProvider.name,
+          source: sourceName,
           // The sibling format's stamp: naive local, seconds.
           obtainedAt: clock().toIso8601String().substring(0, 19),
-          flights: result.flights,
+          flights: flights,
         );
         final (wrote, writeProblems) = await writer.writeBoard(
           airport: 'FRA',
@@ -402,8 +472,8 @@ class WeekendRepository {
           ErrorLog.instance.record(
               'weekend-finder',
               'the complete FRA departure board for $day was shared with '
-              'FlightRoutes (source ${result.source}, '
-              '${result.flights.length} flight(s)).');
+              'FlightRoutes (source $sourceName, '
+              '${flights.length} flight(s)).');
           return problems;
         } else if (problems.isEmpty) {
           ErrorLog.instance.record(
@@ -415,7 +485,7 @@ class WeekendRepository {
       }
       ErrorLog.instance.record('weekend-finder',
           'the FRA board for $day was not shared: ${problems.join('; ')}',
-          details: {'day': day, 'flights': result.flights.length});
+          details: {'day': day, 'flights': flights.length});
       return problems;
     } catch (error) {
       final message = 'sharing the FRA board for $day failed ($error)';
@@ -606,6 +676,11 @@ class WeekendRepository {
   /// what it returns (report j). The primary's flights stay
   /// authoritative -- the fallback only adds what is
   /// missing, keyed by flight number and departure.
+  ///
+  /// The fallback needs a credential, and credentials come with
+  /// request limits, so the answer is cached on the device and
+  /// a repeated search (the user changed a day) reads the
+  /// cache instead of spending quota (2026-10-21).
   Future<void> _fillFromFallback({
     required TravelDay rule,
     required String kind,
@@ -617,48 +692,97 @@ class WeekendRepository {
     final source = fallback;
     if (source == null) return;
     final (since, until) = rule.fetchWindow();
-    try {
-      final result = await source.fetch(rule.day, kind,
-          since: since, until: until);
-      final seen = {
-        for (final flight in sink)
-          '${flight.flightNo}|${flight.departure.toIso8601String()}',
-      };
-      var added = 0;
-      for (final flight in result.flights) {
-        final key =
-            '${flight.flightNo}|${flight.departure.toIso8601String()}';
-        if (seen.add(key)) {
-          sink.add(flight);
-          added++;
+    final cache = fallbackCache;
+    // A provider that answers a whole day in one call is
+    // asked for the whole day: both credentialed fallbacks
+    // charge per call, so it costs what the window did and
+    // covers every window of that day (and the shared board
+    // the sibling reads needs exactly that shape). A paging
+    // provider is asked for the window only -- a page is not
+    // a day.
+    final wholeDay = source.answersWholeDay;
+    final cached = cache?.load(rule.day, kind,
+        since: wholeDay ? null : since, until: wholeDay ? null : until);
+    List<Flight> answer;
+    var fromCache = false;
+    if (cached != null) {
+      answer = cached.flights;
+      fromCache = true;
+    } else {
+      try {
+        final result = wholeDay
+            ? await source.fetch(rule.day, kind)
+            : await source.fetch(rule.day, kind, since: since, until: until);
+        answer = result.flights;
+        // A truncated walk is not the day's answer: its
+        // flights are used for this window, but it is never
+        // cached as the whole day -- a partial answer that
+        // later reads as complete is how a short board gets
+        // shared as if it were a full one.
+        if (result.warning.isEmpty) {
+          cache?.save(rule.day, kind, answer,
+              source: result.source,
+              since: wholeDay ? null : since,
+              until: wholeDay ? null : until);
         }
-      }
-      if (added > 0) {
-        final note = '$windowLabel: the primary source looked incomplete '
-            '($primaryCount flight(s)) — filled in $added flight(s) '
-            'from ${result.source}.';
+      } on ProviderUnavailable catch (error) {
+        final note =
+            '$windowLabel: the fallback source could not help either '
+            '(${error.message}).';
         notes.add(note);
-        ErrorLog.instance.record('weekend-finder', note, details: {
-          'window': windowLabel,
-          'primary': primaryCount,
-          'fallback flights': result.flights.length,
-          'added': added,
-        });
+        ErrorLog.instance.record('weekend-finder', error.message,
+            details: {'window': windowLabel, 'source': 'fallback'});
+        return;
+      } catch (error) {
+        final note =
+            '$windowLabel: the fallback source failed ($error).';
+        notes.add(note);
+        ErrorLog.instance.record('weekend-finder', '$error',
+            details: {'window': windowLabel, 'source': 'fallback'});
+        return;
       }
-    } on ProviderUnavailable catch (error) {
-      final note =
-          '$windowLabel: the fallback source could not help either '
-          '(${error.message}).';
-      notes.add(note);
-      ErrorLog.instance.record('weekend-finder', error.message,
-          details: {'window': windowLabel, 'source': 'fallback'});
-    } catch (error) {
-      final note =
-          '$windowLabel: the fallback source failed ($error).';
-      notes.add(note);
-      ErrorLog.instance.record('weekend-finder', '$error',
-          details: {'window': windowLabel, 'source': 'fallback'});
     }
+    // The window's own bounds decide which of the answer's
+    // flights belong to it -- a cached day holds every flight
+    // of that day.
+    final inWindow = <Flight>[
+      for (final flight in answer)
+        if (kind == 'departures'
+            ? (since.isBefore(flight.departure) &&
+                flight.departure.isBefore(until))
+            : (since.isBefore(flight.arrival) &&
+                flight.arrival.isBefore(until)))
+          flight,
+    ];
+    final seen = {
+      for (final flight in sink)
+        '${flight.flightNo}|${flight.departure.toIso8601String()}',
+    };
+    var added = 0;
+    for (final flight in inWindow) {
+      final key =
+          '${flight.flightNo}|${flight.departure.toIso8601String()}';
+      if (seen.add(key)) {
+        sink.add(flight);
+        added++;
+      }
+    }
+    if (added > 0) {
+      final note = '$windowLabel: the primary source looked incomplete '
+          '($primaryCount flight(s)) — filled in $added flight(s) '
+          'from ${fromCache ? 'the cached fallback answer' : 'the fallback source'}.';
+      notes.add(note);
+      ErrorLog.instance.record('weekend-finder', note, details: {
+        'window': windowLabel,
+        'primary': primaryCount,
+        'fallback flights': answer.length,
+        'added': added,
+        'cached': fromCache,
+      });
+    }
+    // The day's data came from a credentialed source, so it is
+    // worth sharing with the sibling (2026-10-21).
+    fallbackServedDays.add(_isoDate(rule.day));
   }
 
   /// Retain only flights within the cap; returns the number

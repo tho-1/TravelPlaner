@@ -607,6 +607,9 @@ void _setSurface(WidgetTester tester, Size size) {
 /// the Saturday, whichever weekend the page is on.
 class _FakeBoard implements FlightBoardProvider {
   @override
+  bool get answersWholeDay => false;
+
+  @override
   Future<FetchResult> fetch(
     DateTime day,
     String direction, {

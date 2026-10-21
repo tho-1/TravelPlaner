@@ -55,12 +55,12 @@ class _TripsPageState extends State<TripsPage> {
   var _loading = true;
   String? _activeTripId;
 
-  /// The catalogue: the workbook destination
+  /// The catalogue: the destination
   /// picker and the month suggestions read it.
   List<Destination> _catalogue = [];
 
   /// The coordinate table, loaded once: a
-  /// workbook stop gets its lat/lon filled at
+  /// catalogue stop gets its lat/lon filled at
   /// creation time (`geo.resolve_ref`).
   CoordinateIndex? _coordinates;
 
@@ -312,7 +312,7 @@ class _TripsPageState extends State<TripsPage> {
 
   // ── stop / leg operations ───────────────────────────────────
 
-  /// A workbook destination gets its lat/lon
+  /// A catalogue destination gets its lat/lon
   /// filled at creation time; custom refs keep
   /// the geocoded coordinates, the gateway its
   /// fixed ones (`_add_stop` in the legacy).

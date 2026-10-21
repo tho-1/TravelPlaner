@@ -10,7 +10,7 @@ with variants and a route map, and a weekend finder from Frankfurt.
 > (frozen reference; the tag `legacy-streamlit` restores them runnable).
 > Do not start them from this working tree — this is exactly the trap that
 > motivated the archive (2026-10-13). Decision history:
-> `NATIVE_HTML_PLAN.md`.
+> [`archive/docs/NATIVE_HTML_PLAN.md`](archive/docs/NATIVE_HTML_PLAN.md).
 
 > **Working on this codebase? Read [`AGENTS.md`](AGENTS.md) first** — it is
 > the entry point: where everything lives, the invariants that must not
@@ -121,7 +121,7 @@ failed write returns `false` and is surfaced; a filter only ever removes a
 row whose field is populated; `unknown` in the benefits database never
 counts as a yes.
 
-**Offline reads** (Phase 5, Option A — `OFFLINE_SYNC_PLAN.md`): the catalogue
+**Offline reads** (Phase 5, Option A — `archive/docs/OFFLINE_SYNC_PLAN.md`): the catalogue
 and the trips are snapshotted on every successful full read into the
 per-device `state_dir` (`offline_snapshot/`). When the live read fails — no
 network, no token — those snapshots answer instead, with a note that says so
@@ -146,10 +146,119 @@ values: lowercase yes / no / unknown
 An airline counts when **any** of the three flags is `yes`; `unknown` and
 `no` both mean no — an unverified airline must never silently widen the
 results. Matching is by IATA code first, then by name. Live state verified
-2026-10-09: 597 rows, 7 qualifying (CX, JL, KC, LH, VL, VN, ZH). Access
-contract and fallback ladder: `TURSO_PLAN.md`. The reader lives in
-`mobile/lib/data/benefits_repository.dart` (the archived
-`archive/streamlit/benefits_turso.py` is the Python original).
+2026-10-09: 597 rows, 7 qualifying (CX, JL, KC, LH, VL, VN, ZH). The reader
+lives in `mobile/lib/data/benefits_repository.dart` (the archived
+`archive/streamlit/benefits_turso.py` is the Python original); the full
+contract, with its history, is `archive/docs/TURSO_PLAN.md`.
+
+**The semantics that must not drift:**
+
+* **Any `yes` qualifies** — "at least one of the three" is the rule.
+* `no`, `unknown`, `NULL` and empty **do not**. `unknown` is not a yes.
+* **An empty read is a failure**, not "nobody qualifies": an empty flag map
+  would remove every destination from the finder with no visible cause, so it
+  is reported as a problem and the reader falls through.
+* Airlines are registered under **both** the IATA code and the canonical name,
+  so a flight resolves whichever spelling the source gives.
+* Column names are matched with `_`/space/case ignored, so a cosmetic rename
+  upstream does not break the read.
+* The token is never logged, printed or committed.
+
+**The ladder is Turso → offline snapshot → the built-in seed list.** The
+snapshot is the table as last read (`offline_benefits.json`, written on every
+full read); it answers a *transport* failure, so the finder's airline filter
+keeps working with no network — and keeps the real table's answer, not the
+24-carrier default, which would qualify carriers the database says are
+`unknown`. An **empty** table is a different signal and is not answered from
+the snapshot; it falls back to the seed list and says so. Offline the finder
+still has no *flight boards* (every board source needs the network), so a
+search reports that instead of inventing results.
+
+**Every failure is a reported problem, never an exception:**
+
+| Failure | Behaviour |
+|---|---|
+| no token / not configured | the seed list, and the reason |
+| 401 / 403 | the seed list, naming the likely cause (a bad token) |
+| 5xx or timeout | the seed list, the error class named, never retried |
+| `{"type": "error"}` in a 200 | the seed list, quoting the server's message |
+| table/column missing | the seed list, listing what was expected vs found |
+| empty result set | **treated as a failure**, never as "no airlines qualify" |
+
+## The weekend finder
+
+The finder answers *"where can I fly from Frankfurt for the weekend?"*: it
+takes an outbound window and a return window, searches the FRA departure and
+arrival boards, and lists every reachable city.
+
+**The days.** The user picks a travel **period** (a range picker with "this
+weekend" / "next weekend" presets), which produces the candidate days. Each
+day is then "out on" or "back on", and each selected day carries one rule —
+any time, **departs after** HH:MM (out) or **lands before** HH:MM (back). The
+presets keep the classic rules: out **Friday ≥ 14:00** or **Saturday
+< 12:00**; back **Saturday ≥ 12:00**, **Sunday any time** or **Monday
+< 09:00**. All times are Europe/Berlin.
+
+Day arithmetic is **calendar** arithmetic (`addCalendarDays` in
+`models/travel_days.dart`), never `DateTime.add(Duration(days: n))`: the
+latter adds absolute time, so across a DST change the clock shifts an hour and
+a date comes out a day early (2026-10-21: "next weekend" in the DST week
+landed on a Thursday at 23:00, which no day chip could match — the day looked
+unselected, its rule row stayed, and the search still used it). Changing the
+selection **re-runs the search**, because an answer drawn for the old
+selection must not stay on screen under new chips.
+
+**What the boards may cost.** Fraport is free and unlimited, so it is asked
+every time and never cached or shared. The credentialed fallbacks
+(AeroDataBox, AirLabs) have request caps, so the finder asks them **only for
+days it does not already have**: a per-device cache
+(`<state_dir>/board_cache`, keyed by day, direction *and* window — a changed
+time rule must not read the old window's flights) answers a repeated search, a
+truncated walk is never cached, and the share to the shared board cache reads
+that cache before spending the credential again. AeroDataBox and AirLabs charge
+per call, not per hour, so asking for the whole day costs what one window did
+and covers every window of that day; AeroAPI (`max_pages: 1`) answers a
+**page**, not a day, so it is asked for the window only and is never
+shared — writing a page as a whole-day board would tell the sibling's readers
+that a short board is the day.
+
+**The matcher rules that matter** (the ports kept them rule for rule):
+
+* **Both legs must qualify** — a city reachable from FRA by a benefit airline
+  only one way is *excluded*, but shown in a collapsed "one way only" section
+  so the near miss is visible rather than hidden.
+* The **operating carrier** governs the benefits check (staff standby rides on
+  the operator, not the marketing one); codeshare duplicates collapse to one
+  flight, shown as `LH 400 (Lufthansa, operated by …)` when they differ.
+* One result row per **city**; multi-airport cities (London, Paris, Milan …)
+  are merged. Each row expands into its viable (out, back) pairs.
+* **Overnight flights** (arriving the next day), **DST** and live delays are
+  handled: the rules use *scheduled* times, and delays are shown, not filtered.
+* A **Saturday out and Saturday back** day trip is kept (it was wanted
+  explicitly) — the return must land ≥ 12:00, so there is time on the
+  ground.
+* An airport the city table does not know is listed under "unmapped" with the
+  board's own name for it, never a `?CODE` placeholder.
+* The ranking is earliest departure first, then fewest nights, then the name;
+  at most two ways home per outbound.
+
+**The airline filter is one card.** The scope (Lufthansa Group / all
+Lufthansa-named / every airline with benefits / all), the benefits answer and
+the per-flight limit sit together, because they are the same question. The
+Lufthansa Group's eleven carriers do not fit under the control, so the card
+says "Only the Lufthansa Group carriers." with a **?** beside it — hovering on
+the desktop, tapping on a phone, shows them. The list is one table
+(`lufthansaGroupCarriers` in `models/airline_benefits.dart`) read by the
+membership test *and* the **?**, with a test that pins the two together: a
+caption naming a different set than the code filters on is a lie the reader
+cannot see.
+
+**When the boards are bad, the finder says so.** A board window that failed or
+looks implausibly thin is a **visible note** with a warning icon, not a
+shorter answer; the report says how many outbound and return flights were
+actually read, so "nothing found" and "nothing read" never look the same. The
+incidents are also logged to the per-device error log (⚙ Settings → Error log).
+The full rule book, with its history, is `archive/docs/WEEKEND_FINDER_PLAN.md`.
 
 ## Shared FlightRoutes departure boards
 
@@ -164,19 +273,23 @@ timestamps and duration caps using UTC timestamps. A departure-stamped board
 without trustworthy arrival stamps (Fraport-sourced) still answers outbound
 queries; its flights carry no leg duration, like live Fraport flights.
 
-Travel Planner also feeds complete boards **back**: after a Finder search, each
-out day gets one full-day FRA departure fetch and a v2 board write in
-FlightRoutes' own format (`utils/sync.py` upserts — the remote board's stamp is
-read first and a write is only sent when this fetch is newer, with the
-conditional `updated_at` comparison kept in the SQL as race insurance) plus
-its `schedule_provenance` row, labelled `fraport`. Only genuinely complete
-whole-day fetches are written — a windowed or truncated fetch never masquerades
-as a full day, and a zero-flight answer is never cached. FRA *arrivals* are not
-written: the shared schema is departures-boards only. Sharing runs after the
-results are shown, and the skip/failure reasons land in the ErrorLog. The
-write path was verified against the live remote with a zero-mutation probe
-(`BEGIN` → upsert → `SELECT` → `ROLLBACK` → `SELECT`: accepted, no rows
-remain, 2026-10-18).
+Travel Planner also feeds boards **back**, but only the ones that *cost* a
+credential: after a Finder search, each out day the **fallback** answered for
+gets a v2 board write in FlightRoutes' own format (`utils/sync.py` upserts —
+the remote board's stamp is read first and a write is only sent when this
+fetch is newer, with the conditional `updated_at` comparison kept in the SQL
+as race insurance) plus its `schedule_provenance` row, labelled with the
+fallback's own name (`aerodatabox`, `airlabs`). The **Fraport** board is never
+written: it is free and unlimited, so it can always be re-grabbed and there is
+no reason to spend Turso space on it (the user's decision, 2026-10-21; the
+four `fraport` rows written under the old rule were deleted the same day). Only
+genuinely complete whole-day fetches are written — a windowed or truncated
+fetch never masquerades as a full day, and a zero-flight answer is never
+cached. FRA *arrivals* are not written: the shared schema is
+departures-boards only. Sharing runs after the results are shown, and the
+skip/failure reasons land in the ErrorLog. The write path was verified against
+the live remote with a zero-mutation probe (`BEGIN` → upsert → `SELECT` →
+`ROLLBACK` → `SELECT`: accepted, no rows remain, 2026-10-18).
 
 `flight_routes_url` and `flight_routes_token` point at the sibling database
 (the same one hosting the `airlines` benefits table — separate credentials,
@@ -189,6 +302,30 @@ distribution, mint a narrower token. No credentials are committed.
 If shared DB settings are missing or unreadable, the Finder still uses its
 existing providers and reports the read problem; nothing is shared.
 
+### What a result line says
+
+Each result city shows its facts on their own lines, so a phone can read them
+all:
+
+```
+Malaga (Spain)
+4 options · earliest out Sat 09:20 · 1🛏
+latest return Sunday 19:00 (takeoff) or Monday 08:00 (landing)
+```
+
+The *latest Sunday return* is its **takeoff** — the moment you have to leave
+the far end — and the *earliest Monday return* is its **landing** in
+Frankfurt; a Monday morning landing is what turns the weekend into a
+three-day one. When a city has neither (its only return is a Saturday one),
+the latest return is named under its own day rather than left out. The lines
+**wrap** instead of being cut: an ellipsised "earliest out Sat 09:20 · 1 n…"
+says nothing (the phone screenshot, 2026-10-20). The logic is pure and lives
+in `lib/models/weekend_match.dart` (`citySummary`, `cityDepartureSummary`,
+`cityReturnSummary`).
+
+Tapping a result expands it into the option tiles: one tile per way, each
+with the outbound and the return leg.
+
 ## Destination photos
 
 The detail gallery offers user-initiated Unsplash search and per-photo replace.
@@ -197,7 +334,25 @@ per-device app storage. Set `unsplash_access_key` in the git-ignored config to
 enable searches; opening destinations does not search. Existing legacy
 `Pictures/` gallery caches remain readable. The top banner prefers a matching
 curated desktop photo, then a credited gallery photo, then the typography
-fallback. See `PROPOSAL_PICTURES.md` for provider/rights and cache details.
+fallback. See [`archive/docs/PROPOSAL_PICTURES.md`](archive/docs/PROPOSAL_PICTURES.md)
+for provider/rights and cache details.
+
+## The open-destination drawer
+
+The catalogue, the map and the finder can all open a destination's detail page.
+Opening a page does **not** add the destination to the drawer: the detail page
+carries an **"Add to drawer"** button, and only that button adds it. A
+destination that is already in the drawer shows **"Shown on the drawer"** on a
+different background, and the button is inert — the drawer is the one list of
+"places I am looking at", so it must never grow by accident (the user's
+2026-10-20 request).
+
+The drawer is the floating button at the bottom right (desktop) or the chip
+strip (phone); it lists the open destinations, and each one can be closed
+again. The list is stored in Turso (`open_tabs`) and mirrored in the offline
+snapshot, so it survives a restart and works on a train. ⚙ Settings has the
+on/off switch: with the feature off, the button and the drawer are gone and
+the detail page offers no "Add to drawer".
 
 ## Offline-first (Phase 5, Option A)
 
@@ -206,7 +361,7 @@ every write returns false. That stays honest — a failed read is a *stated*
 failure — but the app now also works on a train:
 
 * **Snapshot reads.** Every successful *full* read of the catalogue, the
-  trips and the open-tab list is saved to
+  trips, the open-tab list and the airline-benefits table is saved to
   `<state dir>/offline_snapshot/offline_<dataset>.json`. When a live read
   fails, the snapshot answers, labelled with its save time and the reason
   the live read failed ("offline: the live read failed (…); showing the
@@ -234,7 +389,25 @@ failure — but the app now also works on a train:
 
 Nothing here polls. There is no connectivity event on an HTTP client, so a
 successful request is the signal that the database is reachable again.
-Full contract: `OFFLINE_SYNC_PLAN.md`.
+
+**What the offline mode deliberately does not do** (the plan that specified it
+is archived in `archive/docs/OFFLINE_SYNC_PLAN.md`):
+
+* **The journal is not a local write-through cache.** A queued edit is *owed*,
+  not *shown*: after a restart without a network the catalogue and the trips
+  come from the snapshot, which still holds the pre-edit value, until a drain
+  applies the queue. Doing this properly means applying the queued ops to the
+  snapshot as they are enqueued — worth a commit of its own, and worth doing
+  for trips and destinations together rather than for one of them.
+* **Conflicts are recorded, not resolved.** They are counted, named in the sync
+  line and kept in `conflicts.jsonl` with their statements; choosing "keep
+  mine" or "keep theirs" is a product decision, not a bug fix.
+* **A partial batch cannot be repaired.** If a variant/stop/leg batch dies
+  mid-way, the op is surfaced as failed and is not queued (the trip row
+  already landed). Recovery is the user's: reload, then re-save.
+* **Derived caches stay online-only** (geocode, flight boards, AQI): they are
+  per-device files with their own rules, and the benefits and FlightRoutes
+  databases are read-only.
 
 ## Release build and signing (Android)
 
@@ -267,7 +440,7 @@ its offline copy. `applicationId` is still the Flutter default
 cd mobile
 & "C:\src\flutter\bin\flutter.bat" pub get
 & "C:\src\flutter\bin\flutter.bat" analyze   # must be clean
-& "C:\src\flutter\bin\flutter.bat" test      # 518 tests, no credentials
+& "C:\src\flutter\bin\flutter.bat" test      # 587 tests, no credentials
 ```
 
 The suite uses a scripted Turso fake (`mobile/test/fake_turso.dart`) — no
