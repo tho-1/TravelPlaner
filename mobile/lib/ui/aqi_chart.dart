@@ -33,8 +33,11 @@ library;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/destination_profile.dart';
+import '../models/month_axis.dart';
+import 'month_readout.dart';
 
 class AqiChart extends StatefulWidget {
   final ClimateData data;
@@ -48,10 +51,22 @@ class AqiChart extends StatefulWidget {
 class _AqiChartState extends State<AqiChart> {
   int? _selected;
 
+  /// The axis strip the plot starts after; the tap test and
+  /// the painter share it, so they cannot disagree.
+  static const _leftPadding = 34.0;
+
+  void _select(int? index) {
+    if (index == null || index == _selected) return;
+    HapticFeedback.selectionClick();
+    setState(() => _selected = index);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final data = widget.data;
+    final selected = _selected;
     final legend = <_LegendEntry>[
       if (data.groundAqi.any((v) => v != null))
         _LegendEntry(
@@ -75,16 +90,6 @@ class _AqiChartState extends State<AqiChart> {
           label: 'Open-Meteo (multi-year)',
         ),
     ];
-    String selectionText = '';
-    if (_selected != null) {
-      final i = _selected!;
-      selectionText =
-          '${monthAbbreviations[i]}: '
-          'AQI ${_fmt(data.aqi, i)}, '
-          'ground ${_fmt(data.groundAqi, i)}, '
-          'typical ${_fmt(data.typical, i)}, '
-          'ground typical ${_fmt(data.groundTypical, i)}';
-    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -99,15 +104,12 @@ class _AqiChartState extends State<AqiChart> {
         const SizedBox(height: 8),
         LayoutBuilder(
           builder: (context, constraints) {
-            final plotWidth = constraints.maxWidth - 34.0 - 4.0;
             return GestureDetector(
-              onTapDown: (details) {
-                if (plotWidth <= 0) return;
-                final index =
-                    ((details.localPosition.dx - 34.0) / plotWidth * 12).floor();
-                if (index < 0 || index > 11) return;
-                setState(() => _selected = index);
-              },
+              onTapDown: (details) => _select(monthColumnAt(
+                dx: details.localPosition.dx,
+                width: constraints.maxWidth,
+                leftPadding: _leftPadding,
+              )),
               child: SizedBox(
                 height: 240,
                 child: CustomPaint(
@@ -117,6 +119,9 @@ class _AqiChartState extends State<AqiChart> {
                     typical: data.typical,
                     groundTypical: data.groundTypical,
                     labelColor: scheme.onSurfaceVariant,
+                    selectedMonth: selected,
+                    highlightColor: scheme.primary.withValues(alpha: 0.12),
+                    selectedLabelColor: scheme.primary,
                   ),
                   child: const SizedBox.expand(),
                 ),
@@ -124,11 +129,40 @@ class _AqiChartState extends State<AqiChart> {
             );
           },
         ),
-        if (selectionText.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(selectionText,
-                style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 6),
+        if (selected == null)
+          Text(
+            monthTapHint,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontStyle: FontStyle.italic,
+              color: scheme.onSurfaceVariant,
+            ),
+          )
+        else
+          MonthReadout(
+            month: fullMonths[selected],
+            facts: [
+              MonthFact(
+                label: 'Open-Meteo (12M)',
+                value: _fmt(data.aqi, selected),
+                color: const Color(0xFFA16207),
+              ),
+              MonthFact(
+                label: 'OpenAQ ground (12M)',
+                value: _fmt(data.groundAqi, selected),
+                color: const Color(0xFF22D3EE),
+              ),
+              MonthFact(
+                label: 'Open-Meteo (multi-year)',
+                value: _fmt(data.typical, selected),
+                color: const Color(0xFF78350F),
+              ),
+              MonthFact(
+                label: 'OpenAQ ground (multi-year)',
+                value: _fmt(data.groundTypical, selected),
+                color: const Color(0xFF0E7490),
+              ),
+            ],
           ),
       ],
     );
@@ -224,12 +258,22 @@ class _AqiChartPainter extends CustomPainter {
   final List<double?> groundTypical;
   final Color labelColor;
 
+  /// The month the reader tapped, or null for none. Drawn as
+  /// a band under the severity strips, with the month's label
+  /// emphasised (2026-10-28).
+  final int? selectedMonth;
+  final Color highlightColor;
+  final Color selectedLabelColor;
+
   const _AqiChartPainter({
     required this.aqi,
     required this.groundAqi,
     required this.typical,
     required this.groundTypical,
     required this.labelColor,
+    this.selectedMonth,
+    required this.highlightColor,
+    required this.selectedLabelColor,
   });
 
   // The band colours, the legacy chart's coding.
@@ -273,6 +317,25 @@ class _AqiChartPainter extends CustomPainter {
         'Unhealthy');
     if (yMax > 150) {
       _band(canvas, size, y, 150, yMax, _veryUnhealthy, 'Very unhealthy');
+    }
+
+    // The selected column over the bands, under the series:
+    // a tint that darkens the severity strip it crosses
+    // rather than hiding it.
+    if (selectedMonth != null) {
+      final span = monthColumnSpan(
+        selectedMonth!,
+        width: size.width,
+        leftPadding: leftPadding,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTRB(span.left, topPadding, span.right,
+              topPadding + plotHeight),
+          const Radius.circular(4),
+        ),
+        Paint()..color = highlightColor,
+      );
     }
 
     // The 12M (dotted) series first, so the solid
@@ -332,9 +395,14 @@ class _AqiChartPainter extends CustomPainter {
     );
     final textPainter = TextPainter(textDirection: TextDirection.ltr);
     for (var i = 0; i < 12; i++) {
+      final selected = i == selectedMonth;
       textPainter.text = TextSpan(
         text: monthAbbreviations[i],
-        style: TextStyle(color: labelColor, fontSize: 9),
+        style: TextStyle(
+          color: selected ? selectedLabelColor : labelColor,
+          fontSize: selected ? 10 : 9,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+        ),
       );
       textPainter.layout();
       textPainter.paint(
@@ -571,7 +639,10 @@ class _AqiChartPainter extends CustomPainter {
       !_sameSeries(old.groundAqi, groundAqi) ||
       !_sameSeries(old.typical, typical) ||
       !_sameSeries(old.groundTypical, groundTypical) ||
-      old.labelColor != labelColor;
+      old.labelColor != labelColor ||
+      old.selectedMonth != selectedMonth ||
+      old.highlightColor != highlightColor ||
+      old.selectedLabelColor != selectedLabelColor;
 }
 
 bool _sameSeries(List<double?> a, List<double?> b) {

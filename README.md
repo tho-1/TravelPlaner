@@ -73,6 +73,16 @@ the rail pill, not a drained icon):
   the month's stats and the legend overlaid on the map, tap a country to
   list its cities.
 
+**The fly-to search** (`ui/fly_to_field.dart`) offers the plotted cities
+and the countries holding them as you type, and every pick is an *event*:
+open a city, come back, tap the same suggestion again and it opens again.
+It is deliberately not Flutter's `Autocomplete`, whose `_select` drops a
+pick that equals its last selection — the search is a command, not a value
+(the report, 2026-10-28: "tried clicking on it again, but nothing
+happened"). The query stays in the field after a pick, so the list reopens
+on the next tap; the ✕ empties it, and the keyboard's search key picks the
+exact match.
+
 **Open-destination tabs** (⚙ Settings in the catalogue's app bar turns
 them off and on): destinations you open collect into a closeable list,
 held behind a **floating button** with a count badge (bottom-right on the
@@ -96,6 +106,19 @@ the config file — without it the buttons are not offered) and
 **Transport & Direct Connections**: direct flight routes (plus high-speed
 rail for Chinese cities) researched on demand, cached per destination in
 `flight_routes_cache/`.
+
+**Tapping a month on either chart** (`ui/climate_chart.dart`,
+`ui/aqi_chart.dart`) answers three ways at once, because on a phone one
+small grey line was too easy to miss (the report, 2026-10-28: "I
+initially thought the feature wasn't working"): the column gets a
+highlight band, its label turns bold in the accent colour and its dots
+are ringed, and a filled readout card below names the month and its
+figures (one labelled row per series, each with the series' colour). A
+month with no value shows an em dash, never a zero. Before the first tap
+the chart says *"Tap a month to see its values."* — the affordance is
+stated rather than discovered. The tap is a haptic click on a phone, and
+the month under the finger is computed in `models/month_axis.dart` (one
+rule for both charts; a tap on the axis strip is not a month).
 
 ## The data layer
 
@@ -440,7 +463,7 @@ its offline copy. `applicationId` is still the Flutter default
 cd mobile
 & "C:\src\flutter\bin\flutter.bat" pub get
 & "C:\src\flutter\bin\flutter.bat" analyze   # must be clean
-& "C:\src\flutter\bin\flutter.bat" test      # 587 tests, no credentials
+& "C:\src\flutter\bin\flutter.bat" test      # 844 tests, no credentials
 ```
 
 The suite uses a scripted Turso fake (`mobile/test/fake_turso.dart`) — no

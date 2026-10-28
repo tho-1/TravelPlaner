@@ -88,6 +88,13 @@ class _CountingBoard implements FlightBoardProvider {
 }
 
 void main() {
+  /// The clock every case runs on: Wednesday 21 October
+  /// 2026, whose weekend is Friday the 23rd. A case that
+  /// read the real clock passed on one calendar day and
+  /// failed on the next (they did exactly that on
+  /// 2026-10-28), so the seam is always filled in here.
+  final pinned = DateTime(2026, 10, 21, 12);
+
   BenefitsRepository benefits() => BenefitsRepository(
         _config,
         httpClient:
@@ -116,7 +123,9 @@ void main() {
         benefits: benefits(),
         destinations: destinations(),
         board: board,
-        now: now == null ? null : () => now,
+        // Always pinned: a default of "the real clock" is
+        // how these cases became calendar-dependent.
+        now: () => now ?? pinned,
       ),
     ));
     await tester.pumpAndSettle();

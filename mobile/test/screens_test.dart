@@ -232,6 +232,12 @@ void main() {
     }
 
     await dragUntil(find.text('Find weekends'));
+    // `dragUntil` stops as soon as the widget is *built*,
+    // which the ListView's cache extent reaches while the
+    // button is still off screen -- so a plain tap misses
+    // and the search never runs. Scroll it into view.
+    await tester.ensureVisible(find.text('Find weekends'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Find weekends'));
     await tester.pumpAndSettle();
     // The report lands below the fold.
@@ -248,6 +254,9 @@ void main() {
     // Collapsed: the flight lines are not built yet.
     expect(find.text('LH1000 · Lufthansa'), findsNothing);
     // Expanding the row reveals the flights in place.
+    await tester.ensureVisible(
+        find.textContaining('London (United Kingdom)').first);
+    await tester.pumpAndSettle();
     await tester.tap(find.textContaining('London (United Kingdom)').first);
     await tester.pumpAndSettle();
     expect(find.text('LH1000 · Lufthansa'), findsWidgets);

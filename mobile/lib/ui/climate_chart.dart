@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/destination_profile.dart';
+import '../models/month_axis.dart';
+import 'month_readout.dart';
 
 class ClimateChart extends StatefulWidget {
   final ClimateData data;
@@ -14,22 +17,25 @@ class ClimateChart extends StatefulWidget {
 class _ClimateChartState extends State<ClimateChart> {
   int? _selected;
 
+  /// The axis strip the plot starts after; the tap test and
+  /// the painter share it, so they cannot disagree.
+  static const _leftPadding = 30.0;
+
+  void _select(int? index) {
+    if (index == null || index == _selected) return;
+    // A phone gives no pointer cursor: the tap itself must
+    // say "that registered", and the highlight alone is a
+    // frame away (2026-10-28).
+    HapticFeedback.selectionClick();
+    setState(() => _selected = index);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
     final data = widget.data;
-    String selectionText = '';
-    if (_selected != null) {
-      final i = _selected!;
-      final high = i < data.highs.length ? data.highs[i] : null;
-      final low = i < data.lows.length ? data.lows[i] : null;
-      final rain = i < data.rainMm.length ? data.rainMm[i] : null;
-      selectionText =
-          '${monthAbbreviations[i]}: '
-          'high ${high?.round() ?? '—'}°C, '
-          'low ${low?.round() ?? '—'}°C, '
-          'rain ${rain?.round() ?? '—'} mm';
-    }
+    final selected = _selected;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -44,15 +50,12 @@ class _ClimateChartState extends State<ClimateChart> {
         const SizedBox(height: 8),
         LayoutBuilder(
           builder: (context, constraints) {
-            final plotWidth = constraints.maxWidth - 30.0 - 4.0;
             return GestureDetector(
-              onTapDown: (details) {
-                if (plotWidth <= 0) return;
-                final index =
-                    ((details.localPosition.dx - 30.0) / plotWidth * 12).floor();
-                if (index < 0 || index > 11) return;
-                setState(() => _selected = index);
-              },
+              onTapDown: (details) => _select(monthColumnAt(
+                dx: details.localPosition.dx,
+                width: constraints.maxWidth,
+                leftPadding: _leftPadding,
+              )),
               child: SizedBox(
                 height: 220,
                 child: CustomPaint(
@@ -66,6 +69,9 @@ class _ClimateChartState extends State<ClimateChart> {
                     rainColor: Colors.lightBlue.withValues(alpha: 0.55),
                     axisColor: scheme.outlineVariant,
                     labelColor: scheme.onSurfaceVariant,
+                    selectedMonth: selected,
+                    highlightColor: scheme.primary.withValues(alpha: 0.12),
+                    selectedLabelColor: scheme.primary,
                   ),
                   child: const SizedBox.expand(),
                 ),
@@ -73,14 +79,49 @@ class _ClimateChartState extends State<ClimateChart> {
             );
           },
         ),
-        if (selectionText.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(selectionText,
-                style: Theme.of(context).textTheme.bodySmall),
+        const SizedBox(height: 6),
+        if (selected == null)
+          Text(
+            monthTapHint,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontStyle: FontStyle.italic,
+              color: scheme.onSurfaceVariant,
+            ),
+          )
+        else
+          MonthReadout(
+            month: fullMonths[selected],
+            facts: [
+              MonthFact(
+                label: 'High',
+                value: _figure(data.highs, selected, '°C'),
+                color: scheme.error,
+              ),
+              MonthFact(
+                label: 'Low',
+                value: _figure(data.lows, selected, '°C'),
+                color: scheme.primary,
+              ),
+              MonthFact(
+                label: 'Rain',
+                value: _figure(data.rainMm, selected, ' mm'),
+                color: Colors.lightBlue,
+              ),
+              MonthFact(
+                label: 'Rainy days',
+                value: _figure(data.rainyDays, selected, ''),
+              ),
+            ],
           ),
       ],
     );
+  }
+
+  /// One series' value for one month, or an em dash when the
+  /// month has no value (never a zero it does not have).
+  static String _figure(List<double?> series, int index, String unit) {
+    if (index >= series.length || series[index] == null) return '—';
+    return '${series[index]!.round()}$unit';
   }
 }
 
@@ -118,6 +159,14 @@ class _ClimateChartPainter extends CustomPainter {
   final Color axisColor;
   final Color labelColor;
 
+  /// The month the reader tapped, or null for none. Drawn as
+  /// a band under everything, with the month's label and
+  /// dots emphasised: on a phone the readout card alone was
+  /// too easy to miss (2026-10-28).
+  final int? selectedMonth;
+  final Color highlightColor;
+  final Color selectedLabelColor;
+
   const _ClimateChartPainter({
     required this.highs,
     required this.lows,
@@ -128,6 +177,9 @@ class _ClimateChartPainter extends CustomPainter {
     required this.rainColor,
     required this.axisColor,
     required this.labelColor,
+    this.selectedMonth,
+    required this.highlightColor,
+    required this.selectedLabelColor,
   });
 
   @override
@@ -164,6 +216,24 @@ class _ClimateChartPainter extends CustomPainter {
         topPadding + plotHeight * (1 - value / maxRain);
     double columnX(int index) =>
         leftPadding + plotWidth * (index + 0.5) / 12;
+
+    // The selected column's band goes in first, under the
+    // bars and lines, so it colours the background only.
+    if (selectedMonth != null) {
+      final span = monthColumnSpan(
+        selectedMonth!,
+        width: size.width,
+        leftPadding: leftPadding,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTRB(span.left, topPadding, span.right,
+              topPadding + plotHeight),
+          const Radius.circular(4),
+        ),
+        Paint()..color = highlightColor,
+      );
+    }
 
     // Rain bars first, so the temperature lines sit on top.
     final rainPaint = Paint()..color = rainColor;
@@ -234,6 +304,20 @@ class _ClimateChartPainter extends CustomPainter {
             Paint()..color = lowColor);
       }
     }
+    // ...and the selected month's dots once more, ringed, so
+    // the tapped column's values are the ones the eye lands
+    // on.
+    if (selectedMonth != null) {
+      final i = selectedMonth!;
+      final high = i < highs.length ? highs[i] : null;
+      final low = i < lows.length ? lows[i] : null;
+      if (high != null) {
+        _ringedDot(canvas, Offset(columnX(i), tempY(high)), highColor);
+      }
+      if (low != null) {
+        _ringedDot(canvas, Offset(columnX(i), tempY(low)), lowColor);
+      }
+    }
 
     // Axis: a baseline, the month labels, the temperature
     // extremes on the left and the wettest month on the right.
@@ -247,9 +331,14 @@ class _ClimateChartPainter extends CustomPainter {
     );
     final textPainter = TextPainter(textDirection: TextDirection.ltr);
     for (var i = 0; i < 12; i++) {
+      final selected = i == selectedMonth;
       textPainter.text = TextSpan(
         text: monthAbbreviations[i],
-        style: TextStyle(color: labelColor, fontSize: 9),
+        style: TextStyle(
+          color: selected ? selectedLabelColor : labelColor,
+          fontSize: selected ? 10 : 9,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+        ),
       );
       textPainter.layout();
       textPainter.paint(
@@ -325,6 +414,13 @@ class _ClimateChartPainter extends CustomPainter {
     );
   }
 
+  /// A dot with a pale halo: the selected month's value, made
+  /// distinguishable from its neighbours.
+  void _ringedDot(Canvas canvas, Offset centre, Color color) {
+    canvas.drawCircle(centre, 6, Paint()..color = Colors.white);
+    canvas.drawCircle(centre, 4, Paint()..color = color);
+  }
+
   @override
   bool shouldRepaint(_ClimateChartPainter old) =>
       !_sameSeries(old.highs, highs) ||
@@ -333,7 +429,10 @@ class _ClimateChartPainter extends CustomPainter {
       !_sameSeries(old.rainyDays, rainyDays) ||
       old.highColor != highColor ||
       old.lowColor != lowColor ||
-      old.rainColor != rainColor;
+      old.rainColor != rainColor ||
+      old.selectedMonth != selectedMonth ||
+      old.highlightColor != highlightColor ||
+      old.selectedLabelColor != selectedLabelColor;
 }
 
 bool _sameSeries(List<double?> a, List<double?> b) {

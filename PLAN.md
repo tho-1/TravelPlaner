@@ -1,6 +1,6 @@
 # Travel Planner — Plan & Handoff
 
-Last updated: 2026-10-21.
+Last updated: 2026-10-28.
 
 **Read `AGENTS.md` first** (orientation, invariants, open items), then
 `README.md` (how to run it, where runtime data is written, the data-safety
@@ -10,6 +10,76 @@ decision, with dates and commit hashes.
 Sections §1–§4 below are historical (they describe the state *before* the
 2026-10-03 batches) and are superseded by §0. Where they disagree with §0 or
 `AGENTS.md`, believe those.
+
+---
+
+## 2026-10-28 — a chart tap you can see, and a search you can repeat
+
+Two reports from the phone.
+
+**(a) The monthly charts' tap feedback was invisible.** Tapping a month on
+the climate or air-quality chart changed exactly one thing: a grey
+`bodySmall` line under the plot. On a phone that is easy to miss
+entirely, and the reader concluded the feature was not working at all. Both
+charts now answer three ways at once:
+
+* the tapped column gets a highlight band behind the bars/lines (over the
+  AQI severity strips, which stay readable through it), its month label
+  turns bold and accent-coloured, and its dots are ringed so the values
+  the card names are the ones the eye lands on;
+* a filled readout card under the chart names the month as a title and
+  lists one labelled figure per series, each with its series colour
+  (`ui/month_readout.dart`, shared by both charts);
+* before the first tap the chart says *"Tap a month to see its values."* —
+  the affordance is stated instead of discovered;
+* and the tap is a haptic click, so it registers in the hand as well as on
+  the screen.
+
+The hit test moved into `models/month_axis.dart`
+(`monthColumnAt`/`monthColumnSpan`), one pure rule with tests for every
+column centre, both plot edges, the axis strip and past-the-end, and the
+column spans tiling the plot. It used to be written twice, with different
+left paddings, and neither copy answered "the tap was outside the plot".
+`monthColumnSpan` is what the painters draw the band from, so the band and
+the tap can never disagree. A month with no value reads as an em dash,
+never a zero (the climate card also names the rainy-day count the chart
+already labels over each bar).
+
+**(b) The map's fly-to search could not open the same city twice.**
+Searching Okinawa, opening it, going back and tapping the same suggestion
+again did nothing — and deleting and retyping the query did not help. The
+field was Flutter's `Autocomplete`, whose `RawAutocomplete._select` begins
+`if (nextSelection == _selection) return;`, where `_selection` still held
+the first pick. Right for a value field, wrong for a command: the search
+is an event, not a state.
+
+It is now `ui/fly_to_field.dart`, a plain `TextField` with its own match
+list — so every pick fires, the query stays after a pick (the reader can
+see what was searched), the list reopens on the next tap, a ✕ clears the
+field, and the keyboard's search key picks the exact match. The widget
+takes names (not `MapCity`), so the page keeps the name→city resolution and
+there is no import cycle; the page's callback is a single `onPick`.
+
+`world_map_page.dart` lost ~150 lines to the extraction. Two test files
+cover it: `fly_to_field_test.dart` (the widget: suggestions, a repeat
+pick, a pick closing the list, focus reopening it, the clear button, the
+search key, a city winning over a country of the same name) and
+`world_map_fly_to_test.dart` (the wiring: the map pushes the destination
+page, twice). The wiring test lives in its own file because it needs the
+real coordinate and geometry assets, and priming them only works before
+any other page in the isolate has started — and abandoned — its own load.
+
+**Two tests that had become calendar-dependent were fixed.** The
+day-selection cases pinned "Fri 23.10." but pumped the finder with the
+real clock, so they passed on 2026-10-21 and failed on 2026-10-28; the
+finder's clock seam is now always filled in (`pinned`). The shell's
+finder-summary test tapped a button that was built by the `ListView`'s
+cache extent but still off screen; it scrolls the button into view first.
+
+**Verified on the phone:** Okinawa opened a second time after going back,
+and both charts showed the band, the bold label and the readout card
+(climate: September 30°C/26°C/206 mm, 23 rainy days; AQI: July 38/39 with
+the ground series as dashes). 844 tests, `flutter analyze` clean.
 
 ---
 

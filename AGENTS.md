@@ -45,7 +45,7 @@ cd mobile
 ```powershell
 cd mobile
 & "C:\src\flutter\bin\flutter.bat" analyze   # must be clean
-& "C:\src\flutter\bin\flutter.bat" test      # 620 tests, no credentials needed
+& "C:\src\flutter\bin\flutter.bat" test      # 844 tests, no credentials needed
 ```
 
 CI (`.github/workflows/ci.yml`) runs exactly these two on every push to
@@ -207,6 +207,7 @@ must not be touched** — it carries the sync journals.
 | 14 | **Testing gaps** | **Done 2026-10-20, extended 2026-10-21.** `testing-gaps-2026-10-20.md` lists the coverage-driven gaps and, for each one, the test that now covers it; the finder's and trip planner's 2026-10-21 batches added `weekend_finder_behaviour_test.dart`, `weekend_finder_days_test.dart` and the add-panel/compare tests in `itinerary_plan_tab_test.dart`. 620 tests, `flutter analyze` clean. |
 | 15 | **TURSO_PLAN's two remaining items** | **Closed 2026-10-20.** The Excel rung never existed in the app (it survives only in the archived Python), and the "works with no network" point is now the *benefits snapshot* — the offline ladder is Turso → snapshot → seed list, so the finder uses the real table offline instead of the 24-carrier default. The plan is archived in `archive/docs/TURSO_PLAN.md`; the live contract is `README.md` §"The airline-benefits database". |
 | 16 | **The finder's report batch (a–n)** | **Done 2026-10-21** (PLAN "2026-10-21"). The "Out on" bug was a **DST** defect (`DateTime.add(Duration(days:))` lands an hour — and a day — off across the clock change); day arithmetic is now calendar arithmetic, and a selection change re-runs the search. Fraport boards are no longer written to Turso (they are free; the old `fraport` rows were deleted), only the *credentialed* fallback's days are shared, and those answers are cached per device so a repeat search spends no quota. The result line shows **both** ways home (Sunday takeoff *and* Monday landing). The Lufthansa Group is eleven carriers behind a **?**, with a test pinning the caption to the code. The trip planner's add-a-stop pickers wrap on a phone, and "workbook" is gone from the user-visible text. 620 tests. |
+| 17 | **The month charts' tap feedback, and the map's fly-to repeat pick** | **Done 2026-10-28** (PLAN "2026-10-28"). A chart tap used to change one small grey line; on a phone that read as "the feature does not work". Both charts now highlight the tapped column, emphasise its label and dots, and answer in a filled readout card, with a "Tap a month to see its values." hint before the first tap; the hit test is one pure rule (`models/month_axis.dart`). The map's fly-to search was Flutter's `Autocomplete`, whose `_select` drops a pick equal to its last selection — so the same city could not be opened twice. It is now its own field (`ui/fly_to_field.dart`), where every pick is an event. 844 tests. |
 
 The only open item is 8, and it waits on a person rather than on code: the
 Android keystore. Everything else in this table is closed history.

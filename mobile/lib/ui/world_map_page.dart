@@ -47,6 +47,7 @@ import '../models/destination.dart';
 import '../models/destination_profile.dart';
 import '../models/geo.dart';
 import 'destination_page.dart';
+import 'fly_to_field.dart';
 import 'filter_sheet.dart';
 
 /// A focused mini-map for the destination page: framed on
@@ -1407,16 +1408,26 @@ class _MapBody extends StatelessWidget {
             // Fly-to: type a city or country and the map
             // jumps there — panning the world to find
             // Bucharest was the slow path.
-            _FlyToField(
-              cities: cities,
+            FlyToField(
+              cities: [for (final city in cities) city.name],
               countries: countryNames,
-               onPickCity: (city) {
+              onPick: (name) {
+                // A city opens its destination (or the map
+                // flies there); anything else is a country.
+                MapCity? city;
+                for (final candidate in cities) {
+                  if (candidate.name == name) {
+                    city = candidate;
+                    break;
+                  }
+                }
+                if (city != null) {
                   if (city.destination != null && city.repository != null) {
                     Navigator.of(context).push(MaterialPageRoute(
                       settings: RouteSettings(
                           name: 'destination/${city.destination!.name}'),
                       builder: (_) => DestinationPage(
-                        repository: city.repository!,
+                        repository: city!.repository!,
                         destination: city.destination!,
                         onOpenDestination: onOpenDestination,
                         initiallyInOpenTabs:
@@ -1426,18 +1437,19 @@ class _MapBody extends StatelessWidget {
                     ));
                     return;
                   }
-                 mapController.moveTo(city.latitude, city.longitude, 6);
-                 final country = city.country;
-                 if (country != null && byCountry.containsKey(country)) {
-                   onCountrySelected(country);
-                 }
-               },
-              onPickCountry: (country) {
-                final centre = countryCentre(country, coordinates, cities);
+                  mapController.moveTo(city.latitude, city.longitude, 6);
+                  final country = city.country;
+                  if (country != null && byCountry.containsKey(country)) {
+                    onCountrySelected(country);
+                  }
+                  return;
+                }
+                if (!countryNames.contains(name)) return;
+                final centre = countryCentre(name, coordinates, cities);
                 if (centre != null) {
                   mapController.moveTo(centre.$1, centre.$2, 4);
                 }
-                onCountrySelected(country);
+                onCountrySelected(name);
               },
             ),
             const SizedBox(height: 8),
@@ -1662,84 +1674,6 @@ class _MapBody extends StatelessWidget {
   return (latSum / count, lonSum / count);
 }
 
-/// The fly-to search: an autocomplete over the plotted
-/// cities and the countries that hold them.
-class _FlyToField extends StatelessWidget {
-  final List<MapCity> cities;
-  final List<String> countries;
-  final void Function(MapCity city) onPickCity;
-  final void Function(String country) onPickCountry;
-
-  const _FlyToField({
-    required this.cities,
-    required this.countries,
-    required this.onPickCity,
-    required this.onPickCountry,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final options = <String>{
-      for (final city in cities) city.name,
-      ...countries,
-    }.toList()
-      ..sort();
-    return LayoutBuilder(
-      builder: (context, constraints) => Autocomplete<String>(
-        optionsBuilder: (value) {
-          final query = value.text.trim().toLowerCase();
-          if (query.isEmpty) return const Iterable<String>.empty();
-          return options.where(
-              (option) => option.toLowerCase().contains(query)).take(12);
-        },
-        onSelected: (value) {
-          for (final city in cities) {
-            if (city.name == value) {
-              onPickCity(city);
-              return;
-            }
-          }
-          if (countries.contains(value)) onPickCountry(value);
-        },
-        fieldViewBuilder: (context, controller, focusNode, onSubmit) =>
-            TextField(
-          controller: controller,
-          focusNode: focusNode,
-          decoration: const InputDecoration(
-            labelText: 'Fly to',
-            hintText: 'Bucharest, Romania…',
-            prefixIcon: Icon(Icons.search),
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-        ),
-        optionsViewBuilder: (context, onSelected, matches) => Align(
-          alignment: Alignment.topLeft,
-          child: Material(
-            elevation: 4,
-            borderRadius: BorderRadius.circular(8),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                  maxHeight: 260, maxWidth: constraints.maxWidth),
-              child: ListView(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                children: [
-                  for (final match in matches)
-                    ListTile(
-                      dense: true,
-                      title: Text(match),
-                      onTap: () => onSelected(match),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// The month's stats, overlaid on the map's top-left
 /// corner: icon beside the number, four chips in a wrap.
