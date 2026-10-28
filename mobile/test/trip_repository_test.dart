@@ -85,6 +85,25 @@ void main() {
     expect(problems, ['no such table: stops']);
   });
 
+  test('loadTrips with fewer than 4 tables reports problems', () async {
+    final fake = FakeTurso((_) => okMulti([
+      (
+        ['id', 'name', 'created'],
+        [['t-1', 'Japan 2026', null]],
+      ),
+      (
+        ['id', 'trip_id', 'name'],
+        [['v-1', 't-1', 'Spring']],
+      ),
+      // Missing stops and legs tables
+    ]));
+    final repo = _repo(fake);
+    final (trips, problems) = await repo.loadTrips();
+    expect(trips, isEmpty);
+    expect(problems, isNotEmpty);
+    expect(problems.single, contains('incomplete pipeline result'));
+  });
+
   test('loadTrips decodes the pipeline\'s typed cells', () async {
     // The real pipeline always types its cells
     // ({"type": "integer", "value": "1"}); the repository
@@ -131,7 +150,7 @@ void main() {
 
   test('saveTrip writes the trip first, then the variants', () async {
     final fake = FakeTurso((_) => okEmpty(6, 1));
-    final trip = const Trip(
+    final trip = Trip(
       id: 't-1',
       name: "Thorsten's Japan trip",
       created: '2026-10-10T21:00:00+00:00',
@@ -200,7 +219,7 @@ void main() {
     // save. Zero affected rows -- and the variant
     // statements never run.
     final fake = FakeTurso((_) => okEmpty(1, 0));
-    final trip = const Trip(
+    final trip = Trip(
       id: 't-1',
       name: 'Japan',
       created: '2026-01-01T00:00:00+00:00',
@@ -223,7 +242,7 @@ void main() {
     // latter, `rowsAffected` would be null, `null == 0`
     // false, and every stale save would claim success.
     final stale = FakeTurso((_) => okEmptyLive(1, 0));
-    const trip = Trip(id: 't-1', name: 'Japan');
+    final trip = Trip(id: 't-1', name: 'Japan');
     expect(await _repo(stale).saveTrip(trip), TripSaveStatus.conflict);
     expect(stale.requests, hasLength(1),
         reason: 'the variant statements must not run on a conflict');
@@ -235,7 +254,7 @@ void main() {
   test('saveTrip reports a conflict when the pipeline fails '
       'on the upsert', () async {
     final fake = FakeTurso((_) => pipelineError('read-only'));
-    const trip = Trip(id: 't-1', name: 'Japan');
+    final trip = Trip(id: 't-1', name: 'Japan');
     final status = await _repo(fake).saveTrip(trip);
     expect(status, TripSaveStatus.failed);
     expect(fake.requests, hasLength(1),
@@ -249,13 +268,75 @@ void main() {
     // no variants has nothing else to send, so the second
     // request is skipped rather than sent empty.
     final fake = FakeTurso((_) => okEmpty(1, 1));
-    const trip = Trip(id: 't-new', name: 'New trip');
+    final trip = Trip(id: 't-new', name: 'New trip');
     final status = await _repo(fake).saveTrip(trip);
     expect(status, TripSaveStatus.saved);
     expect(fake.requests, hasLength(1));
     expect(fake.requests.first.single, contains('INSERT INTO trips'));
   });
 
+  test('saving the same trip twice succeeds both times', () async {
+    // FIXED: after the first save, trip.updatedAt is refreshed,
+    // so the second save's guard matches the live row instead of
+    // using stale IS NULL.
+    final fake = FakeTurso((_) => okEmpty(1, 1));
+    final trip = Trip(id: 't-1', name: 'Japan');
+    final first = await _repo(fake).saveTrip(trip);
+    expect(first, TripSaveStatus.saved);
+    // Same trip object, now with updatedAt refreshed -- the
+    // guard uses the fresh stamp from the first save.
+    final second = await _repo(fake).saveTrip(trip);
+    expect(second, TripSaveStatus.saved,
+        reason: 'second save of same trip object must not conflict');
+    expect(fake.requests, hasLength(2));
+    // First upsert uses IS NULL (no stamp yet), second uses the
+    // real stamp from the first save.
+    expect(fake.requests[0].single,
+        contains('WHERE trips.updated_at IS NULL'));
+    expect(fake.requests[1].single,
+        contains('WHERE trips.updated_at ='));
+  });
+
+    test('save then add a departure from home base succeeds', () async {
+    // User creates a trip, saves it, then adds a departure stop
+    // from FRA (home base). The second save must not conflict
+    // because trip.updatedAt was refreshed after the first save.
+    final fake = FakeTurso((_) => okEmpty(1, 1));
+    final trip = Trip(id: 't-1', name: 'Japan trip');
+    final first = await _repo(fake).saveTrip(trip);
+    expect(first, TripSaveStatus.saved);
+    // Add a departure stop from FRA to the same trip object.
+    final tripWithStop = Trip(
+      id: trip.id,
+      name: trip.name,
+      updatedAt: trip.updatedAt,
+      variants: [
+        Variant(
+          id: 'v-1',
+          name: 'Spring',
+          stops: [
+            Stop(
+              id: 's-1',
+              ref: StopRef(kind: 'gateway', name: 'FRA',
+                  country: 'Germany', lat: 50.0379, lon: 8.5622),
+              role: 'origin',
+            ),
+          ],
+          legs: [Leg(mode: 'flight', note: 'FRA-KIX')],
+        ),
+      ],
+    );
+    final second = await _repo(fake).saveTrip(tripWithStop);
+    expect(second, TripSaveStatus.saved,
+        reason: 'adding a departure to a just-created trip must not conflict');
+    expect(fake.requests, hasLength(3));
+    // Both upserts carry the IS NULL guard for the first save,
+    // then the real stamp for the second save.
+    expect(fake.requests[0].single,
+        contains('WHERE trips.updated_at IS NULL'));
+    expect(fake.requests[1].single,
+        contains('WHERE trips.updated_at ='));
+  });
   test('a mid-batch failure is reported as failed, never as saved',
       () async {
     // The live pipeline keeps going after a statement error
@@ -272,7 +353,7 @@ void main() {
       // failed among the others.
       return pipelinePartialFailure(3, 'constraint failed');
     });
-    final trip = const Trip(
+    final trip = Trip(
       id: 't-1',
       name: 'Japan',
       activeVariantId: 'v-1',
@@ -294,7 +375,7 @@ void main() {
     // stamp-less copy must be IS NULL, or every one of
     // its saves would be a false conflict.
     final fake = FakeTurso((_) => okEmpty(1, 1));
-    const trip = Trip(id: 't-old', name: 'Imported');
+    final trip = Trip(id: 't-old', name: 'Imported');
     final status = await _repo(fake).saveTrip(trip);
     expect(status, TripSaveStatus.saved);
     expect(fake.requests.first.single,
@@ -311,7 +392,7 @@ void main() {
     // adds BEGIN/COMMIT here would silently turn a surfaced
     // partial failure into committed corruption.
     final fake = FakeTurso((_) => okEmpty(3, 1));
-    final status = await _repo(fake).saveTrip(const Trip(
+    final status = await _repo(fake).saveTrip(Trip(
       id: 't-1',
       name: 'Japan',
       variants: [Variant(id: 'v-1', name: 'Spring')],
@@ -327,7 +408,7 @@ void main() {
   test('saveTrip refuses a trip without an id', () async {
 
     final fake = FakeTurso((_) => okEmpty());
-    const trip = Trip(id: '', name: 'No id');
+    final trip = Trip(id: '', name: 'No id');
     final status = await _repo(fake).saveTrip(trip);
     expect(status, TripSaveStatus.failed);
     expect(fake.requests, isEmpty);
@@ -345,5 +426,18 @@ void main() {
       "DELETE FROM variants WHERE trip_id = 't-o''brien'",
       "DELETE FROM trips WHERE id = 't-o''brien'",
     ]);
+  });
+
+
+  test('saveTrip with empty variants writes only the trip row', () async {
+    final fake = FakeTurso((_) => okEmpty(1, 1));
+    final trip = Trip(id: 't-empty', name: 'Empty trip', variants: []);
+    final status = await _repo(fake).saveTrip(trip);
+    expect(status, TripSaveStatus.saved);
+    // Only one request: the trip upsert, no variant statements.
+    expect(fake.requests, hasLength(1));
+    expect(fake.requests.first.single, contains('INSERT INTO trips'));
+    expect(fake.requests.first.single,
+        contains('WHERE trips.updated_at IS NULL'));
   });
 }
